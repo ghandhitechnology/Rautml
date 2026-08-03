@@ -13,6 +13,7 @@ import * as repo from '../repo.js';
 import * as sse from '../sse.js';
 import { buildToolRegistry } from '../tools/index.js';
 import type { PendingInput, Thread, ToolCtx, ToolDef } from '../types.js';
+import { resolveSelection } from './models.js';
 import {
   nonStreaming,
   streamChat,
@@ -332,19 +333,32 @@ export async function startRun(
   chatId: string,
   thread: Thread,
   userContent: string,
+  selection: { model?: string; effort?: string } = {},
 ): Promise<{ runId: string }> {
+  // Routes validate first; this re-resolve is the safety net for other callers.
+  const resolved = resolveSelection(selection.model, selection.effort);
+  if (typeof resolved === 'string') throw new Error(resolved);
+
   repo.insertMessage({ chatId, thread, role: 'user', content: userContent, status: 'complete' });
   repo.appendModelTurn(chatId, thread, { role: 'user', content: userContent });
   repo.touchChat(chatId);
 
-  const run = repo.createRun(chatId, thread);
+  const run = repo.createRun(chatId, thread, resolved.model, resolved.effort);
   emit(chatId, thread, 'run.status', { runId: run.id, status: 'running' });
 
   const controller = new AbortController();
   activeRuns.set(run.id, { chatId, thread, controller });
 
   // Detached on purpose: survives client disconnect; SSE replay covers reload.
-  void runLoop({ chatId, thread, runId: run.id, controller, toolCallCount: 0 }).catch((err) => {
+  void runLoop({
+    chatId,
+    thread,
+    runId: run.id,
+    controller,
+    toolCallCount: 0,
+    model: resolved.model,
+    effort: resolved.effort,
+  }).catch((err) => {
     console.error('[engine] unhandled run failure', err);
   });
 
@@ -395,6 +409,9 @@ export async function resumeRun(
     runId: pending.runId,
     controller,
     toolCallCount: 0,
+    // The run resumes on the same model + effort it was started with.
+    model: run.model,
+    effort: run.effort,
   }).catch((err) => {
     console.error('[engine] unhandled resume failure', err);
   });
@@ -439,6 +456,9 @@ interface LoopCtx {
   runId: string;
   controller: AbortController;
   toolCallCount: number;
+  /** Undefined on legacy runs — streamChat falls back to the default model. */
+  model?: string;
+  effort?: string;
 }
 
 async function runLoop(ctx: LoopCtx): Promise<void> {
@@ -494,6 +514,8 @@ async function runLoop(ctx: LoopCtx): Promise<void> {
         tools: wireTools.length > 0 ? wireTools : undefined,
         // After the wrap-up nudge, deny tools so the model must answer.
         toolChoice: nudged ? 'none' : 'auto',
+        model: ctx.model,
+        reasoningEffort: ctx.effort,
         signal: controller.signal,
         onText: (delta) => {
           const id = openMessage();
@@ -704,10 +726,11 @@ async function maybeAutoTitle(chatId: string, thread: Thread): Promise<void> {
         { role: 'system', content: TITLE_SYSTEM_PROMPT },
         { role: 'user', content: sample },
       ],
-      // gpt-5.6-sol spends completion tokens on reasoning before it emits any
-      // text; a 32-token budget gets consumed entirely by it (finish_reason
-      // 'length', empty content) and the chat silently stays "New chat".
-      { maxTokens: 256, temperature: 0.3 },
+      // Luna at effort 'none' — titling needs no reasoning, and reasoning
+      // models spend completion tokens thinking before any text: a small
+      // budget gets consumed entirely (finish_reason 'length', empty content)
+      // and the chat silently stays "New chat".
+      { model: 'openai/gpt-5.6-luna', reasoningEffort: 'none', maxTokens: 256, temperature: 0.3 },
     );
 
     const firstLine = raw.split('\n').find((l) => l.trim().length > 0) ?? '';

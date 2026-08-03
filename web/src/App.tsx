@@ -53,6 +53,7 @@ export default function App() {
   const activeChatId = useActiveChatId()
   const documentMode = useDocumentMode()
   const loadChats = useStore((s) => s.loadChats)
+  const loadModels = useStore((s) => s.loadModels)
   const openChat = useStore((s) => s.openChat)
   const newChat = useStore((s) => s.newChat)
   const sendMessage = useStore((s) => s.sendMessage)
@@ -60,7 +61,8 @@ export default function App() {
 
   useEffect(() => {
     void loadChats()
-  }, [loadChats])
+    void loadModels()
+  }, [loadChats, loadModels])
 
   // Land in the most recent conversation on first load.
   useEffect(() => {

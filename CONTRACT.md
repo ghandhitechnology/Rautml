@@ -46,7 +46,12 @@ shell→components/shell+theme+state+lib, chat→components/chat, asset→compon
 ## Environment
 
 - `OPENROUTER_API_KEY`, `FIRECRAWL_API_KEY` in `/Users/pyu/projects/hobbies/Rautml/.env` (already present).
-- Model: `openai/gpt-5.6-sol` via `https://openrouter.ai/api/v1/chat/completions`. Tool calling: OpenAI format, `tool_choice: "auto"`, streaming SSE.
+- Default model: `openai/gpt-5.6-sol` via `https://openrouter.ai/api/v1/chat/completions`. Tool calling: OpenAI format, `tool_choice: "auto"`, streaming SSE.
+- Selectable models (server/src/agent/models.ts owns the catalog; efforts are the provider's own
+  `reasoning_effort` values, sent as OpenRouter `reasoning: { effort }`):
+  - `openai/gpt-5.6-sol` / `-terra` / `-luna` — none | low | medium | high | xhigh | max (default medium)
+  - `x-ai/grok-4.5` — low | medium | high (default high)
+  - `deepseek/deepseek-v4-flash-0731` — low | high | max (default high)
 - Firecrawl: `https://api.firecrawl.dev/v1/search` (web + images sources), `https://api.firecrawl.dev/v1/scrape` (formats:["markdown"]).
 
 ## Database (SQLite via built-in `node:sqlite` `DatabaseSync` — NOT better-sqlite3; Node 26, WAL)
@@ -61,7 +66,8 @@ messages(id TEXT PK, chat_id TEXT, thread TEXT, role TEXT, content TEXT,
 model_turns(id INTEGER PK AUTOINCREMENT, chat_id TEXT, thread TEXT, seq INTEGER, json TEXT);
 runs(id TEXT PK, chat_id TEXT, thread TEXT,
      status TEXT,  -- 'running'|'awaiting_input'|'done'|'error'|'stopped'
-     error TEXT, created_at INTEGER, finished_at INTEGER);
+     error TEXT, created_at INTEGER, finished_at INTEGER,
+     model TEXT, effort TEXT);  -- selection the run was started with (resume reuses it)
 -- every SSE event persisted here; seq monotonic per chat (for replay)
 tool_events(id INTEGER PK AUTOINCREMENT, chat_id TEXT, run_id TEXT, seq INTEGER,
             type TEXT, payload TEXT, created_at INTEGER);
@@ -76,7 +82,8 @@ pending_inputs(id TEXT PK, run_id TEXT, chat_id TEXT, thread TEXT, payload TEXT,
 - `POST /api/chats` `{}` → `Chat` (title "New chat"; auto-titled after first exchange)
 - `DELETE /api/chats/:id`
 - `GET  /api/chats/:id` → `{ chat, messages, assets: AssetWithVersions[], events: ChatEvent[], pendingInput: PendingInput|null, activeRun: Run|null }`
-- `POST /api/chats/:id/messages` `{ content: string, thread: 'main'|'fork' }` → `{ runId }` (409 if a run is active on that thread)
+- `POST /api/chats/:id/messages` `{ content: string, thread: 'main'|'fork', model?: string, effort?: string }` → `{ runId }` (409 if a run is active on that thread; 400 on unknown model or an effort the model doesn't offer)
+- `GET  /api/models` → `{ models: ModelInfo[], defaultModelId: string }` (the selectable catalog)
 - `POST /api/chats/:id/input` `{ pendingInputId, value: string }` → resumes paused run
 - `POST /api/chats/:id/stop` → stops active run(s)
 - `GET  /api/chats/:id/events?after=<seq>` → SSE stream (replays persisted events with seq > after, then live)
@@ -181,6 +188,10 @@ Motion: framer-motion; standard easing `[0.22, 1, 0.36, 1]`; durations 200–450
   right sidebar panel (~380px, spring animation, main chat stays interactive). One persistent fork thread per chat.
   Fork panel = mini chat: own composer, own streaming, markdown+KaTeX, its own ActivityTimeline (fork may search).
 - **Composer**: textarea autosize, Enter=send/Shift+Enter=newline, disabled-with-stop-button while running.
+- **ModelPicker** (components/shell): pill chip left of the send button (“Sol High ⌄”) → popover with the
+  model list and a reasoning-effort slider (magnetic detents, provider wire values verbatim). Selection is
+  global, persisted to localStorage (`rautml.model`, `rautml.efforts` per-model map), sent with each
+  POST /messages; each run stores it so parked runs resume on the same settings. Fork sends inherit it.
 - **InputChips**: input.request renders tappable option chips in the thread; tap → POST input, chips lock in.
 - **Markdown**: react-markdown + remark-gfm + remark-math + rehype-katex. Code blocks styled, copy button.
 - **Reload/reconnect**: on chat open, GET /api/chats/:id renders full state incl. timeline from events; SSE
@@ -194,7 +205,10 @@ type Thread = 'main'|'fork';
 interface Chat { id:string; title:string; createdAt:number; updatedAt:number }
 interface Message { id:string; chatId:string; thread:Thread; role:'user'|'assistant';
   content:string; status:'streaming'|'complete'|'error'; runId?:string; createdAt:number }
-interface Run { id:string; chatId:string; thread:Thread; status:'running'|'awaiting_input'|'done'|'error'|'stopped' }
+interface Run { id:string; chatId:string; thread:Thread; status:'running'|'awaiting_input'|'done'|'error'|'stopped';
+  model?:string; effort?:string }
+interface ModelInfo { id:string; name:string; shortName:string; provider:string; description:string;
+  efforts:string[]; defaultEffort:string }
 interface Asset { id:string; chatId:string; messageId:string; title:string; latestVersion:number; createdAt:number }
 interface ChatEvent { seq:number; chatId:string; thread:Thread; type:string; data:any }
 interface PendingInput { id:string; question:string; options:string[] }

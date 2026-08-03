@@ -12,6 +12,7 @@ import { useActiveChatId, useIsRunning, useStore } from '../../state/store'
 import type { Thread } from '../../lib/types'
 import { cx } from '../../lib/utils'
 import { EASE } from '../../lib/motion'
+import { ModelPicker } from './ModelPicker'
 import './Composer.css'
 
 export interface ComposerProps {
@@ -116,6 +117,9 @@ export function Composer({
           spellCheck={false}
           aria-label={thread === 'fork' ? 'Fork message' : 'Message'}
         />
+
+        {/* Model + effort selection travels with the next message; fork inherits it. */}
+        {!compact && <ModelPicker className="rml-composer__model" />}
 
         <div className="rml-composer__actions">
           <AnimatePresence initial={false} mode="popLayout">

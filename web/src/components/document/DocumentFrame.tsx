@@ -44,6 +44,19 @@ const BONES: [width: string, height: number][] = [
   ['84%', 12],
 ]
 
+/**
+ * Keep in-page hash links and same-document clicks inside the srcDoc iframe.
+ * Without this, some browsers treat `href="#…"` as a navigation that reloads
+ * the frame (or worse, pokes the parent), which remounts layers and can leave
+ * Framer/layout ghosts that look like a duplicated left chat bar.
+ */
+function withFrameGuards(html: string): string {
+  const guard = `<script data-rautml-guard>(function(){document.addEventListener('click',function(e){var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;if(!a)return;var href=a.getAttribute('href')||'';if(href.charAt(0)==='#'){e.preventDefault();var id=decodeURIComponent(href.slice(1));if(!id){document.documentElement.scrollTop=0;document.body&&(document.body.scrollTop=0);return;}var el=document.getElementById(id)||document.getElementsByName(id)[0];if(el&&el.scrollIntoView)el.scrollIntoView({behavior:'smooth',block:'start'});}},true);})();</script>`
+  if (/<\/head>/i.test(html)) return html.replace(/<\/head>/i, `${guard}</head>`)
+  if (/<body[^>]*>/i.test(html)) return html.replace(/<body([^>]*)>/i, `<body$1>${guard}`)
+  return guard + html
+}
+
 export function DocumentFrame({
   assetId,
   version,
@@ -75,7 +88,12 @@ export function DocumentFrame({
       .then((html) => {
         if (cancelled) return
         seq.current += 1
-        const layer: Layer = { key: `${requestKey}#${seq.current}`, assetId, version, html }
+        const layer: Layer = {
+          key: `${requestKey}#${seq.current}`,
+          assetId,
+          version,
+          html: withFrameGuards(html),
+        }
         // First paint goes straight in; later ones queue behind whatever is visible.
         setLayers((prev) => (prev.length === 0 ? [layer] : [prev[0]!, layer]))
         setStatus('ready')
@@ -131,7 +149,13 @@ export function DocumentFrame({
   const notify = useRef(onHtmlChange)
   notify.current = onHtmlChange
   useEffect(() => {
-    if (visible) notify.current?.(visible.html, visible.assetId, visible.version)
+    if (!visible) return
+    // Hand the header the raw asset HTML (without our injected guard script).
+    const raw = visible.html.replace(
+      /<script data-rautml-guard>[\s\S]*?<\/script>/i,
+      '',
+    )
+    notify.current?.(raw, visible.assetId, visible.version)
   }, [visible])
 
   const retry = () => setReloadNonce((n) => n + 1)

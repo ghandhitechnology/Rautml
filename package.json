@@ -1,7 +1,10 @@
 {
   "name": "rautml",
   "private": true,
-  "workspaces": ["server", "web"],
+  "workspaces": [
+    "server",
+    "web"
+  ],
   "scripts": {
     "dev": "concurrently -n server,web -c blue,magenta \"npm:dev:server\" \"npm:dev:web\"",
     "dev:server": "npm run dev -w server",
@@ -10,5 +13,10 @@
   },
   "devDependencies": {
     "concurrently": "^9.1.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "esbuild@0.25.12": true,
+    "fsevents@2.3.3": true
   }
 }

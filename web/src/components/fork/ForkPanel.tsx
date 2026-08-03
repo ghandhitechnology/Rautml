@@ -43,6 +43,9 @@ export function ForkPanel({ title = 'Follow-up', subtitle, className }: ForkPane
       if (e.key === 'Escape') close()
     }
     window.addEventListener('keydown', onKey)
+    // Clear any scroll the browser applied while the panel was entering.
+    const rail = document.querySelector<HTMLElement>('.rml-shell__fork')
+    if (rail) rail.scrollLeft = 0
     return () => window.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [forkOpen])
@@ -53,10 +56,9 @@ export function ForkPanel({ title = 'Follow-up', subtitle, className }: ForkPane
         <motion.section
           key="fork-panel"
           className={cx('rml-fork', className)}
-          style={{ transformOrigin: '100% 100%' }}
-          initial={{ opacity: 0, x: 30, scale: 0.94 }}
-          animate={{ opacity: 1, x: 0, scale: 1 }}
-          exit={{ opacity: 0, x: 24, scale: 0.96, transition: { duration: 0.22, ease: EASE } }}
+          initial={{ opacity: 0, x: 18 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: 14, transition: { duration: 0.2, ease: EASE } }}
           transition={SPRING}
           aria-label="Follow-up thread"
         >
