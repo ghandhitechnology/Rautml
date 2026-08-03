@@ -47,6 +47,13 @@ shell→components/shell+theme+state+lib, chat→components/chat, asset→compon
 
 - `OPENROUTER_API_KEY`, `FIRECRAWL_API_KEY` in `/Users/pyu/projects/hobbies/Rautml/.env` (already present).
 - Default model: `openai/gpt-5.6-sol` via `https://openrouter.ai/api/v1/chat/completions`. Tool calling: OpenAI format, `tool_choice: "auto"`, streaming SSE.
+- **Provider dispatch** (src/agent/llm.ts): when Codex CLI OAuth credentials exist (`~/.codex/auth.json`, via
+  `codex login`), `openai/*` models run on the user's ChatGPT subscription through the Codex backend
+  (`https://chatgpt.com/backend-api/codex/responses`, Responses API, SSE-only; src/agent/codex.ts translates
+  to/from the chat.completions shapes so callers can't tell providers apart). Wire ids drop the `openai/`
+  prefix (`gpt-5.6-sol`). `max_output_tokens`/`temperature` are unsupported there and omitted; reasoning
+  efforts none…max pass through. Tokens auto-refresh via `auth.openai.com` and are written back to auth.json.
+  All other models — and everything when auth is absent or `RAUTML_CODEX=0` — stay on OpenRouter.
 - Selectable models (server/src/agent/models.ts owns the catalog; efforts are the provider's own
   `reasoning_effort` values, sent as OpenRouter `reasoning: { effort }`):
   - `openai/gpt-5.6-sol` / `-terra` / `-luna` — none | low | medium | high | xhigh | max (default medium)
@@ -107,6 +114,11 @@ Types (data shape):
 - `input.request` `{ pendingInputId, question, options: string[] }`
 - `input.resolved` `{ pendingInputId, value }`
 - `chat.title` `{ title }`
+- `subagent.start` `{ subagentId, parentToolCallId, title, model }` — a research subagent spawned by `spawn_subagents`
+- `subagent.delta` `{ subagentId, text }` — the subagent's own streamed text
+- `subagent.tool.start` `{ subagentId, toolCallId, name, label }`
+- `subagent.tool.end` `{ subagentId, toolCallId, name, ok, summary }`
+- `subagent.end` `{ subagentId, ok, summary }` — e.g. `6 steps · 2,140 chars` / error text
 
 ## Engine (server/src/agent/engine.ts)
 
@@ -147,6 +159,14 @@ Types (data shape):
 9. `visualize_read_me {}` → returns DESIGN_README string (design constraints; model MUST call before first asset)
 10. `visualize_show_widget {html: string}` → emit widget event (inline SVG/HTML mini-visual in chat flow)
 11. `ask_user_input_v0 {question: string, options: string[]}` → pauses run; returns chosen value on resume
+12. `spawn_subagents {tasks: [{title: string, prompt: string, model?: string}]}` → fans research out to 2–5
+    parallel subagents (src/tools/subagents.ts). Each task becomes an independent mini agentic loop with its own
+    OpenRouter stream and tool calling over the research tools only (`web_search`, `web_fetch`, `image_search`);
+    lifecycle/activity surface as the `subagent.*` SSE events. Allowed models: `x-ai/grok-4.5` (default, at its
+    default effort `high`) and `openai/gpt-5.6-luna` (at effort `xhigh`). Budgets: 12 tool calls per subagent, tool results
+    truncated at 12k inside the subagent, reports capped at `max(4k, 22k/n)` each. The tool result is the combined
+    reports (`N/M subagents reported.` first line + one `## [i] title` section each). Subagents cannot spawn
+    subagents, write files, or ask the user; a failed subagent yields an error note, not a failed batch.
 
 Workspace = `server/data/workspaces/<chatId>/`, created on chat creation.
 
@@ -160,7 +180,9 @@ Workspace = `server/data/workspaces/<chatId>/`, created on chat creation.
 
 ## System prompt essence (prompts.ts owns the wording)
 
-The model: is "Rautml", researches thoroughly (web_search/web_fetch/image_search) before building; confirms
+The model: is "Rautml", researches thoroughly (web_search/web_fetch/image_search) before building; divides
+research bigger than a medium-large task across parallel subagents via spawn_subagents (2–5 self-contained
+briefs, early, then verifies and synthesizes; Grok 4.5 default, Luna for lighter briefs); confirms
 scope in one short message for large requests then proceeds (no endless clarification); calls visualize_read_me
 before its first asset; writes complete self-contained HTML (inline CSS/JS, no external JS frameworks; Google
 Fonts + image hotlinks allowed); edits existing assets with str_replace (never regenerates whole file for small
@@ -188,6 +210,9 @@ Motion: framer-motion; standard easing `[0.22, 1, 0.36, 1]`; durations 200–450
 
 - **ActivityTimeline**: during a run, a collapsible strip under the streaming message lists tool.start/tool.end
   lines live (icon + label + status). Collapses to "Worked for Xs · N steps" summary on completion; click re-expands.
+  Subagents render as nested groups under their spawn_subagents row (left rail, title + model pill + status), each
+  with its own tool rows and streamed-text preview; a group is open while its subagent runs and collapses to one
+  line when it reports (click toggles). Subagent steps count toward the strip's step total.
 - **AssetCard**: appears in flow at its message position. Expand-from-message animation (scale/opacity from the
   user's request bubble feel). Contains AssetFrame: `<iframe srcdoc>` **no sandbox attr** (full JS by design),
   style-isolated by nature of iframe; auto-height via injected script (ResizeObserver → postMessage '__rautml_h';

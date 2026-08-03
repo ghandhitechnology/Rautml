@@ -8,10 +8,12 @@
 //  7. view        8. present_files                  (workspace.ts)
 //  9. visualize_read_me  10. visualize_show_widget
 // 11. ask_user_input_v0                             (ux.ts)
+// 12. spawn_subagents                               (subagents.ts)
 import type { ToolDef } from '../types.js';
 import { researchTools } from './research.js';
 import { workspaceTools } from './workspace.js';
 import { uxTools } from './ux.js';
+import { subagentTools } from './subagents.js';
 
 const REGISTRY_ORDER = [
   'web_search',
@@ -25,6 +27,7 @@ const REGISTRY_ORDER = [
   'visualize_read_me',
   'visualize_show_widget',
   'ask_user_input_v0',
+  'spawn_subagents',
 ] as const;
 
 /**
@@ -33,7 +36,7 @@ const REGISTRY_ORDER = [
  */
 export function buildToolRegistry(): ToolDef[] {
   const byName = new Map<string, ToolDef>();
-  for (const def of [...researchTools, ...workspaceTools, ...uxTools]) {
+  for (const def of [...researchTools, ...workspaceTools, ...uxTools, ...subagentTools]) {
     byName.set(def.name, def);
   }
 

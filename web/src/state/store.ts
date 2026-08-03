@@ -32,6 +32,12 @@ import type {
   Run,
   RunStatusEvent,
   RunTimeline,
+  SubagentDeltaEvent,
+  SubagentEndEvent,
+  SubagentRun,
+  SubagentStartEvent,
+  SubagentToolEndEvent,
+  SubagentToolStartEvent,
   ThemeName,
   Thread,
   TimelineItem,
@@ -325,6 +331,31 @@ function patchTimeline(
   return { ...cs, timelines: { ...cs.timelines, [runId]: patch(existing) } }
 }
 
+/**
+ * Patch one subagent, wherever it lives. Located like tool.end locates its
+ * run: search every timeline first, fall back to the thread's current run.
+ */
+function patchSubagent(
+  cs: ChatState,
+  thread: Thread,
+  subagentId: string,
+  patch: (s: SubagentRun) => SubagentRun,
+): ChatState {
+  const runId =
+    cs.runOrder.find((id) =>
+      cs.timelines[id]?.subagents?.some((s) => s.subagentId === subagentId),
+    ) ?? cs.currentRunId[thread]
+  if (!runId) return cs
+  return patchTimeline(cs, runId, (t) => {
+    const subagents = t.subagents ?? []
+    const idx = subagents.findIndex((s) => s.subagentId === subagentId)
+    if (idx === -1) return t
+    const next = subagents.slice()
+    next[idx] = patch(subagents[idx]!)
+    return { ...t, subagents: next }
+  })
+}
+
 function patchMessage(
   cs: ChatState,
   thread: Thread,
@@ -379,6 +410,28 @@ function reduceEvent(cs: ChatState, ev: ChatEvent, ctx: ReduceCtx): ChatState {
                   i.status === 'running'
                     ? { ...i, status: d.status === 'error' ? 'error' : 'ok', endedAt: at }
                     : i,
+                ),
+              }
+            : t,
+        )
+        // Subagents can't outlive their run either.
+        next = patchTimeline(next, d.runId, (t) =>
+          t.subagents?.some((s) => s.status === 'running')
+            ? {
+                ...t,
+                subagents: t.subagents.map((s) =>
+                  s.status === 'running'
+                    ? {
+                        ...s,
+                        status: d.status === 'error' ? 'error' : 'ok',
+                        endedAt: s.endedAt ?? at,
+                        items: s.items.map((i) =>
+                          i.status === 'running'
+                            ? { ...i, status: d.status === 'error' ? 'error' : 'ok', endedAt: at }
+                            : i,
+                        ),
+                      }
+                    : s,
                 ),
               }
             : t,
@@ -644,6 +697,109 @@ function reduceEvent(cs: ChatState, ev: ChatEvent, ctx: ReduceCtx): ChatState {
       const d = ev.data as ChatTitleEvent
       if (!d?.title) break
       next = { ...next, chat: { ...next.chat, title: d.title } }
+      break
+    }
+
+    case 'subagent.start': {
+      const d = ev.data as SubagentStartEvent
+      const runId = next.currentRunId[thread]
+      if (!d?.subagentId || !runId) break
+      next = ensureTimeline(next, runId, thread, at)
+      next = patchTimeline(next, runId, (t) => {
+        const subagents = t.subagents ?? []
+        if (subagents.some((s) => s.subagentId === d.subagentId)) return t
+        return {
+          ...t,
+          firstStepAt: t.firstStepAt ?? at,
+          subagents: [
+            ...subagents,
+            {
+              subagentId: d.subagentId,
+              parentToolCallId: d.parentToolCallId ?? '',
+              title: d.title || 'Research agent',
+              model: d.model ?? '',
+              status: 'running',
+              text: '',
+              items: [],
+              startedAt: at,
+            } satisfies SubagentRun,
+          ],
+        }
+      })
+      break
+    }
+
+    case 'subagent.delta': {
+      const d = ev.data as SubagentDeltaEvent
+      if (!d?.subagentId || typeof d.text !== 'string') break
+      // Text exists only as deltas (no DB row to reset), so appending is exact
+      // both live and during replay.
+      next = patchSubagent(next, thread, d.subagentId, (s) => ({ ...s, text: s.text + d.text }))
+      break
+    }
+
+    case 'subagent.tool.start': {
+      const d = ev.data as SubagentToolStartEvent
+      if (!d?.subagentId || !d.toolCallId) break
+      next = patchSubagent(next, thread, d.subagentId, (s) =>
+        s.items.some((i) => i.toolCallId === d.toolCallId)
+          ? s
+          : {
+              ...s,
+              items: [
+                ...s.items,
+                {
+                  toolCallId: d.toolCallId,
+                  name: d.name,
+                  label: d.label ?? d.name,
+                  status: 'running',
+                  startedAt: at,
+                } satisfies TimelineItem,
+              ],
+            },
+      )
+      break
+    }
+
+    case 'subagent.tool.end': {
+      const d = ev.data as SubagentToolEndEvent
+      if (!d?.subagentId || !d.toolCallId) break
+      next = patchSubagent(next, thread, d.subagentId, (s) => ({
+        ...s,
+        items: s.items.some((i) => i.toolCallId === d.toolCallId)
+          ? s.items.map((i) =>
+              i.toolCallId === d.toolCallId
+                ? { ...i, status: d.ok ? ('ok' as const) : ('error' as const), summary: d.summary, endedAt: at }
+                : i,
+            )
+          : [
+              ...s.items,
+              {
+                toolCallId: d.toolCallId,
+                name: d.name,
+                label: d.name,
+                status: d.ok ? 'ok' : 'error',
+                summary: d.summary,
+                startedAt: at,
+                endedAt: at,
+              } satisfies TimelineItem,
+            ],
+      }))
+      break
+    }
+
+    case 'subagent.end': {
+      const d = ev.data as SubagentEndEvent
+      if (!d?.subagentId) break
+      next = patchSubagent(next, thread, d.subagentId, (s) => ({
+        ...s,
+        status: d.ok ? 'ok' : 'error',
+        summary: d.summary,
+        endedAt: at,
+        items: s.items.map((i) =>
+          i.status === 'running' ? { ...i, status: d.ok ? ('ok' as const) : ('error' as const), endedAt: at } : i,
+        ),
+      }))
       break
     }
 

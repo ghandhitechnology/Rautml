@@ -223,6 +223,93 @@
   }
 }
 
+/* -------------------------------------------------------------- subagents */
+
+.rml-tl__sub {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 2px 0 2px 14px;
+  padding-left: 10px;
+  border-left: 2px solid color-mix(in srgb, var(--border) 85%, transparent);
+  transition: border-color var(--dur) var(--ease);
+}
+
+.rml-tl__sub.is-running {
+  border-left-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+
+.rml-tl__sub.is-error {
+  border-left-color: color-mix(in srgb, var(--accent) 70%, var(--text-muted));
+}
+
+.rml-tl__sub-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px 6px 6px;
+  border-radius: var(--r-sm);
+  text-align: left;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+.rml-tl__sub-head:hover {
+  background: var(--hover);
+}
+
+.rml-tl__sub.is-running .rml-tl__sub-head .rml-tl__icon {
+  color: var(--accent-hover);
+  background: var(--accent-soft);
+}
+
+.rml-tl__sub-model {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.rml-tl__sub-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 0 4px 4px;
+}
+
+.rml-tl__sub-list {
+  border-top: none;
+  padding-top: 0;
+}
+
+.rml-tl__sub-text {
+  max-height: 132px;
+  overflow-y: auto;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.rml-tl__sub-tail {
+  padding: 0 8px 6px 32px;
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.85;
+}
+
 /* ---------------------------------------------------------------- compact */
 
 .rml-tl--compact .rml-tl__head {
@@ -254,5 +341,20 @@
 }
 
 .rml-tl--compact .rml-tl__summary {
+  display: none;
+}
+
+.rml-tl--compact .rml-tl__sub {
+  margin-left: 10px;
+  padding-left: 8px;
+}
+
+.rml-tl--compact .rml-tl__sub-head {
+  gap: 8px;
+  padding: 5px 6px;
+}
+
+.rml-tl--compact .rml-tl__sub-model,
+.rml-tl--compact .rml-tl__sub-tail {
   display: none;
 }

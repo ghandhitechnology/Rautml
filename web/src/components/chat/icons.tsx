@@ -196,6 +196,8 @@ export function toolIcon(name: string): IconName {
       return 'sparkle'
     case 'ask_user_input_v0':
       return 'question'
+    case 'spawn_subagents':
+      return 'stack'
     default:
       break
   }

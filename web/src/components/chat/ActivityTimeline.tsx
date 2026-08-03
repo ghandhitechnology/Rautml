@@ -5,11 +5,11 @@
  * When the run finishes it collapses itself to "Worked for 12s · 5 steps";
  * clicking the header re-expands it and that choice sticks. */
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { EASE } from '../../lib/motion'
 import { cx, formatDuration } from '../../lib/utils'
-import type { RunTimeline, TimelineItem } from '../../lib/types'
+import type { RunTimeline, SubagentRun, TimelineItem } from '../../lib/types'
 import { Icon, toolIcon } from './icons'
 import './ActivityTimeline.css'
 
@@ -51,6 +51,7 @@ function useTicker(active: boolean) {
 function lastActivity(timeline: RunTimeline): number {
   let last = timeline.firstStepAt ?? timeline.startedAt
   for (const item of timeline.items) last = Math.max(last, item.endedAt ?? item.startedAt)
+  for (const sub of timeline.subagents ?? []) last = Math.max(last, sub.endedAt ?? sub.startedAt)
   return last
 }
 
@@ -125,6 +126,105 @@ function Row({ item, reduceMotion }: { item: TimelineItem; reduceMotion: boolean
   )
 }
 
+/** Compact composer-chip label for a subagent's model. */
+const SUBAGENT_MODEL_LABELS: Record<string, string> = {
+  'x-ai/grok-4.5': 'Grok 4.5',
+  'openai/gpt-5.6-luna': 'Luna',
+}
+
+function subagentModelLabel(model: string): string {
+  return SUBAGENT_MODEL_LABELS[model] ?? model.split('/').pop() ?? model
+}
+
+/** Tail of the subagent's stream, flattened to one line for the live preview. */
+function streamTail(text: string, max = 110): string {
+  const flat = text.replace(/\s+/g, ' ').trim()
+  return flat.length <= max ? flat : `…${flat.slice(flat.length - max)}`
+}
+
+/**
+ * One spawned research subagent: its own header, its own nested tool rows and
+ * its own streamed text. Expanded while it runs, collapses to one line when it
+ * reports — unless the reader took control of the toggle.
+ */
+function SubagentGroup({ sub, reduceMotion }: { sub: SubagentRun; reduceMotion: boolean }) {
+  const running = sub.status === 'running'
+  const [open, setOpen] = useState(running)
+  const pinned = useRef(false)
+  const wasRunning = useRef(running)
+
+  useEffect(() => {
+    if (running && !wasRunning.current && !pinned.current) setOpen(true)
+    if (!running && wasRunning.current && !pinned.current) setOpen(false)
+    wasRunning.current = running
+  }, [running])
+
+  const endFallback = sub.items.reduce(
+    (last, i) => Math.max(last, i.endedAt ?? i.startedAt),
+    sub.startedAt,
+  )
+  const elapsed = Math.max(0, (sub.endedAt ?? (running ? Date.now() : endFallback)) - sub.startedAt)
+  const meta = running
+    ? formatDuration(elapsed)
+    : (sub.summary ?? `${formatDuration(elapsed)} · ${sub.items.length} step${sub.items.length === 1 ? '' : 's'}`)
+
+  return (
+    <motion.li
+      layout="position"
+      className={cx('rml-tl__sub', `is-${sub.status}`, open && 'is-open')}
+      initial={reduceMotion ? false : { opacity: 0, y: -6, scale: 0.985 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={reduceMotion ? undefined : { opacity: 0, y: -3 }}
+      transition={
+        reduceMotion
+          ? { duration: 0 }
+          : { layout: EXPAND, y: EXPAND, scale: EXPAND, opacity: { duration: 0.2, ease: EASE } }
+      }
+    >
+      <button
+        type="button"
+        className="rml-tl__sub-head"
+        onClick={() => {
+          pinned.current = true
+          setOpen((v) => !v)
+        }}
+        aria-expanded={open}
+      >
+        <span className="rml-tl__icon">
+          <Icon name="stack" size={14} />
+        </span>
+        <span className="rml-tl__label" title={sub.title}>
+          {sub.title}
+        </span>
+        <span className="rml-tl__sub-model">{subagentModelLabel(sub.model)}</span>
+        <span className="rml-tl__summary" title={meta}>
+          {meta}
+        </span>
+        <StatusGlyph status={sub.status} reduceMotion={reduceMotion} />
+      </button>
+
+      {open ? (
+        <div className="rml-tl__sub-body">
+          {sub.items.length > 0 ? (
+            <ul className="rml-tl__list rml-tl__sub-list">
+              <AnimatePresence initial={false}>
+                {sub.items.map((item) => (
+                  <Row key={item.toolCallId} item={item} reduceMotion={reduceMotion} />
+                ))}
+              </AnimatePresence>
+            </ul>
+          ) : null}
+          {sub.text ? <div className="rml-tl__sub-text">{sub.text}</div> : null}
+        </div>
+      ) : running && sub.text ? (
+        <div className="rml-tl__sub-tail" aria-hidden="true">
+          {streamTail(sub.text)}
+        </div>
+      ) : null}
+    </motion.li>
+  )
+}
+
 export interface ActivityTimelineProps {
   timeline: RunTimeline | null | undefined
   /** Denser rows for the fork panel. */
@@ -156,15 +256,39 @@ export function ActivityTimeline({
     wasLive.current = live
   }, [live])
 
-  if (!timeline || timeline.items.length === 0) return null
+  const subagents = timeline?.subagents ?? []
 
-  const steps = timeline.items.length
+  if (!timeline || (timeline.items.length === 0 && subagents.length === 0)) return null
+
+  // Each subagent group renders right under the spawn_subagents row it came from.
+  const byParent = new Map<string, SubagentRun[]>()
+  for (const sub of subagents) {
+    const list = byParent.get(sub.parentToolCallId) ?? []
+    list.push(sub)
+    byParent.set(sub.parentToolCallId, list)
+  }
+  const itemIds = new Set(timeline.items.map((i) => i.toolCallId))
+  const rendered: ReactNode[] = []
+  for (const item of timeline.items) {
+    rendered.push(<Row key={item.toolCallId} item={item} reduceMotion={reduceMotion} />)
+    for (const sub of byParent.get(item.toolCallId) ?? []) {
+      rendered.push(<SubagentGroup key={sub.subagentId} sub={sub} reduceMotion={reduceMotion} />)
+    }
+  }
+  for (const sub of subagents) {
+    if (!itemIds.has(sub.parentToolCallId)) {
+      rendered.push(<SubagentGroup key={sub.subagentId} sub={sub} reduceMotion={reduceMotion} />)
+    }
+  }
+
+  const steps = timeline.items.length + subagents.reduce((n, s) => n + s.items.length, 0)
   // Anchored on the run's first real step and closed by its completion event — both are
   // server timestamps (ChatEvent.at), so this reads the same before and after a reload.
   const from = timeline.firstStepAt ?? timeline.items[0]?.startedAt ?? timeline.startedAt
   const to = timeline.endedAt ?? (live ? Date.now() : lastActivity(timeline))
   const elapsed = Math.max(0, to - from)
-  const failed = timeline.items.some((i) => i.status === 'error')
+  const failed =
+    timeline.items.some((i) => i.status === 'error') || subagents.some((s) => s.status === 'error')
 
   const summary = live
     ? `Working · ${formatDuration(elapsed)}`
@@ -215,11 +339,7 @@ export function ActivityTimeline({
       >
         <div ref={inner} className="rml-tl__inner">
           <ul className="rml-tl__list">
-            <AnimatePresence initial={false}>
-              {timeline.items.map((item) => (
-                <Row key={item.toolCallId} item={item} reduceMotion={reduceMotion} />
-              ))}
-            </AnimatePresence>
+            <AnimatePresence initial={false}>{rendered}</AnimatePresence>
           </ul>
         </div>
       </motion.div>

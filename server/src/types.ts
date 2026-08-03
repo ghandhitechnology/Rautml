@@ -98,6 +98,10 @@ export interface ToolCtx {
   thread: Thread;
   workspaceDir: string;
   messageId: string;
+  /** The tool_call id being executed (set per call by the engine). */
+  toolCallId?: string;
+  /** Aborted when the run is stopped — long-running tools must honour it. */
+  signal?: AbortSignal;
   emit(type: string, data: any): void;
 }
 
