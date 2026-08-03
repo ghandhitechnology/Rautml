@@ -126,6 +126,76 @@ function Row({ item, reduceMotion }: { item: TimelineItem; reduceMotion: boolean
   )
 }
 
+/** One model-pause row: "Thinking · 12s" live, "Thought for 12s" once the round's
+ * first visible output lands. Expandable when the model streamed a reasoning trace. */
+function ThinkingRow({ item, reduceMotion }: { item: TimelineItem; reduceMotion: boolean }) {
+  const [open, setOpen] = useState(false)
+  const running = item.status === 'running'
+  const hasTrace = typeof item.trace === 'string' && item.trace.length > 0
+  // item.ms (from thinking.end) is authoritative; event timestamps are the fallback.
+  const elapsed = running
+    ? Math.max(0, Date.now() - item.startedAt)
+    : (item.ms ?? Math.max(0, (item.endedAt ?? item.startedAt) - item.startedAt))
+  const label = running
+    ? `Thinking · ${formatDuration(elapsed)}`
+    : `Thought for ${formatDuration(elapsed)}`
+
+  const head = (
+    <>
+      <span className="rml-tl__icon">
+        <Icon name="thought" size={14} />
+      </span>
+      <span className="rml-tl__label rml-tl__think-label" title={label}>
+        {label}
+      </span>
+    </>
+  )
+
+  return (
+    <motion.li
+      layout="position"
+      className={cx('rml-tl__think', `is-${item.status}`, open && 'is-open')}
+      initial={reduceMotion ? false : { opacity: 0, y: -6, scale: 0.985 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={reduceMotion ? undefined : { opacity: 0, y: -3 }}
+      transition={
+        reduceMotion
+          ? { duration: 0 }
+          : { layout: EXPAND, y: EXPAND, scale: EXPAND, opacity: { duration: 0.2, ease: EASE } }
+      }
+    >
+      {hasTrace ? (
+        <button
+          type="button"
+          className="rml-tl__think-head"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+        >
+          {head}
+          <span className="rml-tl__think-chevron" aria-hidden="true">
+            <Icon name="chevron" size={12} />
+          </span>
+        </button>
+      ) : (
+        <div className="rml-tl__think-head">{head}</div>
+      )}
+      <AnimatePresence initial={false}>
+        {hasTrace && open ? (
+          <motion.div
+            className="rml-tl__think-trace"
+            initial={reduceMotion ? false : { opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reduceMotion ? undefined : { opacity: 0, y: -4 }}
+            transition={reduceMotion ? { duration: 0 } : { duration: 0.2, ease: EASE }}
+          >
+            {item.trace}
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </motion.li>
+  )
+}
+
 /** Compact composer-chip label for a subagent's model. */
 const SUBAGENT_MODEL_LABELS: Record<string, string> = {
   'x-ai/grok-4.5': 'Grok 4.5',
@@ -270,7 +340,13 @@ export function ActivityTimeline({
   const itemIds = new Set(timeline.items.map((i) => i.toolCallId))
   const rendered: ReactNode[] = []
   for (const item of timeline.items) {
-    rendered.push(<Row key={item.toolCallId} item={item} reduceMotion={reduceMotion} />)
+    rendered.push(
+      item.kind === 'thinking' ? (
+        <ThinkingRow key={item.toolCallId} item={item} reduceMotion={reduceMotion} />
+      ) : (
+        <Row key={item.toolCallId} item={item} reduceMotion={reduceMotion} />
+      ),
+    )
     for (const sub of byParent.get(item.toolCallId) ?? []) {
       rendered.push(<SubagentGroup key={sub.subagentId} sub={sub} reduceMotion={reduceMotion} />)
     }

@@ -39,6 +39,9 @@ import type {
   SubagentToolEndEvent,
   SubagentToolStartEvent,
   ThemeName,
+  ThinkingDeltaEvent,
+  ThinkingEndEvent,
+  ThinkingStartEvent,
   Thread,
   TimelineItem,
   ToolEndEvent,
@@ -598,6 +601,90 @@ function reduceEvent(cs: ChatState, ev: ChatEvent, ctx: ReduceCtx): ChatState {
               } satisfies TimelineItem,
             ]
         return { ...t, firstStepAt, items: items as TimelineItem[] }
+      })
+      break
+    }
+
+    case 'thinking.start': {
+      const d = ev.data as ThinkingStartEvent
+      const runId = next.currentRunId[thread]
+      if (!d?.thinkingId || !runId) break
+      next = ensureTimeline(next, runId, thread, at)
+      next = patchTimeline(next, runId, (t) => {
+        // Replay-safe: the row was already created by an earlier pass.
+        if (t.items.some((i) => i.toolCallId === d.thinkingId)) return t
+        return {
+          ...t,
+          // The summary clock starts at the first real step of the run.
+          firstStepAt: t.firstStepAt ?? at,
+          items: [
+            ...t.items,
+            {
+              toolCallId: d.thinkingId,
+              kind: 'thinking',
+              name: 'thinking',
+              label: 'Thinking',
+              status: 'running',
+              startedAt: at,
+            } satisfies TimelineItem,
+          ],
+        }
+      })
+      break
+    }
+
+    case 'thinking.delta': {
+      const d = ev.data as ThinkingDeltaEvent
+      if (!d?.thinkingId || typeof d.text !== 'string') break
+      const runId =
+        next.runOrder.find((id) =>
+          next.timelines[id]?.items.some((i) => i.toolCallId === d.thinkingId),
+        ) ?? next.currentRunId[thread]
+      if (!runId) break
+      // No hydration reset needed: items are created fresh during replay, so
+      // deltas rebuild the trace exactly once.
+      next = patchTimeline(next, runId, (t) => ({
+        ...t,
+        items: t.items.map((i) =>
+          i.toolCallId === d.thinkingId ? { ...i, trace: (i.trace ?? '') + d.text } : i,
+        ),
+      }))
+      break
+    }
+
+    case 'thinking.end': {
+      const d = ev.data as ThinkingEndEvent
+      if (!d?.thinkingId) break
+      const runId =
+        next.runOrder.find((id) =>
+          next.timelines[id]?.items.some((i) => i.toolCallId === d.thinkingId),
+        ) ?? next.currentRunId[thread]
+      if (!runId) break
+      next = ensureTimeline(next, runId, thread, at)
+      next = patchTimeline(next, runId, (t) => {
+        const firstStepAt = t.firstStepAt ?? at
+        const has = t.items.some((i) => i.toolCallId === d.thinkingId)
+        const items = has
+          ? t.items.map((i) =>
+              i.toolCallId === d.thinkingId
+                ? { ...i, status: 'ok' as const, endedAt: at, ms: d.ms }
+                : i,
+            )
+          : [
+              ...t.items,
+              // Edge: replay window started mid-run — create the row completed.
+              {
+                toolCallId: d.thinkingId,
+                kind: 'thinking',
+                name: 'thinking',
+                label: 'Thinking',
+                status: 'ok',
+                startedAt: at - (d.ms ?? 0),
+                endedAt: at,
+                ms: d.ms,
+              } satisfies TimelineItem,
+            ]
+        return { ...t, firstStepAt, items }
       })
       break
     }

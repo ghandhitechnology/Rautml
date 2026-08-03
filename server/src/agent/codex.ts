@@ -270,7 +270,10 @@ function buildBody(
     stream: true,
     include: [],
   };
-  if (reasoningEffort) body.reasoning = { effort: reasoningEffort };
+  // `summary: 'auto'` asks for the human-readable reasoning trace — the
+  // backend then streams response.reasoning_summary_text.delta events
+  // (verified live 2026-08).
+  if (reasoningEffort) body.reasoning = { effort: reasoningEffort, summary: 'auto' };
   return body;
 }
 
@@ -385,6 +388,7 @@ export async function codexStreamChat(options: StreamChatOptions): Promise<Strea
     toolChoice = 'auto',
     signal,
     onText,
+    onReasoning,
     onToolCallStart,
     onRetry,
     model,
@@ -402,6 +406,7 @@ export async function codexStreamChat(options: StreamChatOptions): Promise<Strea
     if (signal?.aborted) throw new AbortedError();
 
     let emittedText = false;
+    let emittedReasoning = false;
     let content = '';
     const toolCalls: ToolCall[] = [];
     const announced = new Set<string>();
@@ -423,6 +428,19 @@ export async function codexStreamChat(options: StreamChatOptions): Promise<Strea
             onText?.(delta);
             break;
           }
+          case 'response.reasoning_summary_text.delta': {
+            // Reasoning is not visible output — it must not set emittedText.
+            const delta = typeof ev.delta === 'string' ? ev.delta : '';
+            if (!delta) break;
+            emittedReasoning = true;
+            onReasoning?.(delta);
+            break;
+          }
+          case 'response.reasoning_summary_part.added':
+            // A new summary part starts; separate it from the previous one so
+            // parts read as paragraphs.
+            if (emittedReasoning) onReasoning?.('\n\n');
+            break;
           case 'response.output_item.added': {
             const item = ev.item;
             if (item?.type === 'function_call' && item.call_id && !announced.has(item.call_id)) {

@@ -187,6 +187,19 @@ export interface SubagentEndEvent {
   ok: boolean
   summary: string
 }
+export interface ThinkingStartEvent {
+  thinkingId: string
+}
+export interface ThinkingDeltaEvent {
+  thinkingId: string
+  /** Reasoning trace chunk — only trace-capable models emit these. */
+  text: string
+}
+export interface ThinkingEndEvent {
+  thinkingId: string
+  /** Total pause in ms, authoritative. */
+  ms: number
+}
 
 /** Every event type emitted by the server (CONTRACT.md § SSE events). */
 export const CHAT_EVENT_TYPES = [
@@ -208,6 +221,9 @@ export const CHAT_EVENT_TYPES = [
   'subagent.tool.start',
   'subagent.tool.end',
   'subagent.end',
+  'thinking.start',
+  'thinking.delta',
+  'thinking.end',
 ] as const
 
 export type ChatEventType = (typeof CHAT_EVENT_TYPES)[number]
@@ -223,6 +239,12 @@ export interface TimelineItem {
   summary?: string
   startedAt: number
   endedAt?: number
+  /** Row flavor — absent means 'tool'. Thinking rows use toolCallId = thinkingId. */
+  kind?: 'tool' | 'thinking'
+  /** Accumulated reasoning text (thinking items only). */
+  trace?: string
+  /** Finalized pause duration in ms (thinking items only). */
+  ms?: number
 }
 
 /** One research subagent spawned by a spawn_subagents call, with its own stream and tools. */

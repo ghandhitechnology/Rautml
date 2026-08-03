@@ -107,6 +107,9 @@ Types (data shape):
 - `message.complete` `{ messageId, content }`
 - `tool.start` `{ toolCallId, name, label }`  — label is human text, e.g. `Searching: “hormone cycles”`
 - `tool.end` `{ toolCallId, name, ok, summary }` — e.g. `8 results` / error text
+- `thinking.start` `{ thinkingId }` — the model round paused before visible output (first reasoning delta, or 1s of silence)
+- `thinking.delta` `{ thinkingId, text }` — reasoning trace chunk, only from models that stream one
+- `thinking.end` `{ thinkingId, ms }` — pause finished at first visible output (or round end); `ms` is authoritative
 - `asset.created` `{ asset: Asset, version: 1 }`
 - `asset.version` `{ assetId, version }`
 - `widget` `{ messageId, html }` — visualize_show_widget payload
@@ -135,6 +138,9 @@ Types (data shape):
   Retries: 3x exponential backoff on 429/5xx/network; a stream that stalls >120s or ends without a
   finish_reason counts as a network failure (not a finished answer). A retry closes any provisionally
   announced tool rows ("Connection dropped — retrying").
+- Thinking rows: per streamChat round, the pause before visible output is measured from dispatch;
+  `thinking.start` fires lazily (first reasoning delta or 1s of silence — faster rounds emit nothing) and the
+  first text/tool call closes it with `thinking.end`, whose `ms` is authoritative. Subagents are out of scope.
 - Tool result truncation: any tool result > 24k chars → truncate middle with `[…truncated…]`.
 - `ask_user_input_v0`: persist pending_input, emit input.request, set run status awaiting_input, **park** the
   loop (persist current turn state via model_turns; the resume endpoint re-enters the loop with the answer as
@@ -213,6 +219,8 @@ Motion: framer-motion; standard easing `[0.22, 1, 0.36, 1]`; durations 200–450
   Subagents render as nested groups under their spawn_subagents row (left rail, title + model pill + status), each
   with its own tool rows and streamed-text preview; a group is open while its subagent runs and collapses to one
   line when it reports (click toggles). Subagent steps count toward the strip's step total.
+  Thinking rows interleave with tool rows: live they read "Thinking · Xs", finalized "Thought for Xs", and
+  expand to show the reasoning trace when the model streamed one.
 - **AssetCard**: appears in flow at its message position. Expand-from-message animation (scale/opacity from the
   user's request bubble feel). Contains AssetFrame: `<iframe srcdoc>` **no sandbox attr** (full JS by design),
   style-isolated by nature of iframe; auto-height via injected script (ResizeObserver → postMessage '__rautml_h';

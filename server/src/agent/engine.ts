@@ -8,6 +8,7 @@
 // parked run survives a server restart; only in-flight streaming does not.
 
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { db, WORKSPACES_DIR } from '../db.js';
 import * as repo from '../repo.js';
 import * as sse from '../sse.js';
@@ -36,6 +37,8 @@ import {
 const MAX_TOOL_CALLS = envInt('RAUTML_MAX_TOOL_CALLS', 120);
 /** Tool results longer than this are truncated in the middle. */
 const TOOL_RESULT_MAX = 24_000;
+/** A round with no visible output for this long opens a thinking row. */
+const THINKING_THRESHOLD_MS = 1000;
 /**
  * Safety valve on model round-trips (each carries ≥1 tool call, so this only
  * binds pathological runs). Sized off the budget with slack for the wrap-up.
@@ -592,46 +595,88 @@ async function runLoop(ctx: LoopCtx): Promise<void> {
       // back if streamChat retries the attempt they belonged to.
       const earlyStarts = new Map<string, string>();
 
-      const result = await streamChat({
-        messages,
-        tools: wireTools.length > 0 ? wireTools : undefined,
-        // After the wrap-up nudge, deny tools so the model must answer.
-        toolChoice: nudged ? 'none' : 'auto',
-        model: ctx.model,
-        reasoningEffort: ctx.effort,
-        signal: controller.signal,
-        onText: (delta) => {
-          const id = openMessage();
-          liveText += delta;
-          emit(chatId, thread, 'message.delta', { messageId: id, text: delta });
-        },
-        // Surface each tool call the moment it appears in the stream — its
-        // arguments may take many seconds more to arrive, and this row is the
-        // only signal that the model is doing anything during that time.
-        onToolCallStart: (call) => {
-          if (earlyStarts.has(call.id)) return;
-          earlyStarts.set(call.id, call.name);
-          openMessage();
-          emit(chatId, thread, 'tool.start', {
-            toolCallId: call.id,
-            name: call.name,
-            label: pendingToolLabel(call.name),
-          });
-        },
-        onRetry: () => {
-          // The attempt these announcements came from is being abandoned;
-          // close their rows so they don't spin forever.
-          for (const [id, name] of earlyStarts) {
-            emit(chatId, thread, 'tool.end', {
-              toolCallId: id,
-              name,
-              ok: true,
-              summary: 'Connection dropped — retrying',
+      // Thinking row for this round: measures the pause before visible output.
+      // Opens lazily (first reasoning delta, or 1s of silence); the first
+      // visible output closes it for good — fast rounds emit nothing. A retry
+      // leaves it open: the wait is still pause time under the same id.
+      const thinkingId = randomUUID();
+      const dispatchAt = Date.now();
+      let thinkingOpen = false;
+      let thinkingDone = false;
+      let thinkingTimer: ReturnType<typeof setTimeout> | undefined = setTimeout(() => {
+        if (controller.signal.aborted || thinkingDone || thinkingOpen) return;
+        thinkingOpen = true;
+        emit(chatId, thread, 'thinking.start', { thinkingId });
+      }, THINKING_THRESHOLD_MS);
+      const endThinking = () => {
+        clearTimeout(thinkingTimer);
+        thinkingTimer = undefined;
+        if (thinkingDone) return;
+        thinkingDone = true;
+        if (thinkingOpen) {
+          emit(chatId, thread, 'thinking.end', { thinkingId, ms: Date.now() - dispatchAt });
+        }
+      };
+
+      let result;
+      try {
+        result = await streamChat({
+          messages,
+          tools: wireTools.length > 0 ? wireTools : undefined,
+          // After the wrap-up nudge, deny tools so the model must answer.
+          toolChoice: nudged ? 'none' : 'auto',
+          model: ctx.model,
+          reasoningEffort: ctx.effort,
+          signal: controller.signal,
+          onText: (delta) => {
+            endThinking();
+            const id = openMessage();
+            liveText += delta;
+            emit(chatId, thread, 'message.delta', { messageId: id, text: delta });
+          },
+          onReasoning: (delta) => {
+            if (thinkingDone) return;
+            if (!thinkingOpen) {
+              thinkingOpen = true;
+              emit(chatId, thread, 'thinking.start', { thinkingId });
+            }
+            emit(chatId, thread, 'thinking.delta', { thinkingId, text: delta });
+          },
+          // Surface each tool call the moment it appears in the stream — its
+          // arguments may take many seconds more to arrive, and this row is the
+          // only signal that the model is doing anything during that time.
+          onToolCallStart: (call) => {
+            endThinking();
+            if (earlyStarts.has(call.id)) return;
+            earlyStarts.set(call.id, call.name);
+            openMessage();
+            emit(chatId, thread, 'tool.start', {
+              toolCallId: call.id,
+              name: call.name,
+              label: pendingToolLabel(call.name),
             });
-          }
-          earlyStarts.clear();
-        },
-      });
+          },
+          onRetry: () => {
+            // The thinking row stays open — the retry wait is still pause time.
+            // The attempt these announcements came from is being abandoned;
+            // close their rows so they don't spin forever.
+            for (const [id, name] of earlyStarts) {
+              emit(chatId, thread, 'tool.end', {
+                toolCallId: id,
+                name,
+                ok: true,
+                summary: 'Connection dropped — retrying',
+              });
+            }
+            earlyStarts.clear();
+          },
+        });
+      } finally {
+        // A round that ends (or fails) with the row still open closes it here;
+        // an aborted run just drops the timer.
+        if (controller.signal.aborted) clearTimeout(thinkingTimer);
+        else endThinking();
+      }
 
       const hasToolCalls = result.toolCalls.length > 0;
 

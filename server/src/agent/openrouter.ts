@@ -68,6 +68,11 @@ export interface StreamChatOptions {
   /** Called for every text delta as it arrives. */
   onText?: (delta: string) => void;
   /**
+   * Called for every reasoning-trace delta (models that stream one). Reasoning
+   * is not visible output: it never counts as emitted text for retry purposes.
+   */
+  onReasoning?: (delta: string) => void;
+  /**
    * Called the moment a tool call first appears in the stream — long before its
    * arguments have finished arriving. Lets the caller surface activity early.
    * Fired at most once per tool call, and only when the provider sent an id.
@@ -290,6 +295,7 @@ export async function streamChat(options: StreamChatOptions): Promise<StreamResu
     toolChoice = 'auto',
     signal,
     onText,
+    onReasoning,
     onToolCallStart,
     onRetry,
     model = MODEL,
@@ -330,6 +336,16 @@ export async function streamChat(options: StreamChatOptions): Promise<StreamResu
         if (choice.finish_reason) finishReason = choice.finish_reason;
 
         const delta = choice.delta ?? {};
+
+        // OpenRouter's unified reasoning field is `reasoning`; some providers
+        // pass through `reasoning_content` instead.
+        const reasoning =
+          typeof delta.reasoning === 'string' && delta.reasoning.length > 0
+            ? delta.reasoning
+            : typeof delta.reasoning_content === 'string' && delta.reasoning_content.length > 0
+              ? delta.reasoning_content
+              : '';
+        if (reasoning) onReasoning?.(reasoning);
 
         if (typeof delta.content === 'string' && delta.content.length > 0) {
           content += delta.content;
