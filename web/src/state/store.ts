@@ -82,6 +82,12 @@ export interface StoreState {
   chatsLoading: boolean
   activeChatId: string | null
   byChat: Record<string, ChatState>
+  /**
+   * The chat spawned by "New chat" that nobody has typed into yet. It only ever
+   * exists while it is the active chat: clicking "New chat" again reuses it, and
+   * navigating anywhere else throws it away so the sidebar can't fill with blanks.
+   */
+  draftChatId: string | null
 
   /* model selection */
   models: ModelInfo[]
@@ -103,6 +109,8 @@ export interface StoreState {
   setModelPickerOpen: (open: boolean) => void
   loadChats: () => Promise<void>
   newChat: () => Promise<Chat | null>
+  /** Drop the untouched draft chat (list + server). No-op if it was typed into. */
+  discardDraft: () => void
   removeChat: (chatId: string) => Promise<void>
   openChat: (chatId: string) => Promise<void>
   closeChat: () => void
@@ -224,6 +232,26 @@ export function assetsNewestFirst(assets: Asset[]): Asset[] {
 
 function isLive(status: Run['status']): boolean {
   return status === 'running' || status === 'awaiting_input'
+}
+
+/** Something is in this chat: a message on either thread, or a run. */
+function hasContent(cs: ChatState | undefined): boolean {
+  if (!cs) return false
+  return (
+    cs.messages.main.length > 0 ||
+    cs.messages.fork.length > 0 ||
+    cs.runOrder.length > 0 ||
+    !!cs.activeRun.main ||
+    !!cs.activeRun.fork
+  )
+}
+
+/**
+ * Nothing has happened in this chat yet. `loaded` matters here — an unfetched
+ * chat looks empty but isn't *known* to be, so we don't treat it as blank.
+ */
+function isUntouched(cs: ChatState | undefined): boolean {
+  return !!cs && cs.loaded && !hasContent(cs)
 }
 
 /* --------------------------------------------------------------- reduction */
@@ -649,6 +677,9 @@ function patchActive(patch: (cs: ChatState) => ChatState) {
 
 let connection: SseConnection | null = null
 
+/** Guards against a double-click racing two POST /api/chats before either lands. */
+let creatingChat = false
+
 function disconnect() {
   connection?.close()
   connection = null
@@ -661,6 +692,7 @@ export const useStore = create<StoreState>()((set, get) => ({
   chatsLoading: false,
   activeChatId: null,
   byChat: {},
+  draftChatId: null,
 
   models: [],
   selectedModelId: readStoredModel(),
@@ -724,19 +756,57 @@ export const useStore = create<StoreState>()((set, get) => ({
   },
 
   newChat: async () => {
+    // A draft is untouched and already on screen by construction — hand it back.
+    const draftChatId = get().draftChatId
+    if (draftChatId) return get().chats.find((c) => c.id === draftChatId) ?? null
+    // Rapid clicks: the first create is still in flight, don't start a second.
+    if (creatingChat) return null
+    // Sitting in a blank chat from an earlier session? That *is* the new chat.
+    const activeChatId = get().activeChatId
+    if (activeChatId && isUntouched(get().byChat[activeChatId])) {
+      set({ draftChatId: activeChatId })
+      return get().chats.find((c) => c.id === activeChatId) ?? null
+    }
+
+    creatingChat = true
     try {
       const chat = await api.createChat()
-      set((s) => ({ chats: [chat, ...s.chats.filter((c) => c.id !== chat.id)], error: null }))
+      set((s) => ({
+        chats: [chat, ...s.chats.filter((c) => c.id !== chat.id)],
+        draftChatId: chat.id,
+        error: null,
+      }))
       await get().openChat(chat.id)
       return chat
     } catch (err) {
       set({ error: errorMessage(err) })
       return null
+    } finally {
+      creatingChat = false
     }
+  },
+
+  discardDraft: () => {
+    const draftChatId = get().draftChatId
+    if (!draftChatId) return
+    // Typed into after all — it graduated, just stop tracking it. (A draft that
+    // hasn't finished loading is still blank: we created it empty a moment ago.)
+    if (hasContent(get().byChat[draftChatId])) {
+      set({ draftChatId: null })
+      return
+    }
+    set((s) => {
+      const byChat = { ...s.byChat }
+      delete byChat[draftChatId]
+      return { chats: s.chats.filter((c) => c.id !== draftChatId), byChat, draftChatId: null }
+    })
+    // Best effort: the row is already gone, and a stranded empty chat is harmless.
+    void api.deleteChat(draftChatId).catch(() => {})
   },
 
   removeChat: async (chatId) => {
     const wasActive = get().activeChatId === chatId
+    if (get().draftChatId === chatId) set({ draftChatId: null })
     // optimistic — the row disappears the instant you click.
     const snapshot = get().chats
     set((s) => {
@@ -756,6 +826,8 @@ export const useStore = create<StoreState>()((set, get) => ({
   },
 
   openChat: async (chatId) => {
+    // Leaving an untouched new chat for another one: it goes back up.
+    if (get().draftChatId && get().draftChatId !== chatId) get().discardDraft()
     if (get().activeChatId === chatId && get().byChat[chatId]?.loaded) return
     disconnect()
 
@@ -812,6 +884,7 @@ export const useStore = create<StoreState>()((set, get) => ({
   },
 
   closeChat: () => {
+    get().discardDraft()
     disconnect()
     set({ activeChatId: null, forkOpen: false, connection: 'closed' })
   },
@@ -838,6 +911,8 @@ export const useStore = create<StoreState>()((set, get) => ({
       if (!current) return {}
       return {
         error: null,
+        // Typed into — it's a real conversation now, not a discardable draft.
+        draftChatId: s.draftChatId === chatId ? null : s.draftChatId,
         byChat: {
           ...s.byChat,
           [chatId]: {
@@ -1024,6 +1099,11 @@ export function activeChatState(state: StoreState): ChatState | null {
 }
 
 export const useChats = () => useStore((s) => s.chats)
+
+/** The open chat is a blank one — "New chat" has nothing left to create. */
+export const useOnBlankChat = () =>
+  useStore((s) => !!s.activeChatId && isUntouched(s.byChat[s.activeChatId]))
+
 export const useActiveChatId = () => useStore((s) => s.activeChatId)
 export const useActiveChat = () => useStore(activeChatState)
 export const useChatMeta = () => useStore((s) => activeChatState(s)?.chat ?? null)
