@@ -100,24 +100,32 @@ export const DESIGN_README = `# Rautml Asset Design Constitution
 Binding constraints for every HTML asset you produce. Ignoring these produces a
 worse artifact, not a different style. Read once, then build.
 
+The standard: a page that looks commissioned, not generated. Design it the way a
+careful magazine editor would — the layout grows out of *this* subject's material.
+If the page would look the same with the topic swapped out, it is a template, and
+templates are the failure mode.
+
 ## 1. Page frame
 - One column, content max-width 68ch for prose / 1080px for mixed layouts, centered.
 - Page padding: 24px on mobile, 48px from 768px, 72px from 1200px. Never let text touch the edge.
 - \`box-sizing: border-box\` globally. \`overflow-x: hidden\` on the body — the page must never scroll sideways.
-- Start with a masthead: an eyebrow label (11px, uppercase, letter-spaced 0.12em, muted), the title, and a one-line
-  standfirst that says what the reader is about to learn. Then a hairline rule. That's the contract with the reader.
+- Open with the title and, if useful, a one-line standfirst — then get into the material.
+  **No eyebrow/kicker label above the title** (the 11px uppercase letter-spaced tag), no metadata row of
+  dots and dividers, no numbered section prefixes (01 · 02 · 03). Headings carry their own weight.
 
 ## 2. Typographic scale (1.25 ratio, do not improvise)
 - 12 / 14 / 16 / 20 / 25 / 31 / 39 / 49px. Body 16–17px, line-height 1.65. Captions 14px, line-height 1.5.
 - Display headings 39–49px with line-height 1.1 and \`letter-spacing: -0.02em\`; section heads 25–31px, line-height 1.25.
 - Exactly two families: one for display/headings, one for text — or one family across two weights. Never three.
+- Choose the display face for *this* subject — a piece on Joseon ceramics, a battery teardown and a poetry
+  survey should not share one look. A serif display (Lora, Fraunces, Newsreader via Google Fonts) is usually
+  richer than bold geometric sans, which is the default everyone expects.
 - Korean-safe stack, required whenever Korean can appear:
   \`font-family: Pretendard, "Pretendard Variable", -apple-system, BlinkMacSystemFont, "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;\`
   Load via CDN: \`<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">\`
-  For a display serif, Google Fonts (Lora, Fraunces, Newsreader) is allowed. Latin-only serifs must never be first
-  in the stack for Korean text — put the Korean sans immediately after.
+  Latin-only serifs must never be first in the stack for Korean text — put the Korean sans immediately after.
 - \`word-break: keep-all\` on Korean prose blocks so words don't split mid-syllable-cluster.
-- Numerals in tables and stats: \`font-variant-numeric: tabular-nums\`.
+- Numerals in tables and data: \`font-variant-numeric: tabular-nums\`.
 
 ## 3. Spacing rhythm
 - One 8px base unit: 4 / 8 / 12 / 16 / 24 / 32 / 48 / 64 / 96. No 15px, no 37px.
@@ -127,11 +135,13 @@ worse artifact, not a different style. Read once, then build.
 
 ## 4. Colour discipline
 - Neutral base + **at most two accent hues**, and one of them should be rare (used for a single highlight).
-- Never pure #000 on #fff. Warm-neutral pairing, e.g. text \`#1f1e1d\` on \`#faf9f5\`, muted text \`#73726c\`,
-  hairlines \`#e8e6dc\`, accent \`#d97757\`. Body text contrast ≥ 7:1; muted text ≥ 4.5:1.
+- Let the subject pick the accent — volcanic iron red, celadon green, deep archival blue — not a default
+  tech palette. Never pure #000 on #fff; warm or cool the neutrals to match.
+  Body text contrast ≥ 7:1; muted text ≥ 4.5:1.
 - Define everything as CSS custom properties on \`:root\` — colours, radii, shadows. Zero hard-coded hex below \`:root\`.
 - Charts: sequential data uses one hue's lightness ramp; categorical uses at most 5 hues, distinguishable in greyscale.
-- Backgrounds are flat or a single subtle gradient. No rainbow gradients, no glassmorphism, no neon glow.
+- Backgrounds are flat or a single subtle gradient. No rainbow gradients, no gradient text, no glassmorphism,
+  no neon glow.
 
 ## 5. Dark mode (mandatory)
 \`\`\`css
@@ -140,33 +150,46 @@ worse artifact, not a different style. Read once, then build.
   :root { --bg:#262624; --surface:#30302e; --text:#f5f4ee; --muted:#a8a69e; --line:#3f3e3a; --accent:#e08b6f; }
 }
 \`\`\`
+(Example values — swap in your own palette, keep the structure.)
 - Dark mode is not inverted light mode: lower saturation, raise accent lightness, soften shadows into borders.
 - Test every surface, border, chart fill and hotlinked image against both. Images with white backgrounds need a
   container background, not a filter.
 
-## 6. Structure and components
-- Cards: \`border: 1px solid var(--line)\`, radius 12–16px, padding 24–32px, shadow at most \`0 1px 3px rgb(0 0 0 / .06)\`.
-  Border *or* shadow, not both loud. Radii are consistent across the page — pick 12 or 16 and stay there.
-- Tables: no vertical rules, 1px horizontal hairlines, left-aligned text, right-aligned numbers, 12px cell padding,
-  sticky header if more than 12 rows. Wrap in \`overflow-x: auto\` so wide tables scroll inside themselves.
-- Stat blocks: big number (39px, tight), label above (12px uppercase muted), one-line source note below.
-- Every chart/diagram gets a caption that states the takeaway, not the mechanics. "Fertility fell below replacement
-  in 1983" beats "Line chart of fertility rate by year".
+## 6. Structure — the shape comes from the content
+- Ask what the material *is* and set it that way: a chronology reads as a timeline down the page, a comparison
+  as a ruled table, a process as annotated steps, an argument as running prose with figures where the evidence
+  lands. Sections may differ in width, density and treatment — a page of identical blocks is a wireframe.
+- **Banned furniture** (the generated-page tells): grids of same-size cards as the page's skeleton; the
+  stat-hero block (huge number, small uppercase label) and rows of them; decorative icons in tinted circles;
+  emoji standing in for icons; three-column "feature" layouts. If data matters, set it in a sentence or a
+  table where it has context — "12,756 km across, the largest rocky planet" beats a lonely big number.
+- Cards are for genuinely parallel, self-contained items (three cited studies, four contenders), never for
+  chopping an argument into boxes. When used: \`border: 1px solid var(--line)\`, radius 12–16px, padding
+  24–32px, border *or* a whisper shadow, one radius across the page. Never nest cards.
+- Tables: no vertical rules, 1px horizontal hairlines, left-aligned text, right-aligned numbers, 12px cell
+  padding, sticky header past 12 rows. Wrap in \`overflow-x: auto\` so wide tables scroll inside themselves.
+- Every chart/diagram gets a caption that states the takeaway, not the mechanics. "Fertility fell below
+  replacement in 1983" beats "Line chart of fertility rate by year".
 
 ## 7. Responsive
 - Mobile-first. Fluid type: \`font-size: clamp(16px, 1rem + 0.2vw, 17px)\`; display: \`clamp(31px, 5vw, 49px)\`.
-- Grids collapse via \`grid-template-columns: repeat(auto-fit, minmax(260px, 1fr))\` — few or no explicit breakpoints.
+- Multi-column arrangements collapse cleanly (\`repeat(auto-fit, minmax(260px, 1fr))\` or explicit breakpoints).
 - Touch targets ≥ 44px. Test mentally at 360px wide: nothing clipped, nothing overlapping, no horizontal scrollbar.
 
 ## 8. Motion
 - Transitions animate \`transform\` and \`opacity\` only. 180–320ms, \`cubic-bezier(0.22, 1, 0.36, 1)\`.
 - Hover states are *quiet*: a 1–2px lift, a border tint, an underline drawing in. Nothing bounces or spins.
-- Reveal-on-scroll (IntersectionObserver, one-shot, ≤240ms fade+8px rise) is welcome; scroll-jacking never is.
+- One authored moment at most — a reveal on the page's key figure, a diagram that assembles. The same
+  fade-up applied to every section is wallpaper, not design. Scroll-jacking never.
 - Always honour \`@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }\`.
 - Interactive elements need a visible \`:focus-visible\` ring. Keyboard users are users.
 
-## 9. Content integrity
+## 9. Content integrity and voice
 - Real, researched content only. No lorem ipsum, no placeholder names, no invented statistics, no fake chart data.
+- Headings state findings, not categories: "The ocean does the cooling", not "Key Facts" or "Earth in four
+  facts". If a heading could sit on any other topic's page, sharpen it.
+- Write like a good feature, not a brochure: no throat-clearing intros, no "In conclusion", no breathless
+  superlatives the sources don't support.
 - Every non-obvious number carries its unit, its year, and its source.
 - If a figure is uncertain or disputed, show the range and say who disagrees.
 - Alt text on every meaningful image; \`aria-hidden="true"\` on decorative ones. Semantic tags: \`<article>\`,
@@ -177,8 +200,10 @@ worse artifact, not a different style. Read once, then build.
   pages you actually read — linked title, then the domain in muted 14px text. Add a generation date line.
 - If you used an image you did not create, credit it there too.
 
-**Self-check before you finish:** one column that breathes · two type sizes doing 80% of the work · one accent ·
-both colour schemes correct · nothing at 360px is clipped · every number sourced · the footer lists real URLs.`;
+**Self-check before you finish:** one column that breathes · the layout could only belong to this topic ·
+no eyebrow labels, numbered sections, stat heroes or card-grid skeletons · headings state findings · one
+accent, both colour schemes correct · nothing at 360px is clipped · every number sourced · the footer lists
+real URLs.`;
 
 /** System prompt for the cheap auto-title call. */
 export const TITLE_SYSTEM_PROMPT = `You write chat titles. Given the first exchange of a conversation, reply with a title of at most 5 words that names the topic. Write it in the same language the user wrote in. No quotes, no trailing punctuation, no "Chat about". Reply with the title and nothing else.`;

@@ -53,13 +53,21 @@
   opacity: 0.9;
 }
 
+/* the field's focus-within border + halo carry focus — no inner second ring */
+.rml-forkcomposer__input:focus-visible {
+  outline: none;
+}
+
 .rml-forkcomposer__input:disabled {
   opacity: 0.55;
 }
 
-.rml-forkcomposer__model {
-  /* optically centers the 26px chip against the 30px send button */
-  margin-bottom: 2px;
+.rml-forkcomposer__row {
+  display: flex;
+  align-items: center;
+  margin-top: 4px;
+  /* aligns the label's text with the field's inner padding */
+  margin-left: 3px;
 }
 
 /* ----------------------------------------------------------------- buttons */

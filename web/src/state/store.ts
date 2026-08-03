@@ -103,6 +103,10 @@ export interface StoreState {
   selectedModelId: string | null
   /** Chosen effort per model id, so switching models remembers each one's dial. */
   effortByModel: Record<string, string>
+  /** Fork-thread override. `null` inherits the main selection until the user picks in the fork. */
+  forkModelId: string | null
+  /** Fork-thread effort overrides — never leak into the main chat's dials. */
+  forkEffortByModel: Record<string, string>
   /** How much the next answer explains domain terms (the audience pebble). */
   elaboration: ElaborationLevel
 
@@ -116,6 +120,8 @@ export interface StoreState {
   loadModels: () => Promise<void>
   setModel: (modelId: string) => void
   setEffort: (effort: string) => void
+  setForkModel: (modelId: string) => void
+  setForkEffort: (effort: string) => void
   setElaboration: (level: ElaborationLevel) => void
   loadChats: () => Promise<void>
   newChat: () => Promise<Chat | null>
@@ -178,6 +184,8 @@ export function initTheme(): ThemeName {
 
 const MODEL_KEY = 'rautml.model'
 const EFFORT_KEY = 'rautml.efforts'
+const FORK_MODEL_KEY = 'rautml.forkModel'
+const FORK_EFFORT_KEY = 'rautml.forkEfforts'
 const ELABORATION_KEY = 'rautml.elaboration'
 
 export const ELABORATION_LEVELS: ElaborationLevel[] = ['undergraduate', 'bachelors', 'doctor']
@@ -195,17 +203,17 @@ function readStoredElaboration(): ElaborationLevel {
   }
 }
 
-function readStoredModel(): string | null {
+function readStoredModel(key: string = MODEL_KEY): string | null {
   try {
-    return localStorage.getItem(MODEL_KEY)
+    return localStorage.getItem(key)
   } catch {
     return null
   }
 }
 
-function readStoredEfforts(): Record<string, string> {
+function readStoredEfforts(key: string = EFFORT_KEY): Record<string, string> {
   try {
-    const raw = localStorage.getItem(EFFORT_KEY)
+    const raw = localStorage.getItem(key)
     const parsed = raw ? JSON.parse(raw) : null
     if (!parsed || typeof parsed !== 'object') return {}
     const out: Record<string, string> = {}
@@ -220,6 +228,16 @@ function persistSelection(modelId: string | null, efforts: Record<string, string
   try {
     if (modelId) localStorage.setItem(MODEL_KEY, modelId)
     localStorage.setItem(EFFORT_KEY, JSON.stringify(efforts))
+  } catch {
+    /* private mode — selection just won't persist */
+  }
+}
+
+function persistForkSelection(modelId: string | null, efforts: Record<string, string>) {
+  try {
+    if (modelId) localStorage.setItem(FORK_MODEL_KEY, modelId)
+    else localStorage.removeItem(FORK_MODEL_KEY)
+    localStorage.setItem(FORK_EFFORT_KEY, JSON.stringify(efforts))
   } catch {
     /* private mode — selection just won't persist */
   }
@@ -901,6 +919,8 @@ export const useStore = create<StoreState>()((set, get) => ({
   models: [],
   selectedModelId: readStoredModel(),
   effortByModel: readStoredEfforts(),
+  forkModelId: readStoredModel(FORK_MODEL_KEY),
+  forkEffortByModel: readStoredEfforts(FORK_EFFORT_KEY),
   elaboration: readStoredElaboration(),
 
   theme: typeof document !== 'undefined' && document.documentElement.dataset.theme === 'dark'
@@ -924,8 +944,17 @@ export const useStore = create<StoreState>()((set, get) => ({
           const remembered = s.effortByModel[m.id]
           if (remembered && m.efforts.includes(remembered)) effortByModel[m.id] = remembered
         }
+        // Same hygiene for the fork override; a stale model falls back to inherit.
+        const forkModelId =
+          s.forkModelId && models.some((m) => m.id === s.forkModelId) ? s.forkModelId : null
+        const forkEffortByModel: Record<string, string> = {}
+        for (const m of models) {
+          const remembered = s.forkEffortByModel[m.id]
+          if (remembered && m.efforts.includes(remembered)) forkEffortByModel[m.id] = remembered
+        }
         persistSelection(selectedModelId, effortByModel)
-        return { models, selectedModelId, effortByModel }
+        persistForkSelection(forkModelId, forkEffortByModel)
+        return { models, selectedModelId, effortByModel, forkModelId, forkEffortByModel }
       })
     } catch (err) {
       // The composer falls back to the server-side default model; not fatal.
@@ -947,6 +976,23 @@ export const useStore = create<StoreState>()((set, get) => ({
       const effortByModel = { ...s.effortByModel, [model.id]: effort }
       persistSelection(s.selectedModelId, effortByModel)
       return { effortByModel }
+    }),
+
+  setForkModel: (modelId) =>
+    set((s) => {
+      if (!s.models.some((m) => m.id === modelId)) return {}
+      persistForkSelection(modelId, s.forkEffortByModel)
+      return { forkModelId: modelId }
+    }),
+
+  setForkEffort: (effort) =>
+    set((s) => {
+      const id = s.forkModelId ?? s.selectedModelId
+      const model = s.models.find((m) => m.id === id)
+      if (!model || !model.efforts.includes(effort)) return {}
+      const forkEffortByModel = { ...s.forkEffortByModel, [model.id]: effort }
+      persistForkSelection(s.forkModelId, forkEffortByModel)
+      return { forkEffortByModel }
     }),
 
   setElaboration: (level) => {
@@ -1189,12 +1235,17 @@ export const useStore = create<StoreState>()((set, get) => ({
     })
 
     try {
-      const { models, selectedModelId, effortByModel, elaboration } = get()
-      const model = models.find((m) => m.id === selectedModelId)
+      const { models, selectedModelId, effortByModel, forkModelId, forkEffortByModel, elaboration } =
+        get()
+      // The fork carries its own selection; untouched, it inherits the main pair.
+      const resolvedId = thread === 'fork' ? (forkModelId ?? selectedModelId) : selectedModelId
+      const model = models.find((m) => m.id === resolvedId)
+      const resolvedEffort = (id: string, fallback: string) =>
+        thread === 'fork'
+          ? (forkEffortByModel[id] ?? effortByModel[id] ?? fallback)
+          : (effortByModel[id] ?? fallback)
       const selection = {
-        ...(model
-          ? { model: model.id, effort: effortByModel[model.id] ?? model.defaultEffort }
-          : {}),
+        ...(model ? { model: model.id, effort: resolvedEffort(model.id, model.defaultEffort) } : {}),
         elaboration,
       }
       const { runId } = await api.sendMessage(chatId, trimmed, thread, selection)
@@ -1480,6 +1531,23 @@ export const useSelectedEffort = () =>
     const model = s.models.find((m) => m.id === s.selectedModelId) ?? s.models[0]
     if (!model) return null
     const remembered = s.effortByModel[model.id]
+    return remembered && model.efforts.includes(remembered) ? remembered : model.defaultEffort
+  })
+
+/** The fork's model — its own override, or the main selection until one is made. */
+export const useForkSelectedModel = () =>
+  useStore(
+    (s) =>
+      s.models.find((m) => m.id === (s.forkModelId ?? s.selectedModelId)) ?? s.models[0] ?? null,
+  )
+
+/** The effort in force for the fork's model: fork dial, else main dial, else default. */
+export const useForkSelectedEffort = () =>
+  useStore((s) => {
+    const model =
+      s.models.find((m) => m.id === (s.forkModelId ?? s.selectedModelId)) ?? s.models[0]
+    if (!model) return null
+    const remembered = s.forkEffortByModel[model.id] ?? s.effortByModel[model.id]
     return remembered && model.efforts.includes(remembered) ? remembered : model.defaultEffort
   })
 

@@ -59,6 +59,91 @@
   width: 272px;
 }
 
+/* --------------------------------------------- inline hover (fork field) */
+
+.rml-model__inline-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px 0 9px;
+  border-radius: var(--r-pill);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 550;
+  letter-spacing: -0.004em;
+  white-space: nowrap;
+  transition:
+    color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+
+.rml-model__inline-chip:hover,
+.rml-model__inline-chip.is-open {
+  color: var(--text);
+  background: var(--hover);
+}
+
+/* Left-anchored to the toggle under the field, so the menu opens inward and
+ * stays inside the fork panel. */
+.rml-model__menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 40;
+  width: min(272px, calc(100vw - 32px));
+  padding: var(--sp-1);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  transform-origin: bottom left;
+}
+
+.rml-model__menu-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rml-model__menu-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: var(--r-sm);
+  text-align: left;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+.rml-model__menu-option:hover {
+  background: var(--hover);
+}
+
+.rml-model__menu-option.is-selected {
+  background: var(--accent-soft);
+}
+
+.rml-model__menu-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+  font-weight: 550;
+  letter-spacing: -0.006em;
+  color: var(--text);
+}
+
+.rml-model__menu-provider {
+  flex: 0 0 auto;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  opacity: 0.85;
+}
+
 /* ---------------------------------------------------------------- popover */
 
 .rml-model__pop {

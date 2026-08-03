@@ -1,8 +1,9 @@
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useChatMeta, useConnection, useForkOpen, useStore, useStoreError } from '../../state/store'
 import { cx } from '../../lib/utils'
 import { EASE } from '../../lib/motion'
+import { Icon } from '../chat/icons'
 import ChatListSidebar from './ChatListSidebar'
 import Composer from './Composer'
 import ThemeToggle from './ThemeToggle'
@@ -48,21 +49,66 @@ export function Layout({
   const error = useStoreError()
   const dismissError = useStore((s) => s.dismissError)
 
+  /* Small screens collapse the sidebar into an off-canvas drawer. The state is
+   * harmless on desktop: the drawer classes only take effect under 640px. */
+  const [navOpen, setNavOpen] = useState(false)
+  const chatId = chat?.id
+  useEffect(() => {
+    setNavOpen(false)
+  }, [chatId])
+  useEffect(() => {
+    if (!navOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setNavOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [navOpen])
+
   return (
     <div
       className={cx(
         'rml-shell',
         forkOpen && 'is-fork-open',
         documentMode && 'is-document',
+        navOpen && 'is-nav-open',
         className,
       )}
     >
       <aside className="rml-shell__sidebar">{sidebar ?? <ChatListSidebar />}</aside>
 
+      {navOpen ? (
+        <button
+          type="button"
+          className="rml-shell__scrim"
+          aria-label="Close the conversation list"
+          onClick={() => setNavOpen(false)}
+        />
+      ) : null}
+
       <main className="rml-shell__main">
-        {documentMode ? null : (
+        {documentMode ? (
+          <button
+            type="button"
+            className="rml-shell__nav-fab"
+            aria-label="Show conversations"
+            aria-expanded={navOpen}
+            onClick={() => setNavOpen(true)}
+          >
+            <Icon name="menu" size={16} />
+          </button>
+        ) : (
         <header className="rml-topbar">
           <div className="rml-topbar__lead">
+            <button
+              type="button"
+              className="rml-topbar__menu"
+              aria-label="Show conversations"
+              aria-expanded={navOpen}
+              onClick={() => setNavOpen(true)}
+            >
+              <Icon name="menu" size={16} />
+            </button>
             <h1 className="rml-topbar__title" title={chat?.title}>
               <TypewriterText text={chat?.title ?? 'Rautml'} />
             </h1>
