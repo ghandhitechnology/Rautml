@@ -280,4 +280,9 @@
   .rml-dochead__divider:last-of-type {
     display: none;
   }
+
+  /* room for the shell's drawer button sitting level with the bar */
+  .rml-dochead__bar {
+    margin-left: 58px;
+  }
 }

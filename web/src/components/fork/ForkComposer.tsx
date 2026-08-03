@@ -3,8 +3,8 @@
  * Autosizing textarea, Enter to send, Shift+Enter for a newline, and an IME
  * guard so a Korean composition commit never fires a send. Sends through
  * store.sendMessage('fork', …); swaps to a stop button while the fork run
- * streams. Carries a compact ModelPicker so model + effort can be changed from
- * the sidebar too — it is the same global selection the main composer shows.
+ * streams. Carries the fork-scoped ModelPicker toggle: the side thread keeps
+ * its own model + effort pair and never changes the main chat's.
  */
 
 import {
@@ -46,13 +46,33 @@ export function ForkComposer({
   const canSend = value.trim().length > 0 && !running && !disabled
 
   // autosize: collapse, then grow to content, capped.
-  useLayoutEffect(() => {
+  const autosize = useCallback(() => {
     const el = ref.current
     if (!el) return
     el.style.height = 'auto'
     el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT)}px`
     el.style.overflowY = el.scrollHeight > MAX_HEIGHT ? 'auto' : 'hidden'
-  }, [value])
+  }, [])
+
+  useLayoutEffect(() => {
+    autosize()
+  }, [value, autosize])
+
+  // The fork column animates open from zero width, so the mount-time measure
+  // sees the placeholder wrapped one glyph per line and caps the field tall.
+  // Re-measure whenever the textarea's real width changes.
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    let lastWidth = el.clientWidth
+    const ro = new ResizeObserver(() => {
+      if (el.clientWidth === lastWidth) return
+      lastWidth = el.clientWidth
+      autosize()
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [autosize])
 
   // Wait for the panel's enter spring to settle before focusing — immediate
   // focus makes the shell fork column scrollLeft to chase the field and leaves
@@ -96,9 +116,6 @@ export function ForkComposer({
           spellCheck={false}
           aria-label="Follow-up message"
         />
-
-        {/* Same global model + effort selection as the main composer. */}
-        <ModelPicker compact className="rml-forkcomposer__model" />
 
         <AnimatePresence initial={false} mode="popLayout">
           {running ? (
@@ -145,6 +162,13 @@ export function ForkComposer({
             </motion.button>
           )}
         </AnimatePresence>
+      </div>
+
+      {/* The fork's own model + effort, as a quiet toggle under the field —
+          inherits the main selection until changed here, and changing it here
+          never touches the main chat's pair. */}
+      <div className="rml-forkcomposer__row">
+        <ModelPicker inline thread="fork" className="rml-forkcomposer__model" />
       </div>
     </div>
   )

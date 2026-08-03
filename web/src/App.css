@@ -35,3 +35,14 @@
   bottom: calc(var(--sp-5) + 78px);
   z-index: 20;
 }
+
+@media (max-width: 640px) {
+  .rml-slot--ball {
+    right: var(--sp-4);
+  }
+
+  /* the phone composer wraps its pickers onto a second row — clear the taller dock */
+  .rml-shell.is-document .rml-slot--ball {
+    bottom: calc(var(--sp-4) + 112px);
+  }
+}

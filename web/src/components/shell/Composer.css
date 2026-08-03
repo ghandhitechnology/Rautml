@@ -54,8 +54,9 @@
 }
 
 .rml-composer__input::placeholder {
+  /* full-strength muted ink — 0.85 opacity dropped it under the 4.5:1 floor */
   color: var(--text-muted);
-  opacity: 0.85;
+  opacity: 1;
 }
 
 .rml-composer__input:disabled {
@@ -167,6 +168,34 @@
   border-radius: 5px;
   background: var(--surface-2);
   color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------- phone */
+
+/* The audience/model chips leave the input line and settle under it, so the
+ * text field keeps its full measure on narrow screens. */
+@media (max-width: 640px) {
+  .rml-composer__field {
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .rml-composer__input {
+    flex: 1 1 100%;
+  }
+
+  .rml-composer__model {
+    margin-bottom: 0;
+  }
+
+  /* chips group left, send stays right */
+  .rml-composer__actions {
+    margin-left: auto;
+  }
+
+  .rml-composer__footnote {
+    display: none;
+  }
 }
 
 /* ------------------------------------------------------------- compact (fork) */

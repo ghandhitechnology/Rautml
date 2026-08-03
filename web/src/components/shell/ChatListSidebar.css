@@ -222,6 +222,14 @@
   transform: scale(1);
 }
 
+/* no hover on touch — the active row keeps its delete reachable */
+@media (hover: none) {
+  .rml-chatrow.is-active .rml-chatrow__delete {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 .rml-chatrow__delete:hover {
   background: var(--pressed);
   color: var(--accent-hover);

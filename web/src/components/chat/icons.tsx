@@ -24,6 +24,7 @@ export type IconName =
   | 'code'
   | 'chat'
   | 'stack'
+  | 'menu'
 
 const PATHS: Record<IconName, ReactNode> = {
   search: (
@@ -143,6 +144,12 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="m12 3.6 8.4 4.2-8.4 4.2-8.4-4.2z" />
       <path d="m3.6 12.4 8.4 4.2 8.4-4.2" />
       <path d="m3.6 16.6 8.4 4.2 8.4-4.2" />
+    </>
+  ),
+  menu: (
+    <>
+      <path d="M4.2 8.4h15.6" />
+      <path d="M4.2 15.6h11.2" />
     </>
   ),
 }
