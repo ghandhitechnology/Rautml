@@ -28,6 +28,24 @@ export interface Run {
   chatId: string
   thread: Thread
   status: RunStatus
+  /** OpenRouter model id the run was started with (absent on legacy rows). */
+  model?: string
+  /** Provider reasoning effort the run was started with. */
+  effort?: string
+}
+
+/** One selectable model in the composer (GET /api/models). */
+export interface ModelInfo {
+  /** OpenRouter model id, e.g. 'openai/gpt-5.6-sol'. */
+  id: string
+  name: string
+  /** Compact label for the composer chip, e.g. 'Sol'. */
+  shortName: string
+  provider: string
+  description: string
+  /** Provider reasoning-effort wire values, in ascending order. */
+  efforts: string[]
+  defaultEffort: string
 }
 
 export interface Asset {

@@ -17,6 +17,7 @@ import path from 'node:path';
 import { Router, type Request, type Response } from 'express';
 import { WORKSPACES_DIR } from '../db.js';
 import * as engine from '../agent/engine.js';
+import { DEFAULT_MODEL_ID, MODELS, resolveSelection } from '../agent/models.js';
 import * as repo from '../repo.js';
 import * as sse from '../sse.js';
 import type { Message, Thread } from '../types.js';
@@ -55,6 +56,14 @@ function allMessages(chatId: string): Message[] {
 
 router.get('/health', (_req: Request, res: Response) => {
   res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// models — the selectable catalog (ids, labels, per-provider effort levels)
+// ---------------------------------------------------------------------------
+
+router.get('/models', (_req: Request, res: Response) => {
+  res.json({ models: MODELS, defaultModelId: DEFAULT_MODEL_ID });
 });
 
 // ---------------------------------------------------------------------------
@@ -115,6 +124,11 @@ router.post('/chats/:id/messages', async (req: Request, res: Response) => {
   const thread = parseThread(req.body?.thread);
   if (!thread) return fail(res, 400, "thread must be 'main' or 'fork'");
 
+  const model = typeof req.body?.model === 'string' ? req.body.model : undefined;
+  const effort = typeof req.body?.effort === 'string' ? req.body.effort : undefined;
+  const selection = resolveSelection(model, effort);
+  if (typeof selection === 'string') return fail(res, 400, selection);
+
   const active = repo.getActiveRun(chatId, thread);
   if (active) {
     return res
@@ -123,7 +137,7 @@ router.post('/chats/:id/messages', async (req: Request, res: Response) => {
   }
 
   try {
-    const { runId } = await engine.startRun(chatId, thread, content);
+    const { runId } = await engine.startRun(chatId, thread, content, selection);
     res.json({ runId });
   } catch (err) {
     console.error('[api] startRun failed', err);

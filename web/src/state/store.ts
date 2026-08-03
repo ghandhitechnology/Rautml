@@ -25,6 +25,7 @@ import type {
   MessageCompleteEvent,
   MessageDeltaEvent,
   MessageStartEvent,
+  ModelInfo,
   PendingInput,
   PresentedFile,
   Run,
@@ -82,13 +83,24 @@ export interface StoreState {
   activeChatId: string | null
   byChat: Record<string, ChatState>
 
+  /* model selection */
+  models: ModelInfo[]
+  selectedModelId: string | null
+  /** Chosen effort per model id, so switching models remembers each one's dial. */
+  effortByModel: Record<string, string>
+
   /* ui */
   theme: ThemeName
   forkOpen: boolean
+  modelPickerOpen: boolean
   connection: SseStatus
   error: string | null
 
   /* actions */
+  loadModels: () => Promise<void>
+  setModel: (modelId: string) => void
+  setEffort: (effort: string) => void
+  setModelPickerOpen: (open: boolean) => void
   loadChats: () => Promise<void>
   newChat: () => Promise<Chat | null>
   removeChat: (chatId: string) => Promise<void>
@@ -141,6 +153,41 @@ export function initTheme(): ThemeName {
   const theme = readStoredTheme() ?? systemTheme()
   applyThemeToDom(theme)
   return theme
+}
+
+/* ---------------------------------------------------------- model selection */
+
+const MODEL_KEY = 'rautml.model'
+const EFFORT_KEY = 'rautml.efforts'
+
+function readStoredModel(): string | null {
+  try {
+    return localStorage.getItem(MODEL_KEY)
+  } catch {
+    return null
+  }
+}
+
+function readStoredEfforts(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(EFFORT_KEY)
+    const parsed = raw ? JSON.parse(raw) : null
+    if (!parsed || typeof parsed !== 'object') return {}
+    const out: Record<string, string> = {}
+    for (const [k, v] of Object.entries(parsed)) if (typeof v === 'string') out[k] = v
+    return out
+  } catch {
+    return {}
+  }
+}
+
+function persistSelection(modelId: string | null, efforts: Record<string, string>) {
+  try {
+    if (modelId) localStorage.setItem(MODEL_KEY, modelId)
+    localStorage.setItem(EFFORT_KEY, JSON.stringify(efforts))
+  } catch {
+    /* private mode — selection just won't persist */
+  }
 }
 
 /* --------------------------------------------------------------- factories */
@@ -615,12 +662,56 @@ export const useStore = create<StoreState>()((set, get) => ({
   activeChatId: null,
   byChat: {},
 
+  models: [],
+  selectedModelId: readStoredModel(),
+  effortByModel: readStoredEfforts(),
+
   theme: typeof document !== 'undefined' && document.documentElement.dataset.theme === 'dark'
     ? 'dark'
     : 'light',
   forkOpen: false,
+  modelPickerOpen: false,
   connection: 'closed',
   error: null,
+
+  loadModels: async () => {
+    try {
+      const { models, defaultModelId } = await api.listModels()
+      set((s) => {
+        // Stale localStorage (a model removed from the catalog) falls back to the default.
+        const stored = s.selectedModelId
+        const selectedModelId =
+          stored && models.some((m) => m.id === stored) ? stored : defaultModelId
+        // Drop remembered efforts that the provider no longer offers.
+        const effortByModel: Record<string, string> = {}
+        for (const m of models) {
+          const remembered = s.effortByModel[m.id]
+          if (remembered && m.efforts.includes(remembered)) effortByModel[m.id] = remembered
+        }
+        persistSelection(selectedModelId, effortByModel)
+        return { models, selectedModelId, effortByModel }
+      })
+    } catch (err) {
+      // The composer falls back to the server-side default model; not fatal.
+      console.error('[store] loadModels failed', err)
+    }
+  },
+
+  setModel: (modelId) =>
+    set((s) => {
+      if (!s.models.some((m) => m.id === modelId)) return {}
+      persistSelection(modelId, s.effortByModel)
+      return { selectedModelId: modelId }
+    }),
+
+  setEffort: (effort) =>
+    set((s) => {
+      const model = s.models.find((m) => m.id === s.selectedModelId)
+      if (!model || !model.efforts.includes(effort)) return {}
+      const effortByModel = { ...s.effortByModel, [model.id]: effort }
+      persistSelection(s.selectedModelId, effortByModel)
+      return { effortByModel }
+    }),
 
   loadChats: async () => {
     set({ chatsLoading: true })
@@ -758,7 +849,12 @@ export const useStore = create<StoreState>()((set, get) => ({
     })
 
     try {
-      const { runId } = await api.sendMessage(chatId, trimmed, thread)
+      const { models, selectedModelId, effortByModel } = get()
+      const model = models.find((m) => m.id === selectedModelId)
+      const selection = model
+        ? { model: model.id, effort: effortByModel[model.id] ?? model.defaultEffort }
+        : undefined
+      const { runId } = await api.sendMessage(chatId, trimmed, thread, selection)
       set((s) => {
         const current = s.byChat[chatId]
         if (!current) return {}
@@ -859,6 +955,8 @@ export const useStore = create<StoreState>()((set, get) => ({
       set({ error: errorMessage(err) })
     }
   },
+
+  setModelPickerOpen: (open) => set({ modelPickerOpen: open }),
 
   setForkOpen: (open) => set({ forkOpen: open }),
   toggleFork: () => set((s) => ({ forkOpen: !s.forkOpen })),
@@ -1016,6 +1114,22 @@ export const useBloom = () => useStore((s) => activeChatState(s)?.bloom ?? false
 
 export const useSheetDismissed = (messageId: string | null | undefined) =>
   useStore((s) => (messageId ? !!activeChatState(s)?.dismissedSheets[messageId] : false))
+
+/* ------------------------------------------------------- model selection */
+
+export const useModels = () => useStore((s) => s.models)
+
+export const useSelectedModel = () =>
+  useStore((s) => s.models.find((m) => m.id === s.selectedModelId) ?? s.models[0] ?? null)
+
+/** The effort in force for the selected model (its provider default until changed). */
+export const useSelectedEffort = () =>
+  useStore((s) => {
+    const model = s.models.find((m) => m.id === s.selectedModelId) ?? s.models[0]
+    if (!model) return null
+    const remembered = s.effortByModel[model.id]
+    return remembered && model.efforts.includes(remembered) ? remembered : model.defaultEffort
+  })
 
 export const useTheme = () => useStore((s) => s.theme)
 export const useForkOpen = () => useStore((s) => s.forkOpen)
