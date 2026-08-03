@@ -66,12 +66,16 @@ export interface StreamChatOptions {
   /** Called for every text delta as it arrives. */
   onText?: (delta: string) => void;
   model?: string;
+  /** Provider reasoning effort, sent as OpenRouter's `reasoning: { effort }`. */
+  reasoningEffort?: string;
   temperature?: number;
   maxRetries?: number;
 }
 
 export interface NonStreamingOptions {
   model?: string;
+  /** Provider reasoning effort, sent as OpenRouter's `reasoning: { effort }`. */
+  reasoningEffort?: string;
   temperature?: number;
   maxTokens?: number;
   signal?: AbortSignal;
@@ -250,6 +254,7 @@ export async function streamChat(options: StreamChatOptions): Promise<StreamResu
     signal,
     onText,
     model = MODEL,
+    reasoningEffort,
     temperature,
     maxRetries = DEFAULT_MAX_RETRIES,
   } = options;
@@ -274,6 +279,7 @@ export async function streamChat(options: StreamChatOptions): Promise<StreamResu
         body.tools = tools;
         body.tool_choice = toolChoice;
       }
+      if (reasoningEffort) body.reasoning = { effort: reasoningEffort };
       if (typeof temperature === 'number') body.temperature = temperature;
 
       const res = await postChat(body, signal);
@@ -348,6 +354,7 @@ export async function nonStreaming(
 ): Promise<string> {
   const {
     model = MODEL,
+    reasoningEffort,
     temperature,
     maxTokens,
     signal,
@@ -360,6 +367,7 @@ export async function nonStreaming(
     if (signal?.aborted) throw new DOMExceptionLike();
     try {
       const body: Record<string, unknown> = { model, messages, stream: false };
+      if (reasoningEffort) body.reasoning = { effort: reasoningEffort };
       if (typeof temperature === 'number') body.temperature = temperature;
       if (typeof maxTokens === 'number') body.max_tokens = maxTokens;
 

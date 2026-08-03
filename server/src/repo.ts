@@ -36,7 +36,14 @@ function rowToMessage(row: any): Message {
 }
 
 function rowToRun(row: any): Run {
-  return { id: row.id, chatId: row.chat_id, thread: row.thread, status: row.status };
+  return {
+    id: row.id,
+    chatId: row.chat_id,
+    thread: row.thread,
+    status: row.status,
+    model: row.model ?? undefined,
+    effort: row.effort ?? undefined,
+  };
 }
 
 function rowToAsset(row: any): Asset {
@@ -182,14 +189,14 @@ export function listModelTurns(chatId: string, thread: Thread): any[] {
 // runs
 // ---------------------------------------------------------------------------
 
-export function createRun(chatId: string, thread: Thread): Run {
+export function createRun(chatId: string, thread: Thread, model?: string, effort?: string): Run {
   const id = randomUUID();
   const now = Date.now();
   db.prepare(
-    `INSERT INTO runs (id, chat_id, thread, status, error, created_at, finished_at)
-     VALUES (?, ?, ?, 'running', NULL, ?, NULL)`,
-  ).run(id, chatId, thread, now);
-  return { id, chatId, thread, status: 'running' };
+    `INSERT INTO runs (id, chat_id, thread, status, error, created_at, finished_at, model, effort)
+     VALUES (?, ?, ?, 'running', NULL, ?, NULL, ?, ?)`,
+  ).run(id, chatId, thread, now, model ?? null, effort ?? null);
+  return { id, chatId, thread, status: 'running', model, effort };
 }
 
 export function setRunStatus(runId: string, status: Run['status'], error?: string): void {

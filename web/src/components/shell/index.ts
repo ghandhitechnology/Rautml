@@ -1,5 +1,7 @@
 export { default as Layout, type LayoutProps } from './Layout'
 export { default as ChatListSidebar, type ChatListSidebarProps } from './ChatListSidebar'
 export { default as Composer, type ComposerProps } from './Composer'
+export { default as ModelPicker, type ModelPickerProps } from './ModelPicker'
+export { default as EffortSlider, type EffortSliderProps } from './EffortSlider'
 export { default as ThemeToggle, type ThemeToggleProps } from './ThemeToggle'
 export { default as Welcome, type WelcomeProps } from './Welcome'
