@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { useActiveChatId, useChats, useStore } from '../../state/store'
+import { useActiveChatId, useChats, useOnBlankChat, useStore } from '../../state/store'
 import { absoluteTime, cx, relativeTime } from '../../lib/utils'
 import { EASE } from '../../lib/motion'
+import TypewriterText from './TypewriterText'
 import './ChatListSidebar.css'
 
 export interface ChatListSidebarProps {
@@ -16,6 +17,8 @@ export function ChatListSidebar({ className }: ChatListSidebarProps) {
   const openChat = useStore((s) => s.openChat)
   const newChat = useStore((s) => s.newChat)
   const removeChat = useStore((s) => s.removeChat)
+  // A blank chat is already open — creating another would just stack empty rows.
+  const onBlankChat = useOnBlankChat()
 
   const [armedId, setArmedId] = useState<string | null>(null)
   const [, setTick] = useState(0)
@@ -57,7 +60,13 @@ export function ChatListSidebar({ className }: ChatListSidebarProps) {
         </div>
       </div>
 
-      <button type="button" className="rml-newchat" onClick={() => void newChat()}>
+      <button
+        type="button"
+        className="rml-newchat"
+        onClick={() => void newChat()}
+        disabled={onBlankChat}
+        title={onBlankChat ? "You're already in a new chat" : 'New chat'}
+      >
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M12 5.5v13M5.5 12h13" />
         </svg>
@@ -101,7 +110,9 @@ export function ChatListSidebar({ className }: ChatListSidebarProps) {
                     }}
                   >
                     <span className="rml-chatrow__body">
-                      <span className="rml-chatrow__title">{chat.title || 'New chat'}</span>
+                      <span className="rml-chatrow__title">
+                        <TypewriterText text={chat.title || 'New chat'} />
+                      </span>
                       <span className="rml-chatrow__time" title={absoluteTime(chat.updatedAt)}>
                         {relativeTime(chat.updatedAt)}
                       </span>

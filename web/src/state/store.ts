@@ -82,6 +82,14 @@ export interface StoreState {
   chatsLoading: boolean
   activeChatId: string | null
   byChat: Record<string, ChatState>
+  /** Chats with a successful interaction since their last exit-time title refresh. */
+  titleDirty: Record<string, true>
+  /**
+   * The chat spawned by "New chat" that nobody has typed into yet. It only ever
+   * exists while it is the active chat: clicking "New chat" again reuses it, and
+   * navigating anywhere else throws it away so the sidebar can't fill with blanks.
+   */
+  draftChatId: string | null
 
   /* model selection */
   models: ModelInfo[]
@@ -103,9 +111,12 @@ export interface StoreState {
   setModelPickerOpen: (open: boolean) => void
   loadChats: () => Promise<void>
   newChat: () => Promise<Chat | null>
+  /** Drop the untouched draft chat (list + server). No-op if it was typed into. */
+  discardDraft: () => void
   removeChat: (chatId: string) => Promise<void>
   openChat: (chatId: string) => Promise<void>
   closeChat: () => void
+  retitleOnExit: (chatId?: string, keepalive?: boolean) => Promise<void>
   sendMessage: (thread: Thread, content: string) => Promise<void>
   applyEvent: (event: ChatEvent) => void
   resolveInput: (pendingInputId: string, value: string) => Promise<void>
@@ -224,6 +235,41 @@ export function assetsNewestFirst(assets: Asset[]): Asset[] {
 
 function isLive(status: Run['status']): boolean {
   return status === 'running' || status === 'awaiting_input'
+}
+
+/** True once the first main back-and-forth is complete, even if Luna is still titling it. */
+function isAfterInitialExchange(cs: ChatState): boolean {
+  if (cs.chat.title && cs.chat.title !== 'New chat') return true
+  return (
+    !cs.activeRun.main &&
+    cs.messages.main.some((message) => message.role === 'user') &&
+    cs.messages.main.some(
+      (message) =>
+        message.role === 'assistant' &&
+        message.status === 'complete' &&
+        message.content.trim().length > 0,
+    )
+  )
+}
+
+/** Something is in this chat: a message on either thread, or a run. */
+function hasContent(cs: ChatState | undefined): boolean {
+  if (!cs) return false
+  return (
+    cs.messages.main.length > 0 ||
+    cs.messages.fork.length > 0 ||
+    cs.runOrder.length > 0 ||
+    !!cs.activeRun.main ||
+    !!cs.activeRun.fork
+  )
+}
+
+/**
+ * Nothing has happened in this chat yet. `loaded` matters here — an unfetched
+ * chat looks empty but isn't *known* to be, so we don't treat it as blank.
+ */
+function isUntouched(cs: ChatState | undefined): boolean {
+  return !!cs && cs.loaded && !hasContent(cs)
 }
 
 /* --------------------------------------------------------------- reduction */
@@ -649,6 +695,9 @@ function patchActive(patch: (cs: ChatState) => ChatState) {
 
 let connection: SseConnection | null = null
 
+/** Guards against a double-click racing two POST /api/chats before either lands. */
+let creatingChat = false
+
 function disconnect() {
   connection?.close()
   connection = null
@@ -661,6 +710,8 @@ export const useStore = create<StoreState>()((set, get) => ({
   chatsLoading: false,
   activeChatId: null,
   byChat: {},
+  titleDirty: {},
+  draftChatId: null,
 
   models: [],
   selectedModelId: readStoredModel(),
@@ -723,26 +774,109 @@ export const useStore = create<StoreState>()((set, get) => ({
     }
   },
 
+  retitleOnExit: async (chatId, keepalive = false) => {
+    const targetId = chatId ?? get().activeChatId
+    if (!targetId || !get().titleDirty[targetId]) return
+
+    // Claim the refresh before starting it so pagehide + a navigation click do
+    // not create two Luna calls for the same interaction.
+    set((s) => {
+      if (!s.titleDirty[targetId]) return {}
+      const titleDirty = { ...s.titleDirty }
+      delete titleDirty[targetId]
+      return { titleDirty }
+    })
+
+    try {
+      const result = await api.retitleChat(targetId, keepalive)
+      set((s) => {
+        const cached = s.byChat[targetId]
+        return {
+          chats: s.chats.map((chat) =>
+            chat.id === targetId
+              ? {
+                  ...chat,
+                  title: result.title,
+                  updatedAt: result.changed ? Date.now() : chat.updatedAt,
+                }
+              : chat,
+          ),
+          byChat: cached
+            ? {
+                ...s.byChat,
+                [targetId]: { ...cached, chat: { ...cached.chat, title: result.title } },
+              }
+            : s.byChat,
+        }
+      })
+    } catch (err) {
+      // Navigation remains instant. A failed refresh stays dirty so the next
+      // exit can retry; page teardown may discard this state naturally.
+      set((s) => ({ titleDirty: { ...s.titleDirty, [targetId]: true } }))
+      if (!keepalive) console.error('[store] retitle on exit failed', err)
+    }
+  },
+
   newChat: async () => {
+    // A draft is untouched and already on screen by construction — hand it back.
+    const draftChatId = get().draftChatId
+    if (draftChatId) return get().chats.find((c) => c.id === draftChatId) ?? null
+    // Rapid clicks: the first create is still in flight, don't start a second.
+    if (creatingChat) return null
+    // Sitting in a blank chat from an earlier session? That *is* the new chat.
+    const activeChatId = get().activeChatId
+    if (activeChatId && isUntouched(get().byChat[activeChatId])) {
+      set({ draftChatId: activeChatId })
+      return get().chats.find((c) => c.id === activeChatId) ?? null
+    }
+
+    creatingChat = true
     try {
       const chat = await api.createChat()
-      set((s) => ({ chats: [chat, ...s.chats.filter((c) => c.id !== chat.id)], error: null }))
+      set((s) => ({
+        chats: [chat, ...s.chats.filter((c) => c.id !== chat.id)],
+        draftChatId: chat.id,
+        error: null,
+      }))
       await get().openChat(chat.id)
       return chat
     } catch (err) {
       set({ error: errorMessage(err) })
       return null
+    } finally {
+      creatingChat = false
     }
+  },
+
+  discardDraft: () => {
+    const draftChatId = get().draftChatId
+    if (!draftChatId) return
+    // Typed into after all — it graduated, just stop tracking it. (A draft that
+    // hasn't finished loading is still blank: we created it empty a moment ago.)
+    if (hasContent(get().byChat[draftChatId])) {
+      set({ draftChatId: null })
+      return
+    }
+    set((s) => {
+      const byChat = { ...s.byChat }
+      delete byChat[draftChatId]
+      return { chats: s.chats.filter((c) => c.id !== draftChatId), byChat, draftChatId: null }
+    })
+    // Best effort: the row is already gone, and a stranded empty chat is harmless.
+    void api.deleteChat(draftChatId).catch(() => {})
   },
 
   removeChat: async (chatId) => {
     const wasActive = get().activeChatId === chatId
+    if (get().draftChatId === chatId) set({ draftChatId: null })
     // optimistic — the row disappears the instant you click.
     const snapshot = get().chats
     set((s) => {
       const byChat = { ...s.byChat }
+      const titleDirty = { ...s.titleDirty }
       delete byChat[chatId]
-      return { chats: s.chats.filter((c) => c.id !== chatId), byChat }
+      delete titleDirty[chatId]
+      return { chats: s.chats.filter((c) => c.id !== chatId), byChat, titleDirty }
     })
     if (wasActive) {
       disconnect()
@@ -756,7 +890,13 @@ export const useStore = create<StoreState>()((set, get) => ({
   },
 
   openChat: async (chatId) => {
+    // Leaving an untouched new chat for another one: it goes back up.
+    if (get().draftChatId && get().draftChatId !== chatId) get().discardDraft()
     if (get().activeChatId === chatId && get().byChat[chatId]?.loaded) return
+    const previousChatId = get().activeChatId
+    if (previousChatId && previousChatId !== chatId) {
+      void get().retitleOnExit(previousChatId)
+    }
     disconnect()
 
     const known = get().chats.find((c) => c.id === chatId)
@@ -812,6 +952,8 @@ export const useStore = create<StoreState>()((set, get) => ({
   },
 
   closeChat: () => {
+    void get().retitleOnExit()
+    get().discardDraft()
     disconnect()
     set({ activeChatId: null, forkOpen: false, connection: 'closed' })
   },
@@ -822,6 +964,7 @@ export const useStore = create<StoreState>()((set, get) => ({
     if (!trimmed || !chatId) return
     const cs = get().byChat[chatId]
     if (!cs) return
+    const hadInitialExchange = isAfterInitialExchange(cs)
 
     const localId = uid('local-')
     const optimistic: Message = {
@@ -838,6 +981,8 @@ export const useStore = create<StoreState>()((set, get) => ({
       if (!current) return {}
       return {
         error: null,
+        // Typed into — it's a real conversation now, not a discardable draft.
+        draftChatId: s.draftChatId === chatId ? null : s.draftChatId,
         byChat: {
           ...s.byChat,
           [chatId]: {
@@ -877,6 +1022,7 @@ export const useStore = create<StoreState>()((set, get) => ({
             },
           },
           chats: s.chats.map((c) => (c.id === chatId ? { ...c, updatedAt: Date.now() } : c)),
+          titleDirty: hadInitialExchange ? { ...s.titleDirty, [chatId]: true } : s.titleDirty,
         }
       })
     } catch (err) {
@@ -922,6 +1068,8 @@ export const useStore = create<StoreState>()((set, get) => ({
   resolveInput: async (pendingInputId, value) => {
     const chatId = get().activeChatId
     if (!chatId) return
+    const currentChat = get().byChat[chatId]
+    const hadInitialExchange = !!currentChat && isAfterInitialExchange(currentChat)
     // Lock the chips in immediately; the server echoes input.resolved right after.
     set((s) => {
       const cs = s.byChat[chatId]
@@ -941,6 +1089,9 @@ export const useStore = create<StoreState>()((set, get) => ({
     })
     try {
       await api.resolveInput(chatId, pendingInputId, value)
+      if (hadInitialExchange) {
+        set((s) => ({ titleDirty: { ...s.titleDirty, [chatId]: true } }))
+      }
     } catch (err) {
       set({ error: errorMessage(err) })
     }
@@ -1024,6 +1175,11 @@ export function activeChatState(state: StoreState): ChatState | null {
 }
 
 export const useChats = () => useStore((s) => s.chats)
+
+/** The open chat is a blank one — "New chat" has nothing left to create. */
+export const useOnBlankChat = () =>
+  useStore((s) => !!s.activeChatId && isUntouched(s.byChat[s.activeChatId]))
+
 export const useActiveChatId = () => useStore((s) => s.activeChatId)
 export const useActiveChat = () => useStore(activeChatState)
 export const useChatMeta = () => useStore((s) => activeChatState(s)?.chat ?? null)

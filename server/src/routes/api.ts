@@ -4,6 +4,7 @@
 //   POST   /api/chats                     → Chat
 //   DELETE /api/chats/:id                 → { ok: true }
 //   GET    /api/chats/:id                 → { chat, messages, assets, events, pendingInput, activeRun }
+//   POST   /api/chats/:id/retitle         → { title, changed } using GPT-5.6 Luna
 //   POST   /api/chats/:id/messages        → { runId }   (409 if a run is active on that thread)
 //   POST   /api/chats/:id/input           → { runId }   resumes a parked run
 //   POST   /api/chats/:id/stop            → { stopped: string[] }
@@ -107,6 +108,20 @@ router.get('/chats/:id', (req: Request, res: Response) => {
     pendingInput: repo.getUnresolvedInput(chatId) ?? null,
     activeRun,
   });
+});
+
+router.post('/chats/:id/retitle', async (req: Request, res: Response) => {
+  const chatId = param(req, 'id');
+  const chat = repo.getChat(chatId);
+  if (!chat) return fail(res, 404, 'Chat not found');
+
+  try {
+    const result = await engine.retitleChat(chatId);
+    res.json(result ?? { title: chat.title, changed: false });
+  } catch (err) {
+    console.error('[api] retitleChat failed', err);
+    fail(res, 500, (err as Error)?.message ?? 'Failed to refresh chat title');
+  }
 });
 
 // ---------------------------------------------------------------------------

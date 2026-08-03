@@ -5,7 +5,7 @@
 //                      Text deltas are handed to a callback; tool_calls fragments
 //                      are assembled across chunks by `index`.
 //   nonStreaming(...) — one-shot completion, used for cheap auxiliary calls
-//                      (auto-titling).
+//                      (initial and exit-time chat titling).
 //
 // Both retry up to 3 times with exponential backoff on 429 / 5xx / network
 // errors. streamChat deliberately stops retrying once it has emitted its first
@@ -345,7 +345,7 @@ export async function streamChat(options: StreamChatOptions): Promise<StreamResu
 }
 
 // ---------------------------------------------------------------------------
-// nonStreaming — cheap one-shot completions (auto-titling)
+// nonStreaming — cheap one-shot completions (chat titling)
 // ---------------------------------------------------------------------------
 
 export async function nonStreaming(

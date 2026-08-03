@@ -79,17 +79,24 @@
   transition: transform var(--dur) var(--ease);
 }
 
-.rml-newchat:hover {
+.rml-newchat:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
   transform: translateY(-1px);
 }
 
-.rml-newchat:hover svg {
+.rml-newchat:hover:not(:disabled) svg {
   transform: rotate(90deg);
 }
 
-.rml-newchat:active {
+.rml-newchat:active:not(:disabled) {
   transform: translateY(0) scale(0.99);
+}
+
+/* You're already in a blank chat — the button has nothing to create. */
+.rml-newchat:disabled {
+  opacity: 0.45;
+  box-shadow: none;
+  cursor: default;
 }
 
 /* -------------------------------------------------------------- chat list */

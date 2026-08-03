@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-03T00:00:00Z",
+  "title": "Design System: Rautml",
+  "extensions": {
+    "colorMeta": {
+      "terracotta-coral": { "role": "primary", "displayName": "Terracotta Coral", "canonical": "#d97757", "tonalRamp": ["#3d1f14", "#66331e", "#8f4527", "#b35a38", "#d97757", "#e39a80", "#eebca9", "#f8e0d5"] },
+      "coral-kiln": { "role": "primary", "displayName": "Coral Kiln", "canonical": "#c96442", "tonalRamp": ["#38180d", "#5e2a18", "#854024", "#a95232", "#c96442", "#d98a6e", "#e7b09a", "#f5d8cb"] },
+      "coral-wash": { "role": "primary", "displayName": "Coral Wash", "canonical": "#f5e5dd", "tonalRamp": ["#453733", "#6e5a50", "#96796c", "#bda08f", "#d9c2b4", "#e8d5c9", "#f5e5dd", "#fbf3ee"] },
+      "ivory": { "role": "neutral", "displayName": "Ivory", "canonical": "#faf9f5", "tonalRamp": ["#262624", "#3a3a37", "#57564f", "#73726c", "#a8a69e", "#d6d4ca", "#f0eee6", "#faf9f5"] },
+      "paper": { "role": "neutral", "displayName": "Paper", "canonical": "#ffffff", "tonalRamp": ["#30302e", "#4a4a46", "#6b6a64", "#8f8e86", "#b5b3aa", "#d9d7cf", "#f2f1ec", "#ffffff"] },
+      "linen": { "role": "neutral", "displayName": "Linen", "canonical": "#f0eee6", "tonalRamp": ["#2b2b28", "#3f3e3a", "#5c5b54", "#7d7c73", "#a3a196", "#c8c6ba", "#e0ded4", "#f0eee6"] },
+      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "#1f1e1d", "tonalRamp": ["#1f1e1d", "#33322f", "#4b4a45", "#66655e", "#83827a", "#a3a29a", "#c6c5bd", "#e8e7e0"] },
+      "ink-muted": { "role": "neutral", "displayName": "Ink Muted", "canonical": "#73726c", "tonalRamp": ["#232320", "#3a3936", "#52514c", "#73726c", "#8f8e87", "#adaca4", "#cccbc3", "#eae9e2"] },
+      "hairline": { "role": "neutral", "displayName": "Hairline", "canonical": "#e8e6dc", "tonalRamp": ["#2e2d2a", "#3f3e3a", "#5a5952", "#77766e", "#98968c", "#bab8ac", "#d4d2c7", "#e8e6dc"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Welcome screen title only; Lora at its largest." },
+      "headline": { "displayName": "Headline", "purpose": "h1/h2 inside rendered markdown responses." },
+      "title": { "displayName": "Title", "purpose": "Names of things: wordmark, chat titles, document and asset titles. Serif, negative tracking." },
+      "body": { "displayName": "Body", "purpose": "All conversation and UI prose. Pretendard, 1.68 line height, Korean-safe." },
+      "label": { "displayName": "Label", "purpose": "Tooltips, sheet titles, kbd hints, metadata. 600 weight, slight positive tracking." }
+    },
+    "shadows": [
+      { "name": "shadow-sm", "value": "0 1px 2px rgba(31,30,29,0.04), 0 1px 3px rgba(31,30,29,0.05)", "purpose": "Resting raised surfaces: composer, cards, active chat row, tooltips." },
+      { "name": "shadow-md", "value": "0 2px 6px rgba(31,30,29,0.05), 0 8px 24px rgba(31,30,29,0.07)", "purpose": "Hover lift on cards; glass header bar; activity strip." },
+      { "name": "shadow-lg", "value": "0 4px 12px rgba(31,30,29,0.06), 0 18px 48px rgba(31,30,29,0.1)", "purpose": "Floating layers: popovers, menus, toasts, glass composer dock." },
+      { "name": "coral-glow", "value": "0 1px 2px rgba(31,30,29,0.12), 0 10px 30px color-mix(in srgb, #d97757 32%, transparent)", "purpose": "Fork ball only — the one object allowed to radiate." },
+      { "name": "glass", "value": "background: color-mix(in srgb, var(--surface, #fff) 80%, transparent); backdrop-filter: saturate(180%) blur(18px)", "purpose": "Chrome floating over a generated document. Dark theme: 86% body + lit edge (9% ivory in border)." }
+    ],
+    "motion": [
+      { "name": "ease", "value": "cubic-bezier(0.22, 1, 0.36, 1)", "purpose": "The single house easing for every transition and animation." },
+      { "name": "dur-fast", "value": "200ms", "purpose": "State changes: hover, press, color." },
+      { "name": "dur", "value": "280ms", "purpose": "Reveals: menus, tooltips, fades." },
+      { "name": "dur-slow", "value": "420ms", "purpose": "Layout shifts: fork panel open, brand mark rotation." }
+    ],
+    "breakpoints": [
+      { "name": "fork-narrow", "value": "1120px" },
+      { "name": "compact", "value": "860px" },
+      { "name": "mobile", "value": "640px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Send Button",
+      "kind": "button",
+      "refersTo": "button-send",
+      "description": "32px coral circle that submits the composer; deepens to kiln and lifts on hover.",
+      "html": "<button class=\"ds-btn-send\" aria-label=\"Send\"><svg viewBox=\"0 0 24 24\" width=\"17\" height=\"17\"><path d=\"M12 19V5M5 12l7-7 7 7\"/></svg></button>",
+      "css": ".ds-btn-send { display: grid; place-items: center; width: 32px; height: 32px; border: none; border-radius: 999px; background: var(--accent, #d97757); color: #fff; cursor: pointer; transition: background-color 0.2s cubic-bezier(0.22,1,0.36,1), transform 0.2s cubic-bezier(0.22,1,0.36,1); } .ds-btn-send svg { stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; fill: none; } .ds-btn-send:hover { background: var(--accent-hover, #c96442); transform: translateY(-1px); } .ds-btn-send:active { transform: translateY(0) scale(0.94); } .ds-btn-send:focus-visible { outline: 2px solid var(--accent, #d97757); outline-offset: 2px; }"
+    },
+    {
+      "name": "New Chat Button",
+      "kind": "button",
+      "refersTo": "button-new-chat",
+      "description": "Paper surface button whose coral plus rotates 90° on hover as the border warms toward coral.",
+      "html": "<button class=\"ds-newchat\"><svg viewBox=\"0 0 24 24\" width=\"15\" height=\"15\"><path d=\"M12 5v14M5 12h14\"/></svg>New chat</button>",
+      "css": ".ds-newchat { display: inline-flex; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid var(--border, #e8e6dc); border-radius: 12px; background: var(--surface, #fff); color: var(--text, #1f1e1d); font-size: 13px; font-weight: 550; cursor: pointer; box-shadow: 0 1px 2px rgba(31,30,29,0.04), 0 1px 3px rgba(31,30,29,0.05); transition: border-color 0.2s cubic-bezier(0.22,1,0.36,1), transform 0.2s cubic-bezier(0.22,1,0.36,1); } .ds-newchat svg { stroke: var(--accent, #d97757); stroke-width: 2; stroke-linecap: round; fill: none; transition: transform 0.28s cubic-bezier(0.22,1,0.36,1); } .ds-newchat:hover { border-color: color-mix(in srgb, var(--accent, #d97757) 40%, var(--border, #e8e6dc)); transform: translateY(-1px); } .ds-newchat:hover svg { transform: rotate(90deg); } .ds-newchat:active { transform: translateY(0) scale(0.99); } .ds-newchat:focus-visible { outline: 2px solid var(--accent, #d97757); outline-offset: 2px; }"
+    },
+    {
+      "name": "Composer Field",
+      "kind": "input",
+      "refersTo": "input-composer",
+      "description": "The main input: paper field whose border warms toward coral on hover and gains a coral halo on focus.",
+      "html": "<div class=\"ds-composer\"><textarea class=\"ds-composer-input\" rows=\"1\" placeholder=\"Ask for something substantial…\"></textarea><button class=\"ds-composer-send\" aria-label=\"Send\"><svg viewBox=\"0 0 24 24\" width=\"17\" height=\"17\"><path d=\"M12 19V5M5 12l7-7 7 7\"/></svg></button></div>",
+      "css": ".ds-composer { display: flex; align-items: flex-end; gap: 8px; padding: 12px 12px 12px 16px; background: var(--surface, #fff); border: 1px solid var(--border, #e8e6dc); border-radius: 16px; box-shadow: 0 1px 2px rgba(31,30,29,0.04), 0 1px 3px rgba(31,30,29,0.05); transition: border-color 0.2s cubic-bezier(0.22,1,0.36,1), box-shadow 0.2s cubic-bezier(0.22,1,0.36,1); } .ds-composer:hover { border-color: color-mix(in srgb, var(--accent, #d97757) 26%, var(--border, #e8e6dc)); } .ds-composer:focus-within { border-color: color-mix(in srgb, var(--accent, #d97757) 55%, var(--border, #e8e6dc)); box-shadow: 0 2px 6px rgba(31,30,29,0.05), 0 8px 24px rgba(31,30,29,0.07), 0 0 0 3px color-mix(in srgb, var(--accent, #d97757) 16%, transparent); } .ds-composer-input { flex: 1; min-height: 26px; resize: none; border: none; background: transparent; font: inherit; font-size: 14.5px; line-height: 1.6; color: var(--text, #1f1e1d); outline: none; padding: 2px 0; } .ds-composer-input::placeholder { color: var(--text-muted, #73726c); opacity: 0.85; } .ds-composer-send { display: grid; place-items: center; width: 32px; height: 32px; border: none; border-radius: 999px; background: var(--accent, #d97757); color: #fff; cursor: pointer; transition: background-color 0.2s, transform 0.2s; } .ds-composer-send svg { stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; fill: none; } .ds-composer-send:hover { background: var(--accent-hover, #c96442); transform: translateY(-1px); }"
+    },
+    {
+      "name": "Model Chip",
+      "kind": "chip",
+      "refersTo": "chip-model",
+      "description": "28px linen pill that opens the model/effort popover.",
+      "html": "<button class=\"ds-chip-model\">GPT-5.6 Sol<svg viewBox=\"0 0 9 6\" width=\"9\" height=\"6\"><path d=\"M1 1l3.5 3.5L8 1\"/></svg></button>",
+      "css": ".ds-chip-model { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px 0 12px; border: none; border-radius: 999px; background: var(--surface-2, #f0eee6); color: var(--text, #1f1e1d); font-size: 13px; font-weight: 500; letter-spacing: -0.006em; cursor: pointer; white-space: nowrap; transition: background-color 0.2s cubic-bezier(0.22,1,0.36,1); } .ds-chip-model svg { stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; fill: none; opacity: 0.65; } .ds-chip-model:hover { background: color-mix(in srgb, var(--text, #1f1e1d) 9%, var(--surface-2, #f0eee6)); } .ds-chip-model:focus-visible { outline: 2px solid var(--accent, #d97757); outline-offset: 2px; }"
+    },
+    {
+      "name": "Version Picker",
+      "kind": "custom",
+      "refersTo": "pill-version-active",
+      "description": "Segmented pill for asset versions; the active segment is a coral thumb with white numerals.",
+      "html": "<div class=\"ds-vpick\" role=\"tablist\"><button class=\"ds-vpick-seg\">v1</button><button class=\"ds-vpick-seg\">v2</button><button class=\"ds-vpick-seg is-active\">v3</button></div>",
+      "css": ".ds-vpick { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--border, #e8e6dc); border-radius: 999px; background: var(--surface, #fff); } .ds-vpick-seg { display: grid; place-items: center; min-width: 32px; height: 22px; padding: 0 8px; border: none; border-radius: 999px; background: transparent; color: var(--text-muted, #73726c); font-size: 11.5px; font-variant-numeric: tabular-nums; letter-spacing: 0.01em; cursor: pointer; transition: color 0.2s cubic-bezier(0.22,1,0.36,1), background-color 0.2s cubic-bezier(0.22,1,0.36,1); } .ds-vpick-seg:hover:not(.is-active) { color: var(--text, #1f1e1d); background: rgba(31,30,29,0.045); } .ds-vpick-seg.is-active { background: var(--accent, #d97757); color: #fff; box-shadow: 0 1px 2px rgba(31,30,29,0.18); } .ds-vpick-seg:focus-visible { outline: 2px solid var(--accent, #d97757); outline-offset: 1px; }"
+    },
+    {
+      "name": "Activity Timeline",
+      "kind": "card",
+      "description": "Live tool-call stream; warms with coral while running, collapses to a one-line summary.",
+      "html": "<div class=\"ds-timeline is-live\"><button class=\"ds-timeline-head\"><span class=\"ds-timeline-pip\"></span><span class=\"ds-timeline-summary\">Reading science.nasa.gov…</span><span class=\"ds-timeline-spinner\"></span></button></div>",
+      "css": ".ds-timeline { border: 1px solid var(--border, #e8e6dc); border-radius: 12px; background: color-mix(in srgb, var(--surface, #fff) 70%, transparent); transition: border-color 0.28s, background-color 0.28s; } .ds-timeline.is-live { border-color: color-mix(in srgb, var(--accent, #d97757) 28%, var(--border, #e8e6dc)); background: color-mix(in srgb, var(--accent-soft, #f5e5dd) 34%, var(--surface, #fff)); } .ds-timeline-head { display: flex; align-items: center; gap: 12px; width: 100%; padding: 9px 12px 9px 16px; border: none; border-radius: 12px; background: transparent; text-align: left; cursor: pointer; } .ds-timeline-pip { width: 6px; height: 6px; border-radius: 999px; background: var(--accent, #d97757); animation: ds-tl-pulse 1.5s cubic-bezier(0.22,1,0.36,1) infinite; } .ds-timeline-summary { flex: 1; font-size: 13px; font-weight: 550; letter-spacing: -0.004em; color: var(--accent-hover, #c96442); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; } .ds-timeline-spinner { width: 12px; height: 12px; border-radius: 999px; border: 1.6px solid color-mix(in srgb, var(--accent, #d97757) 24%, transparent); border-top-color: var(--accent, #d97757); animation: ds-tl-spin 0.7s linear infinite; } @keyframes ds-tl-pulse { 0%, 100% { opacity: 0.32; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1); } } @keyframes ds-tl-spin { to { transform: rotate(360deg); } }"
+    },
+    {
+      "name": "User Bubble",
+      "kind": "card",
+      "refersTo": "bubble-user",
+      "description": "The only bubble in the system: coral wash with a notched bottom-right corner pointing at its author.",
+      "html": "<div class=\"ds-bubble-user\">Make the header purple and add a comparison table.</div>",
+      "css": ".ds-bubble-user { max-width: 560px; padding: 11px 16px 12px; border-radius: 16px; border-bottom-right-radius: 8px; background: var(--accent-soft, #f5e5dd); border: 1px solid color-mix(in srgb, var(--accent, #d97757) 18%, transparent); color: var(--text, #1f1e1d); font-size: 14.5px; line-height: 1.62; box-shadow: 0 1px 2px rgba(31,30,29,0.04), 0 1px 3px rgba(31,30,29,0.05); }"
+    },
+    {
+      "name": "Glass Header Bar",
+      "kind": "nav",
+      "description": "Document-mode chrome: pill glass bar with serif title, live status, and icon tools floating over the page.",
+      "html": "<div class=\"ds-glassbar\"><span class=\"ds-glassbar-title\">Mars Sample Return</span><span class=\"ds-glassbar-status\"><span class=\"ds-glassbar-dot\"></span>editing</span><button class=\"ds-glassbar-btn\" aria-label=\"Open\"><svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\"><path d=\"M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3\"/></svg></button></div>",
+      "css": ".ds-glassbar { display: flex; align-items: center; gap: 12px; padding: 5px 8px 5px 16px; border: 1px solid color-mix(in srgb, var(--border, #e8e6dc) 88%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--surface, #fff) 80%, transparent); backdrop-filter: saturate(180%) blur(18px); -webkit-backdrop-filter: saturate(180%) blur(18px); box-shadow: 0 2px 6px rgba(31,30,29,0.05), 0 8px 24px rgba(31,30,29,0.07); } .ds-glassbar-title { flex: 1; font-family: Lora, Georgia, serif; font-size: 14.5px; font-weight: 600; letter-spacing: -0.014em; color: var(--text, #1f1e1d); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .ds-glassbar-status { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--text-muted, #73726c); white-space: nowrap; } .ds-glassbar-dot { width: 5px; height: 5px; border-radius: 999px; background: var(--accent, #d97757); animation: ds-glass-pulse 1.4s cubic-bezier(0.22,1,0.36,1) infinite; } .ds-glassbar-btn { display: grid; place-items: center; width: 30px; height: 30px; border: none; border-radius: 999px; background: transparent; color: var(--text-muted, #73726c); cursor: pointer; transition: background-color 0.2s, color 0.2s, transform 0.2s; } .ds-glassbar-btn svg { stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; fill: none; } .ds-glassbar-btn:hover { background: rgba(31,30,29,0.045); color: var(--text, #1f1e1d); } .ds-glassbar-btn:active { transform: scale(0.94); } @keyframes ds-glass-pulse { 0%, 100% { opacity: 0.35; transform: scale(0.85); } 50% { opacity: 1; transform: scale(1); } }"
+    },
+    {
+      "name": "Fork Ball",
+      "kind": "custom",
+      "description": "The one loud object: a 52px coral orb with top-light halo and radiating glow; spins an arc while a fork run streams.",
+      "html": "<button class=\"ds-forkball\" aria-label=\"Open fork\"><span class=\"ds-forkball-halo\"></span><svg class=\"ds-forkball-glyph\" viewBox=\"0 0 24 24\" width=\"21\" height=\"21\"><path d=\"M6 3v6a6 6 0 0 0 6 6h0a6 6 0 0 1 6 6v0M6 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6z\"/></svg></button>",
+      "css": ".ds-forkball { position: relative; display: grid; place-items: center; width: 52px; height: 52px; border: none; border-radius: 999px; color: #fff; background: linear-gradient(148deg, #e89a80 0%, var(--accent, #d97757) 48%, #c25f3f 100%); box-shadow: 0 1px 2px rgba(31,30,29,0.12), 0 10px 30px color-mix(in srgb, var(--accent, #d97757) 32%, transparent); cursor: pointer; transition: box-shadow 0.28s cubic-bezier(0.22,1,0.36,1); } .ds-forkball:hover { box-shadow: 0 1px 2px rgba(31,30,29,0.14), 0 14px 38px color-mix(in srgb, var(--accent, #d97757) 44%, transparent); } .ds-forkball:focus-visible { outline: 2px solid var(--accent, #d97757); outline-offset: 3px; } .ds-forkball-halo { position: absolute; inset: 0; border-radius: inherit; background: radial-gradient(72% 58% at 32% 24%, rgba(255,255,255,0.42), transparent 62%), radial-gradient(90% 80% at 70% 88%, rgba(120,44,20,0.28), transparent 60%); pointer-events: none; } .ds-forkball-glyph { position: relative; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; fill: none; opacity: 0.95; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Warm Atelier",
+    "overview": "Rautml is a craftsman's studio, not a chat app. Research happens in open view — you watch the agent search, read, and build on the workbench — and the finished artifact takes the whole room. The interface is calm, literary, and editorial: warm ivory in daylight, deep charcoal after dark, one Terracotta Coral flame marking wherever the maker's hand is at work. Everything the system owns recedes so everything the model makes can lead. The aesthetic philosophy is restraint with craft in the details. Surfaces rest nearly flat; type does the composing; the serif appears only when the product speaks with its own voice. When a document takes over, the shell dissolves into glass — translucent, blurred, floating — because at that moment the page is the room and our chrome is just light on its surface.",
+    "keyCharacteristics": [
+      "Warm two-theme world: ivory calm (light) and charcoal (dark), switched via [data-theme]",
+      "One accent hue, Terracotta Coral (#d97757), used sparingly and meaningfully",
+      "Lora serif for identity moments; Pretendard Variable for all UI mechanics (flawless Korean + Latin)",
+      "Glass chrome (blur + translucency) exclusively over generated documents",
+      "Crafted, confident components: quiet at rest, precise physical response to touch",
+      "4px spatial rhythm, pill geometry for interactive chrome, soft ambient shadows"
+    ],
+    "rules": [
+      { "name": "The One Flame Rule", "body": "Terracotta Coral is the interface's only hue. If a second color appears on screen, it came from a generated document — never from the shell. State (hover, pressed, live, error) is expressed through coral intensity and neutral alpha tints, not new colors.", "section": "colors" },
+      { "name": "The Wash-First Rule", "body": "The accent escalates: Coral Wash for ambient presence (selection, bubbles), full Terracotta Coral for the moment of action or life (send, live pip, active segment), Coral Kiln for pressure. Full-coral fills stay small — dots, 32px buttons, 2.5px rails — never large fields.", "section": "colors" },
+      { "name": "The Serif Signature Rule", "body": "Lora appears only where the product speaks with identity: the wordmark, titles of chats/documents/assets, welcome and empty states, markdown h1–h2. Every mechanical label, button, and control is Pretendard. A serif button is a system error.", "section": "typography" },
+      { "name": "The Tabular Rule", "body": "font-variant-numeric: tabular-nums globally; counts, versions, and durations never jitter as they tick.", "section": "typography" },
+      { "name": "The Two Altitudes Rule", "body": "There are exactly two heights: resting (hairline border + whisper shadow) and floating (glass + blur + shadow-lg). Nothing hovers in between; nothing casts a dramatic shadow while sitting still.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep every spatial value on the 4px rhythm (--sp-*), reserving 1–2px offsets for optical centering.",
+      "Do express state through coral intensity and alpha tints (--hover 4.5%, --pressed 7.5%) — never through new hues.",
+      "Do animate transform and opacity only, with the single house easing cubic-bezier(0.22, 1, 0.36, 1).",
+      "Do set word-break: keep-all on any surface that renders Korean prose, and tabular-nums wherever numbers tick.",
+      "Do give dark-theme glass a lit edge (9% ivory in the border) and more body (86% surface) so it holds against bright documents.",
+      "Do use color-mix to derive intermediate tones from tokens rather than hardcoding new values."
+    ],
+    "donts": [
+      "Don't introduce a second accent hue, purple gradients, sparkle icons, or any generic AI-chat styling — the confirmed anti-reference.",
+      "Don't wrap assistant responses in bubbles; the assistant is bare prose on the canvas. Only the user gets a Coral Wash bubble.",
+      "Don't style inside asset iframes or let shell CSS leak into them — generated documents own themselves entirely.",
+      "Don't use Lora for buttons, labels, or any mechanical control; the serif is reserved for identity moments.",
+      "Don't apply glass, blur, or shadow-lg to resting surfaces; floating treatment belongs exclusively to chrome over a document and to popovers/toasts.",
+      "Don't fill large areas with full-strength coral — the flame stays small (dots, 32px buttons, rails, thumbs)."
+    ]
+  }
+}
