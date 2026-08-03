@@ -82,6 +82,8 @@ export interface StoreState {
   chatsLoading: boolean
   activeChatId: string | null
   byChat: Record<string, ChatState>
+  /** Chats with a successful interaction since their last exit-time title refresh. */
+  titleDirty: Record<string, true>
 
   /* model selection */
   models: ModelInfo[]
@@ -106,6 +108,7 @@ export interface StoreState {
   removeChat: (chatId: string) => Promise<void>
   openChat: (chatId: string) => Promise<void>
   closeChat: () => void
+  retitleOnExit: (chatId?: string, keepalive?: boolean) => Promise<void>
   sendMessage: (thread: Thread, content: string) => Promise<void>
   applyEvent: (event: ChatEvent) => void
   resolveInput: (pendingInputId: string, value: string) => Promise<void>
@@ -224,6 +227,21 @@ export function assetsNewestFirst(assets: Asset[]): Asset[] {
 
 function isLive(status: Run['status']): boolean {
   return status === 'running' || status === 'awaiting_input'
+}
+
+/** True once the first main back-and-forth is complete, even if Luna is still titling it. */
+function isAfterInitialExchange(cs: ChatState): boolean {
+  if (cs.chat.title && cs.chat.title !== 'New chat') return true
+  return (
+    !cs.activeRun.main &&
+    cs.messages.main.some((message) => message.role === 'user') &&
+    cs.messages.main.some(
+      (message) =>
+        message.role === 'assistant' &&
+        message.status === 'complete' &&
+        message.content.trim().length > 0,
+    )
+  )
 }
 
 /* --------------------------------------------------------------- reduction */
@@ -661,6 +679,7 @@ export const useStore = create<StoreState>()((set, get) => ({
   chatsLoading: false,
   activeChatId: null,
   byChat: {},
+  titleDirty: {},
 
   models: [],
   selectedModelId: readStoredModel(),
@@ -723,6 +742,49 @@ export const useStore = create<StoreState>()((set, get) => ({
     }
   },
 
+  retitleOnExit: async (chatId, keepalive = false) => {
+    const targetId = chatId ?? get().activeChatId
+    if (!targetId || !get().titleDirty[targetId]) return
+
+    // Claim the refresh before starting it so pagehide + a navigation click do
+    // not create two Luna calls for the same interaction.
+    set((s) => {
+      if (!s.titleDirty[targetId]) return {}
+      const titleDirty = { ...s.titleDirty }
+      delete titleDirty[targetId]
+      return { titleDirty }
+    })
+
+    try {
+      const result = await api.retitleChat(targetId, keepalive)
+      set((s) => {
+        const cached = s.byChat[targetId]
+        return {
+          chats: s.chats.map((chat) =>
+            chat.id === targetId
+              ? {
+                  ...chat,
+                  title: result.title,
+                  updatedAt: result.changed ? Date.now() : chat.updatedAt,
+                }
+              : chat,
+          ),
+          byChat: cached
+            ? {
+                ...s.byChat,
+                [targetId]: { ...cached, chat: { ...cached.chat, title: result.title } },
+              }
+            : s.byChat,
+        }
+      })
+    } catch (err) {
+      // Navigation remains instant. A failed refresh stays dirty so the next
+      // exit can retry; page teardown may discard this state naturally.
+      set((s) => ({ titleDirty: { ...s.titleDirty, [targetId]: true } }))
+      if (!keepalive) console.error('[store] retitle on exit failed', err)
+    }
+  },
+
   newChat: async () => {
     try {
       const chat = await api.createChat()
@@ -741,8 +803,10 @@ export const useStore = create<StoreState>()((set, get) => ({
     const snapshot = get().chats
     set((s) => {
       const byChat = { ...s.byChat }
+      const titleDirty = { ...s.titleDirty }
       delete byChat[chatId]
-      return { chats: s.chats.filter((c) => c.id !== chatId), byChat }
+      delete titleDirty[chatId]
+      return { chats: s.chats.filter((c) => c.id !== chatId), byChat, titleDirty }
     })
     if (wasActive) {
       disconnect()
@@ -757,6 +821,10 @@ export const useStore = create<StoreState>()((set, get) => ({
 
   openChat: async (chatId) => {
     if (get().activeChatId === chatId && get().byChat[chatId]?.loaded) return
+    const previousChatId = get().activeChatId
+    if (previousChatId && previousChatId !== chatId) {
+      void get().retitleOnExit(previousChatId)
+    }
     disconnect()
 
     const known = get().chats.find((c) => c.id === chatId)
@@ -812,6 +880,7 @@ export const useStore = create<StoreState>()((set, get) => ({
   },
 
   closeChat: () => {
+    void get().retitleOnExit()
     disconnect()
     set({ activeChatId: null, forkOpen: false, connection: 'closed' })
   },
@@ -822,6 +891,7 @@ export const useStore = create<StoreState>()((set, get) => ({
     if (!trimmed || !chatId) return
     const cs = get().byChat[chatId]
     if (!cs) return
+    const hadInitialExchange = isAfterInitialExchange(cs)
 
     const localId = uid('local-')
     const optimistic: Message = {
@@ -877,6 +947,7 @@ export const useStore = create<StoreState>()((set, get) => ({
             },
           },
           chats: s.chats.map((c) => (c.id === chatId ? { ...c, updatedAt: Date.now() } : c)),
+          titleDirty: hadInitialExchange ? { ...s.titleDirty, [chatId]: true } : s.titleDirty,
         }
       })
     } catch (err) {
@@ -922,6 +993,8 @@ export const useStore = create<StoreState>()((set, get) => ({
   resolveInput: async (pendingInputId, value) => {
     const chatId = get().activeChatId
     if (!chatId) return
+    const currentChat = get().byChat[chatId]
+    const hadInitialExchange = !!currentChat && isAfterInitialExchange(currentChat)
     // Lock the chips in immediately; the server echoes input.resolved right after.
     set((s) => {
       const cs = s.byChat[chatId]
@@ -941,6 +1014,9 @@ export const useStore = create<StoreState>()((set, get) => ({
     })
     try {
       await api.resolveInput(chatId, pendingInputId, value)
+      if (hadInitialExchange) {
+        set((s) => ({ titleDirty: { ...s.titleDirty, [chatId]: true } }))
+      }
     } catch (err) {
       set({ error: errorMessage(err) })
     }

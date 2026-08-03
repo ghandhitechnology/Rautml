@@ -20,7 +20,12 @@ import {
   type ChatMessage,
   type OpenRouterTool,
 } from './openrouter.js';
-import { FORK_PREAMBLE, SYSTEM_PROMPT, TITLE_SYSTEM_PROMPT } from './prompts.js';
+import {
+  FORK_PREAMBLE,
+  RETITLE_SYSTEM_PROMPT,
+  SYSTEM_PROMPT,
+  TITLE_SYSTEM_PROMPT,
+} from './prompts.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -50,6 +55,15 @@ interface LiveRun {
 }
 
 const activeRuns = new Map<string, LiveRun>();
+
+interface TitleResult {
+  title: string;
+  changed: boolean;
+}
+
+// Title requests are serialized per chat so an exit refresh cannot race the
+// first-exchange title that may still be finishing on Luna.
+const titleJobs = new Map<string, Promise<TitleResult | null>>();
 
 class AbortedError extends Error {
   constructor() {
@@ -673,7 +687,7 @@ async function runLoop(ctx: LoopCtx): Promise<void> {
     repo.touchChat(chatId);
 
     if (thread === 'main' && completedFirstAnswer) {
-      await maybeAutoTitle(chatId, thread);
+      await maybeAutoTitle(chatId);
     }
   } catch (err) {
     if (isAbort(err) || controller.signal.aborted) {
@@ -702,44 +716,117 @@ async function runLoop(ctx: LoopCtx): Promise<void> {
 // Auto-title
 // ---------------------------------------------------------------------------
 
-async function maybeAutoTitle(chatId: string, thread: Thread): Promise<void> {
-  try {
-    const chat = repo.getChat(chatId);
-    if (!chat || (chat.title && chat.title !== 'New chat')) return;
+const TITLE_MODEL = 'openai/gpt-5.6-luna';
 
-    const messages = repo.listMessages(chatId, 'main');
-    const firstUser = messages.find((m) => m.role === 'user');
-    if (!firstUser) return;
-    const firstAssistant = messages.find(
-      (m) => m.role === 'assistant' && m.content.trim().length > 0,
-    );
+function cleanTitle(raw: string): string {
+  const firstLine = raw.split('\n').find((line) => line.trim().length > 0) ?? '';
+  return clip(firstLine.replace(/^["'“”‘’\s]+|["'“”‘’\s.]+$/g, ''), 60);
+}
 
-    const sample = [
-      `User: ${clip(firstUser.content, 900)}`,
-      firstAssistant ? `Assistant: ${clip(firstAssistant.content, 500)}` : '',
-    ]
-      .filter(Boolean)
-      .join('\n\n');
+function enqueueTitleJob(
+  chatId: string,
+  task: () => Promise<TitleResult | null>,
+): Promise<TitleResult | null> {
+  const previous = titleJobs.get(chatId) ?? Promise.resolve(null);
+  const queued = previous.catch(() => null).then(task);
+  titleJobs.set(chatId, queued);
+  void queued.then(
+    () => {
+      if (titleJobs.get(chatId) === queued) titleJobs.delete(chatId);
+    },
+    () => {
+      if (titleJobs.get(chatId) === queued) titleJobs.delete(chatId);
+    },
+  );
+  return queued;
+}
 
-    const raw = await nonStreaming(
-      [
-        { role: 'system', content: TITLE_SYSTEM_PROMPT },
-        { role: 'user', content: sample },
-      ],
-      // Luna at effort 'none' — titling needs no reasoning, and reasoning
-      // models spend completion tokens thinking before any text: a small
-      // budget gets consumed entirely (finish_reason 'length', empty content)
-      // and the chat silently stays "New chat".
-      { model: 'openai/gpt-5.6-luna', reasoningEffort: 'none', maxTokens: 256, temperature: 0.3 },
-    );
+async function generateTitle(
+  chatId: string,
+  systemPrompt: string,
+  sample: string,
+): Promise<TitleResult | null> {
+  const chat = repo.getChat(chatId);
+  if (!chat || !sample.trim()) return null;
 
-    const firstLine = raw.split('\n').find((l) => l.trim().length > 0) ?? '';
-    const title = clip(firstLine.replace(/^["'“”‘’\s]+|["'“”‘’\s.]+$/g, ''), 60);
-    if (!title) return;
+  const raw = await nonStreaming(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: sample },
+    ],
+    // Luna is the high-volume auxiliary model. Titling needs no reasoning;
+    // keeping it at none also prevents the reasoning preamble consuming the
+    // entire short completion budget before any visible title is produced.
+    { model: TITLE_MODEL, reasoningEffort: 'none', maxTokens: 256, temperature: 0.3 },
+  );
 
+  const title = cleanTitle(raw);
+  if (!title) return null;
+
+  const changed = title !== chat.title;
+  if (changed) {
     repo.setChatTitle(chatId, title);
-    emit(chatId, thread, 'chat.title', { title });
+    emit(chatId, 'main', 'chat.title', { title });
+  }
+  return { title, changed };
+}
+
+async function maybeAutoTitle(chatId: string): Promise<void> {
+  try {
+    await enqueueTitleJob(chatId, async () => {
+      const chat = repo.getChat(chatId);
+      if (!chat || (chat.title && chat.title !== 'New chat')) return null;
+
+      const messages = repo.listMessages(chatId, 'main');
+      const firstUser = messages.find((m) => m.role === 'user');
+      if (!firstUser) return null;
+      const firstAssistant = messages.find(
+        (m) => m.role === 'assistant' && m.content.trim().length > 0,
+      );
+
+      const sample = [
+        `User: ${clip(firstUser.content, 900)}`,
+        firstAssistant ? `Assistant: ${clip(firstAssistant.content, 500)}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n\n');
+
+      return generateTitle(chatId, TITLE_SYSTEM_PROMPT, sample);
+    });
   } catch (err) {
     console.error('[engine] auto-title failed', (err as Error)?.message ?? err);
   }
+}
+
+/** Refresh a titled chat after the user leaves it following another interaction. */
+export function retitleChat(chatId: string): Promise<TitleResult | null> {
+  return enqueueTitleJob(chatId, async () => {
+    const chat = repo.getChat(chatId);
+    if (!chat) return null;
+
+    const messages = [
+      ...repo.listMessages(chatId, 'main'),
+      ...repo.listMessages(chatId, 'fork'),
+    ].sort((a, b) => a.createdAt - b.createdAt);
+    const firstUser = messages.find((message) => message.role === 'user');
+    const firstAssistant = messages.find(
+      (message) => message.role === 'assistant' && message.content.trim().length > 0,
+    );
+    if (!firstUser || !firstAssistant) return { title: chat.title, changed: false };
+
+    // Preserve the opening topic and the latest direction without sending an
+    // unbounded transcript to an auxiliary title call.
+    const selected = messages.length <= 14 ? messages : [messages[0]!, ...messages.slice(-13)];
+    const transcript = selected
+      .map((message) => {
+        const thread = message.thread === 'fork' ? 'Fork ' : '';
+        const role = message.role === 'user' ? 'User' : 'Assistant';
+        const budget = message.role === 'user' ? 700 : 450;
+        return `${thread}${role}: ${clip(message.content, budget)}`;
+      })
+      .join('\n\n');
+    const sample = `Current title: ${chat.title}\n\nConversation:\n${transcript}`;
+
+    return generateTitle(chatId, RETITLE_SYSTEM_PROMPT, sample);
+  });
 }

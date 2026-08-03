@@ -56,6 +56,7 @@ export default function App() {
   const loadModels = useStore((s) => s.loadModels)
   const openChat = useStore((s) => s.openChat)
   const newChat = useStore((s) => s.newChat)
+  const retitleOnExit = useStore((s) => s.retitleOnExit)
   const sendMessage = useStore((s) => s.sendMessage)
   const autoOpened = useRef(false)
 
@@ -63,6 +64,12 @@ export default function App() {
     void loadChats()
     void loadModels()
   }, [loadChats, loadModels])
+
+  useEffect(() => {
+    const onPageHide = () => void retitleOnExit(undefined, true)
+    window.addEventListener('pagehide', onPageHide)
+    return () => window.removeEventListener('pagehide', onPageHide)
+  }, [retitleOnExit])
 
   // Land in the most recent conversation on first load.
   useEffect(() => {

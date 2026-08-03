@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useActiveChatId, useChats, useStore } from '../../state/store'
 import { absoluteTime, cx, relativeTime } from '../../lib/utils'
 import { EASE } from '../../lib/motion'
+import TypewriterText from './TypewriterText'
 import './ChatListSidebar.css'
 
 export interface ChatListSidebarProps {
@@ -101,7 +102,9 @@ export function ChatListSidebar({ className }: ChatListSidebarProps) {
                     }}
                   >
                     <span className="rml-chatrow__body">
-                      <span className="rml-chatrow__title">{chat.title || 'New chat'}</span>
+                      <span className="rml-chatrow__title">
+                        <TypewriterText text={chat.title || 'New chat'} />
+                      </span>
                       <span className="rml-chatrow__time" title={absoluteTime(chat.updatedAt)}>
                         {relativeTime(chat.updatedAt)}
                       </span>

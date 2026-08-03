@@ -138,3 +138,6 @@ both colour schemes correct · nothing at 360px is clipped · every number sourc
 
 /** System prompt for the cheap auto-title call. */
 export const TITLE_SYSTEM_PROMPT = `You write chat titles. Given the first exchange of a conversation, reply with a title of at most 5 words that names the topic. Write it in the same language the user wrote in. No quotes, no trailing punctuation, no "Chat about". Reply with the title and nothing else.`;
+
+/** System prompt for the exit-time title refresh. */
+export const RETITLE_SYSTEM_PROMPT = `You rewrite chat titles. Given the conversation so far and its current title, reply with the best title of at most 5 words. Name the conversation's durable topic, reflecting its latest direction without overfitting to a minor aside. Write in the same language the user primarily used. No quotes, no trailing punctuation, no "Chat about". Reply with the title and nothing else.`;

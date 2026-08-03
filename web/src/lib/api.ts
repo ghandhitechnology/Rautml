@@ -74,6 +74,17 @@ export function getChat(chatId: string): Promise<ChatSnapshot> {
   return request<ChatSnapshot>(`/chats/${encodeURIComponent(chatId)}`)
 }
 
+/** POST /api/chats/:id/retitle → refreshes the title with GPT-5.6 Luna. */
+export function retitleChat(
+  chatId: string,
+  keepalive = false,
+): Promise<{ title: string; changed: boolean }> {
+  return request<{ title: string; changed: boolean }>(
+    `/chats/${encodeURIComponent(chatId)}/retitle`,
+    { method: 'POST', keepalive },
+  )
+}
+
 /** GET /api/models → the selectable model catalog */
 export function listModels(): Promise<{ models: ModelInfo[]; defaultModelId: string }> {
   return request<{ models: ModelInfo[]; defaultModelId: string }>('/models')

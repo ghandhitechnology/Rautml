@@ -6,6 +6,7 @@ import { EASE } from '../../lib/motion'
 import ChatListSidebar from './ChatListSidebar'
 import Composer from './Composer'
 import ThemeToggle from './ThemeToggle'
+import TypewriterText from './TypewriterText'
 import './Layout.css'
 
 export interface LayoutProps {
@@ -63,7 +64,7 @@ export function Layout({
         <header className="rml-topbar">
           <div className="rml-topbar__lead">
             <h1 className="rml-topbar__title" title={chat?.title}>
-              {chat?.title ?? 'Rautml'}
+              <TypewriterText text={chat?.title ?? 'Rautml'} />
             </h1>
             <AnimatePresence>
               {connection === 'reconnecting' ? (

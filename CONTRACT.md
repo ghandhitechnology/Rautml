@@ -82,6 +82,7 @@ pending_inputs(id TEXT PK, run_id TEXT, chat_id TEXT, thread TEXT, payload TEXT,
 - `POST /api/chats` `{}` → `Chat` (title "New chat"; auto-titled after first exchange)
 - `DELETE /api/chats/:id`
 - `GET  /api/chats/:id` → `{ chat, messages, assets: AssetWithVersions[], events: ChatEvent[], pendingInput: PendingInput|null, activeRun: Run|null }`
+- `POST /api/chats/:id/retitle` → `{ title: string, changed: boolean }` (GPT-5.6 Luna at effort `none`; invoked when leaving a chat that changed since its initial title)
 - `POST /api/chats/:id/messages` `{ content: string, thread: 'main'|'fork', model?: string, effort?: string }` → `{ runId }` (409 if a run is active on that thread; 400 on unknown model or an effort the model doesn't offer)
 - `GET  /api/models` → `{ models: ModelInfo[], defaultModelId: string }` (the selectable catalog)
 - `POST /api/chats/:id/input` `{ pendingInputId, value: string }` → resumes paused run
@@ -121,8 +122,11 @@ Types (data shape):
 - `ask_user_input_v0`: persist pending_input, emit input.request, set run status awaiting_input, **park** the
   loop (persist current turn state via model_turns; the resume endpoint re-enters the loop with the answer as
   the tool result). Survives server restart because everything is in DB.
-- Auto-title: after first main exchange completes, one cheap non-streamed call ("title this chat in ≤5 words,
-  language of the user") → update chats.title, emit chat.title.
+- Auto-title: after the first main exchange completes, one cheap non-streamed GPT-5.6 Luna call at effort
+  `none` ("title this chat in ≤5 words, language of the user") → update chats.title, emit chat.title.
+- Exit retitle: after any later successful interaction, leaving or switching the chat triggers one serialized
+  Luna/`none` refresh over a bounded conversation sample. Navigation never waits; changed titles update
+  `chats.title` and emit `chat.title`.
 - Errors: run.status error + message.complete with friendly text; never leave status 'streaming'.
 
 ## Tools (names/schemas exact; registry order = this order)
