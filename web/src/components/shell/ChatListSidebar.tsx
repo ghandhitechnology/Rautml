@@ -82,7 +82,6 @@ export function ChatListSidebar({ className }: ChatListSidebarProps) {
               return (
                 <motion.li
                   key={chat.id}
-                  layout="position"
                   initial={{ opacity: 0, y: -4 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, x: -8 }}
@@ -127,13 +126,7 @@ export function ChatListSidebar({ className }: ChatListSidebarProps) {
                       )}
                     </button>
 
-                    {active ? (
-                      <motion.span
-                        layoutId="rml-chatrow-active"
-                        className="rml-chatrow__rail"
-                        transition={{ duration: 0.3, ease: EASE }}
-                      />
-                    ) : null}
+                    {active ? <span className="rml-chatrow__rail" aria-hidden="true" /> : null}
                   </div>
                 </motion.li>
               )

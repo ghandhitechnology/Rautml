@@ -52,8 +52,13 @@ export function ForkComposer({
     el.style.overflowY = el.scrollHeight > MAX_HEIGHT ? 'auto' : 'hidden'
   }, [value])
 
+  // Wait for the panel's enter spring to settle before focusing — immediate
+  // focus makes the shell fork column scrollLeft to chase the field and leaves
+  // the whole sidebar permanently shifted left.
   useEffect(() => {
-    if (autoFocus) ref.current?.focus()
+    if (!autoFocus) return
+    const id = window.setTimeout(() => ref.current?.focus({ preventScroll: true }), 280)
+    return () => window.clearTimeout(id)
   }, [autoFocus])
 
   const submit = useCallback(() => {

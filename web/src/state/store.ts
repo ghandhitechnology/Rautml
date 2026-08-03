@@ -970,11 +970,28 @@ export const useIsRunning = (thread: Thread = 'main') =>
 
 /* ------------------------------------------------------- document mode */
 
-/** True when the open chat has at least one asset → the main column becomes the document. */
+/**
+ * True when the open chat should hand the main column to the document.
+ *
+ * Deferred while the *initial* build is still running: if every asset so far
+ * belongs to the live main run, keep the chat + activity timeline on stage so
+ * tool calls stay visible during first HTML creation. Takeover (and bloom)
+ * happens when that run finishes. Follow-up edits already in document mode
+ * stay there — older assets mean `allFromLive` is false.
+ */
 export const useDocumentMode = () =>
   useStore((s) => {
     const cs = activeChatState(s)
-    return !!cs && cs.assets.length > 0
+    if (!cs || cs.assets.length === 0) return false
+    const run = cs.activeRun.main
+    if (run && isLive(run.status)) {
+      const liveMsgIds = new Set(
+        cs.messages.main.filter((m) => m.runId === run.id).map((m) => m.id),
+      )
+      const allFromLive = cs.assets.every((a) => !!a.messageId && liveMsgIds.has(a.messageId))
+      if (allFromLive) return false
+    }
+    return true
   })
 
 export const useHistoryOpen = () => useStore((s) => activeChatState(s)?.historyOpen ?? false)

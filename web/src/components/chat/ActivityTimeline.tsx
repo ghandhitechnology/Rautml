@@ -6,7 +6,7 @@
  * clicking the header re-expands it and that choice sticks. */
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { EASE } from '../../lib/motion'
 import { cx, formatDuration } from '../../lib/utils'
 import type { RunTimeline, TimelineItem } from '../../lib/types'
@@ -14,6 +14,10 @@ import { Icon, toolIcon } from './icons'
 import './ActivityTimeline.css'
 
 const LIVE = new Set(['running', 'awaiting_input'])
+
+// Critically damped: it keeps up with bursts of tool calls without overshooting.
+const EXPAND = { type: 'spring' as const, stiffness: 360, damping: 36, mass: 0.85 }
+const COLLAPSE = { duration: 0.2, ease: EASE }
 
 /** Measured height of an element, kept fresh through a ResizeObserver. */
 function useMeasuredHeight<T extends HTMLElement>() {
@@ -50,7 +54,13 @@ function lastActivity(timeline: RunTimeline): number {
   return last
 }
 
-function StatusGlyph({ status }: { status: TimelineItem['status'] }) {
+function StatusGlyph({
+  status,
+  reduceMotion,
+}: {
+  status: TimelineItem['status']
+  reduceMotion: boolean
+}) {
   return (
     <span className={cx('rml-tl__status', `is-${status}`)}>
       <AnimatePresence initial={false} mode="wait">
@@ -58,19 +68,19 @@ function StatusGlyph({ status }: { status: TimelineItem['status'] }) {
           <motion.span
             key="spin"
             className="rml-tl__spinner"
-            initial={{ opacity: 0, scale: 0.6 }}
+            initial={reduceMotion ? false : { opacity: 0, scale: 0.6 }}
             animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.6 }}
-            transition={{ duration: 0.2, ease: EASE }}
+            exit={reduceMotion ? undefined : { opacity: 0, scale: 0.6 }}
+            transition={reduceMotion ? { duration: 0 } : { duration: 0.2, ease: EASE }}
           />
         ) : (
           <motion.span
             key={status}
             className="rml-tl__mark"
-            initial={{ opacity: 0, scale: 0.5 }}
+            initial={reduceMotion ? false : { opacity: 0, scale: 0.5 }}
             animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.5 }}
-            transition={{ duration: 0.24, ease: EASE }}
+            exit={reduceMotion ? undefined : { opacity: 0, scale: 0.5 }}
+            transition={reduceMotion ? { duration: 0 } : { duration: 0.24, ease: EASE }}
           >
             <Icon name={status === 'error' ? 'cross' : 'check'} size={12} />
           </motion.span>
@@ -80,14 +90,24 @@ function StatusGlyph({ status }: { status: TimelineItem['status'] }) {
   )
 }
 
-function Row({ item }: { item: TimelineItem }) {
+function Row({ item, reduceMotion }: { item: TimelineItem; reduceMotion: boolean }) {
   return (
     <motion.li
+      layout="position"
       className={cx('rml-tl__row', `is-${item.status}`)}
-      initial={{ opacity: 0, y: -5 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.28, ease: EASE }}
+      initial={reduceMotion ? false : { opacity: 0, y: -6, scale: 0.985 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={reduceMotion ? undefined : { opacity: 0, y: -3 }}
+      transition={
+        reduceMotion
+          ? { duration: 0 }
+          : {
+              layout: EXPAND,
+              y: EXPAND,
+              scale: EXPAND,
+              opacity: { duration: 0.2, ease: EASE },
+            }
+      }
     >
       <span className="rml-tl__icon">
         <Icon name={toolIcon(item.name)} size={14} />
@@ -100,7 +120,7 @@ function Row({ item }: { item: TimelineItem }) {
           {item.summary}
         </span>
       ) : null}
-      <StatusGlyph status={item.status} />
+      <StatusGlyph status={item.status} reduceMotion={reduceMotion} />
     </motion.li>
   )
 }
@@ -125,6 +145,7 @@ export function ActivityTimeline({
   const pinned = useRef(defaultExpanded !== undefined)
   const wasLive = useRef(live)
   const [inner, height] = useMeasuredHeight<HTMLDivElement>()
+  const reduceMotion = !!useReducedMotion()
 
   useTicker(live)
 
@@ -179,12 +200,16 @@ export function ActivityTimeline({
 
       <motion.div
         className="rml-tl__panel"
-        initial={false}
+        initial={live && expanded && !reduceMotion ? { height: 0, opacity: 0 } : false}
         animate={{ height: expanded ? height : 0, opacity: expanded ? 1 : 0 }}
-        transition={{
-          height: { duration: 0.34, ease: EASE },
-          opacity: { duration: expanded ? 0.28 : 0.16, ease: EASE },
-        }}
+        transition={
+          reduceMotion
+            ? { duration: 0 }
+            : {
+                height: expanded ? EXPAND : COLLAPSE,
+                opacity: { duration: expanded ? 0.22 : 0.14, ease: EASE },
+              }
+        }
         style={{ overflow: 'hidden' }}
         aria-hidden={!expanded}
       >
@@ -192,7 +217,7 @@ export function ActivityTimeline({
           <ul className="rml-tl__list">
             <AnimatePresence initial={false}>
               {timeline.items.map((item) => (
-                <Row key={item.toolCallId} item={item} />
+                <Row key={item.toolCallId} item={item} reduceMotion={reduceMotion} />
               ))}
             </AnimatePresence>
           </ul>

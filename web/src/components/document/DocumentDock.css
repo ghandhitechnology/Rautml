@@ -106,7 +106,7 @@
 /* ------------------------------------------------------------ activity strip */
 
 .rml-dock__activity {
-  max-height: min(30vh, 260px);
+  max-height: min(40vh, 340px);
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: var(--sp-1) var(--sp-3);
