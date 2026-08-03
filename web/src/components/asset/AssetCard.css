@@ -1,0 +1,153 @@
+/* AssetCard — a quiet surface that lets the artifact speak. */
+
+.rml-asset {
+  position: relative;
+  margin: var(--sp-5) 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  transform-origin: top center;
+  will-change: transform, opacity;
+  transition:
+    box-shadow var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
+
+.rml-asset:hover {
+  box-shadow: var(--shadow-md);
+  border-color: color-mix(in srgb, var(--text) 10%, var(--border));
+}
+
+/* ------------------------------------------------------------------ header */
+
+.rml-asset__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 48px;
+  padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-2) 52%, var(--surface));
+}
+
+.rml-asset__glyph {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  color: var(--accent);
+}
+
+.rml-asset__glyph svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.rml-asset__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-inline-start: calc(var(--sp-1) * -1);
+  font-family: var(--font-serif);
+  font-weight: 600;
+  font-size: var(--fs-md);
+  line-height: 1.3;
+  letter-spacing: -0.012em;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rml-asset__tools {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.rml-asset__divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 var(--sp-2);
+  background: var(--border);
+}
+
+/* --------------------------------------------------------------- icon button */
+
+.rml-asset__btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  text-decoration: none;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.rml-asset__btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.rml-asset__btn:active {
+  background: var(--pressed);
+  transform: scale(0.94);
+}
+
+.rml-asset__btn.is-copied {
+  color: var(--accent);
+}
+
+.rml-asset__btn.is-failed {
+  color: var(--text-muted);
+}
+
+.rml-asset__icon {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  will-change: transform, opacity;
+}
+
+.rml-asset__icon svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  overflow: visible;
+}
+
+/* ------------------------------------------------------------------- frame */
+
+.rml-asset__frame {
+  border-bottom-left-radius: var(--r-lg);
+  border-bottom-right-radius: var(--r-lg);
+}
+
+@media (max-width: 640px) {
+  .rml-asset__bar {
+    padding-inline: var(--sp-3);
+  }
+
+  .rml-asset__divider {
+    margin: 0 var(--sp-1);
+  }
+}

@@ -1,0 +1,111 @@
+/* Fork panel composer — compact sibling of the main dock composer. */
+
+.rml-forkcomposer {
+  flex: 0 0 auto;
+  padding: var(--sp-2) var(--sp-4) var(--sp-4);
+  background: var(--surface);
+}
+
+.rml-forkcomposer__field {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 6px 6px 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--bg);
+  box-shadow: var(--shadow-sm);
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
+}
+
+.rml-forkcomposer__field:hover {
+  border-color: color-mix(in srgb, var(--text-muted) 26%, var(--border));
+}
+
+.rml-forkcomposer__field:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 52%, var(--border));
+  box-shadow:
+    var(--shadow-sm),
+    0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.rml-forkcomposer__field.is-running {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
+}
+
+.rml-forkcomposer__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-height: 148px;
+  padding: 6px 0;
+  resize: none;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text);
+  background: none;
+  overflow-y: hidden;
+}
+
+.rml-forkcomposer__input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.9;
+}
+
+.rml-forkcomposer__input:disabled {
+  opacity: 0.55;
+}
+
+/* ----------------------------------------------------------------- buttons */
+
+.rml-forkcomposer__btn {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-pill);
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    opacity var(--dur-fast) var(--ease);
+  will-change: transform;
+}
+
+.rml-forkcomposer__btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+.rml-forkcomposer__btn--send {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.rml-forkcomposer__btn--send:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.rml-forkcomposer__btn--send:disabled {
+  background: var(--surface-2);
+  color: var(--text-muted);
+  opacity: 0.75;
+}
+
+.rml-forkcomposer__btn--stop {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.rml-forkcomposer__btn--stop:hover {
+  background: var(--accent-soft);
+}
+
+.rml-forkcomposer__stop {
+  width: 9px;
+  height: 9px;
+  border-radius: 2.5px;
+  background: currentColor;
+}

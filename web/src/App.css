@@ -1,0 +1,37 @@
+/* Mount points for the feature agents. Kept dumb on purpose — they only reserve space. */
+
+.rml-slot--thread {
+  min-height: 100%;
+}
+
+.rml-slot--fork {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.rml-slot--document {
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+}
+
+.rml-slot--ball {
+  position: absolute;
+  right: var(--sp-6);
+  bottom: var(--sp-5);
+  z-index: 6;
+  pointer-events: none;
+}
+
+.rml-slot--ball > * {
+  pointer-events: auto;
+}
+
+/* In document mode the ball must clear the floating composer and outrank every
+ * piece of glass chrome — it is the one control that is always reachable. */
+.rml-shell.is-document .rml-slot--ball {
+  bottom: calc(var(--sp-5) + 78px);
+  z-index: 20;
+}

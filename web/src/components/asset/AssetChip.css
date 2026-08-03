@@ -1,0 +1,113 @@
+/* AssetChip — a quiet reference row inside the conversation. */
+
+.rml-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  margin: var(--sp-4) 0 var(--sp-2);
+  padding: 10px var(--sp-3) 10px var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  text-align: left;
+  will-change: transform, opacity;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.rml-chip:hover {
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+.rml-chip:active {
+  transform: translateY(0) scale(0.995);
+}
+
+.rml-chip.is-active {
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--border));
+  background: color-mix(in srgb, var(--accent-soft) 42%, var(--surface));
+}
+
+.rml-chip__glyph {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--accent-soft) 62%, transparent);
+  color: var(--accent);
+}
+
+.rml-chip__glyph svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.rml-chip__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.rml-chip__title {
+  font-family: var(--font-serif);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rml-chip__meta {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.rml-chip__arrow {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  color: var(--text-muted);
+  opacity: 0;
+  transform: translateX(-4px);
+  transition:
+    opacity var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.rml-chip__arrow svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.rml-chip:hover .rml-chip__arrow {
+  opacity: 1;
+  transform: translateX(0);
+  color: var(--accent-hover);
+}

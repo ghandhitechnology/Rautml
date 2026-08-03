@@ -1,0 +1,286 @@
+/* Fork mini-chat: scroll region, bubbles, chips, empty state. */
+
+.rml-forkthread {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.rml-forkthread__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  padding: var(--sp-4) var(--sp-4) var(--sp-5);
+}
+
+.rml-forkthread__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+/* --------------------------------------------------------------- messages */
+
+.rml-forkmsg {
+  will-change: transform;
+}
+
+.rml-forkmsg--user {
+  display: flex;
+  justify-content: flex-end;
+  padding-left: var(--sp-6);
+}
+
+.rml-forkmsg__bubble {
+  padding: 8px 12px;
+  border-radius: var(--r-lg) var(--r-lg) 5px var(--r-lg);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 13.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.rml-forkmsg--assistant {
+  padding-right: var(--sp-2);
+}
+
+.rml-forkmsg__body {
+  position: relative;
+}
+
+.rml-forkmsg.is-error .rml-forkmsg__body {
+  color: var(--text-muted);
+}
+
+.rml-forkmsg__quiet {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* streaming caret */
+.rml-forkmsg__caret {
+  display: inline-block;
+  width: 2px;
+  height: 0.95em;
+  margin-left: 1px;
+  vertical-align: -0.13em;
+  border-radius: 1px;
+  background: var(--accent);
+  animation: rml-forkcaret 1.05s steps(1, end) infinite;
+}
+
+@keyframes rml-forkcaret {
+  0%,
+  55% {
+    opacity: 1;
+  }
+  56%,
+  100% {
+    opacity: 0.15;
+  }
+}
+
+/* ---------------------------------------------------------------- thinking */
+
+.rml-forkdots {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding-left: 2px;
+}
+
+.rml-forkdots span {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--r-pill);
+  background: var(--text-muted);
+  opacity: 0.4;
+  animation: rml-forkdot 1.2s var(--ease) infinite;
+}
+
+.rml-forkdots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.rml-forkdots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes rml-forkdot {
+  0%,
+  100% {
+    opacity: 0.28;
+    transform: translateY(0) scale(0.9);
+  }
+  40% {
+    opacity: 0.9;
+    transform: translateY(-3px) scale(1);
+  }
+}
+
+/* ------------------------------------------------------------------- chips */
+
+.rml-forkchips {
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--surface-2) 62%, transparent);
+}
+
+.rml-forkchips__q {
+  margin-bottom: var(--sp-2);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.rml-forkchips__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.rml-forkchips__chip {
+  padding: 5px 11px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    opacity var(--dur-fast) var(--ease);
+}
+
+.rml-forkchips__chip:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+  color: var(--accent-hover);
+}
+
+.rml-forkchips__chip:disabled {
+  opacity: 0.5;
+}
+
+.rml-forkchips__chip.is-picked {
+  opacity: 1;
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
+  color: var(--accent-hover);
+}
+
+/* ------------------------------------------------------------- empty state */
+
+.rml-forkempty {
+  height: 100%;
+  min-height: 260px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: var(--sp-6) var(--sp-2);
+}
+
+.rml-forkempty__mark {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: var(--sp-4);
+  border-radius: var(--r-pill);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.rml-forkempty__mark svg {
+  width: 19px;
+  height: 19px;
+}
+
+.rml-forkempty__title {
+  font-family: var(--font-serif);
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  letter-spacing: -0.014em;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.rml-forkempty__copy {
+  max-width: 30ch;
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  color: var(--text-muted);
+  margin-bottom: var(--sp-5);
+}
+
+.rml-forkempty__chips {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  max-width: 268px;
+}
+
+.rml-forkempty__chip {
+  padding: 8px 12px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  text-align: left;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.rml-forkempty__chip:hover {
+  background: var(--surface-2);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+  color: var(--text);
+}
+
+/* ---------------------------------------------------------------- jump pill */
+
+.rml-forkthread__jump {
+  position: absolute;
+  left: 50%;
+  bottom: var(--sp-3);
+  margin-left: -15px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  box-shadow: var(--shadow-md);
+  transition:
+    color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+  will-change: transform;
+}
+
+.rml-forkthread__jump:hover {
+  color: var(--accent-hover);
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+}
+
+.rml-forkthread__jump svg {
+  width: 14px;
+  height: 14px;
+}

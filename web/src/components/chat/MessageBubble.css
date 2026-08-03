@@ -1,0 +1,182 @@
+.rml-msg {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+}
+
+/* ------------------------------------------------------------------- user */
+
+.rml-msg--user {
+  align-items: flex-end;
+}
+
+.rml-msg--user .rml-msg__bubble {
+  max-width: min(88%, 560px);
+  padding: 11px var(--sp-4) 12px;
+  border-radius: var(--r-lg);
+  border-bottom-right-radius: var(--r-sm);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+
+.rml-msg__text {
+  margin: 0;
+  font-size: var(--fs-md);
+  line-height: 1.62;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.rml-msg--user .rml-msg__extras {
+  align-self: stretch;
+}
+
+/* -------------------------------------------------------------- assistant */
+
+.rml-msg--assistant .rml-msg__body {
+  width: 100%;
+  min-width: 0;
+}
+
+/* ----------------------------------------------------------- streaming caret */
+
+/* The caret rides the end of the final rendered block so it reads as a live
+ * cursor rather than a separate element. Opacity-only animation → 60fps. */
+.rml-msg.is-streaming .rml-md > *:last-child::after,
+.rml-msg.is-streaming .rml-md > *:last-child > li:last-child::after {
+  content: '';
+  display: inline-block;
+  width: 2px;
+  height: 1.02em;
+  margin-left: 2px;
+  translate: 0 0.18em;
+  border-radius: 1px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent) 45%, transparent),
+    var(--accent),
+    color-mix(in srgb, var(--accent) 45%, transparent)
+  );
+  animation: rml-caret 1.15s var(--ease) infinite;
+}
+
+/* nested-list edge case: only the outermost list gets the caret */
+.rml-msg.is-streaming .rml-md > *:last-child li li:last-child::after {
+  content: none;
+}
+
+@keyframes rml-caret {
+  0%,
+  100% {
+    opacity: 0.22;
+  }
+  45% {
+    opacity: 1;
+  }
+}
+
+/* ------------------------------------------------------------- thinking dots */
+
+.rml-thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+}
+
+.rml-thinking i {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--r-pill);
+  background: var(--text-muted);
+  opacity: 0.4;
+  animation: rml-dot 1.25s var(--ease) infinite;
+}
+
+.rml-thinking i:nth-child(2) {
+  animation-delay: 0.14s;
+}
+
+.rml-thinking i:nth-child(3) {
+  animation-delay: 0.28s;
+}
+
+@keyframes rml-dot {
+  0%,
+  70%,
+  100% {
+    opacity: 0.28;
+    transform: translateY(0) scale(0.88);
+  }
+  35% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1);
+  }
+}
+
+/* -------------------------------------------------------------------- error */
+
+.rml-msg.is-error .rml-msg__body {
+  padding-left: var(--sp-4);
+  border-left: 2px solid color-mix(in srgb, var(--accent) 52%, transparent);
+}
+
+.rml-msg.is-error .rml-md {
+  color: color-mix(in srgb, var(--text) 76%, var(--text-muted));
+}
+
+.rml-msg__error {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: var(--sp-3);
+  font-size: var(--fs-sm);
+  color: var(--accent-hover);
+}
+
+.rml-msg__error svg {
+  flex: 0 0 auto;
+  opacity: 0.85;
+}
+
+.rml-msg.is-error.rml-msg--user .rml-msg__bubble {
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+}
+
+/* ------------------------------------------------------------------ extras */
+
+.rml-msg__extras {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  width: 100%;
+  min-width: 0;
+  margin-top: var(--sp-4);
+}
+
+.rml-msg__extras:empty {
+  display: none;
+  margin-top: 0;
+}
+
+/* ----------------------------------------------------------------- compact */
+
+.rml-msg--compact .rml-msg__text {
+  font-size: var(--fs-sm);
+  line-height: 1.58;
+}
+
+.rml-msg--compact.rml-msg--user .rml-msg__bubble {
+  max-width: 92%;
+  padding: 9px var(--sp-3) 10px;
+  border-radius: var(--r-md);
+  border-bottom-right-radius: 6px;
+}
+
+.rml-msg--compact .rml-msg__extras {
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}

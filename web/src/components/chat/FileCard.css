@@ -1,0 +1,115 @@
+.rml-files {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--sp-2);
+  width: 100%;
+  min-width: 0;
+}
+
+.rml-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 9px 10px 9px var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+  box-shadow: var(--shadow-sm);
+  will-change: transform;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+
+.rml-file:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.rml-file:active {
+  transform: translateY(0);
+}
+
+.rml-file__glyph {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-sm);
+  color: var(--accent-hover);
+  background: var(--accent-soft);
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+.rml-file__meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.rml-file__name {
+  font-size: var(--fs-sm);
+  font-weight: 550;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rml-file__sub {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.rml-file__action {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  opacity: 0.65;
+  transition:
+    opacity var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.rml-file:hover .rml-file__action {
+  opacity: 1;
+  color: var(--accent-hover);
+  background: var(--accent-soft);
+  transform: translateY(1px);
+}
+
+/* ---------------------------------------------------------------- compact */
+
+.rml-files--compact {
+  grid-template-columns: 1fr;
+}
+
+.rml-file--compact {
+  padding: 7px 8px 7px 10px;
+  border-radius: var(--r-sm);
+}
+
+.rml-file--compact .rml-file__glyph {
+  width: 26px;
+  height: 26px;
+}
+
+.rml-file--compact .rml-file__name {
+  font-size: var(--fs-xs);
+}

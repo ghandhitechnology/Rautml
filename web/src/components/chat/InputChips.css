@@ -1,0 +1,145 @@
+.rml-chips {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  width: 100%;
+  min-width: 0;
+  padding: var(--sp-4);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--accent-soft) 42%, var(--surface));
+  transition:
+    border-color var(--dur) var(--ease),
+    background-color var(--dur) var(--ease);
+}
+
+.rml-chips.is-locked {
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+}
+
+/* ------------------------------------------------------------------- head */
+
+.rml-chips__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.rml-chips__glyph {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  color: var(--accent-hover);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  transition: color var(--dur) var(--ease), background-color var(--dur) var(--ease);
+}
+
+.rml-chips.is-locked .rml-chips__glyph {
+  color: var(--text-muted);
+  background: var(--surface-2);
+}
+
+.rml-chips__question {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding-top: 1px;
+  font-size: var(--fs-md);
+  line-height: 1.55;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------- chips */
+
+.rml-chips__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  padding-left: 32px;
+}
+
+.rml-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 7px var(--sp-4);
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: var(--fs-sm);
+  font-weight: 550;
+  line-height: 1.4;
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+  will-change: transform;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    opacity var(--dur) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
+}
+
+.rml-chip:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--border));
+  background: color-mix(in srgb, var(--accent-soft) 55%, var(--surface));
+  color: var(--accent-hover);
+}
+
+.rml-chip:disabled {
+  box-shadow: none;
+}
+
+.rml-chip.is-chosen {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+  box-shadow: var(--shadow-sm);
+  opacity: 1;
+}
+
+.rml-chip.is-dimmed {
+  opacity: 0.4;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.rml-chip__check {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  margin-left: -2px;
+}
+
+.rml-chip__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- compact */
+
+.rml-chips--compact {
+  padding: var(--sp-3);
+  gap: var(--sp-2);
+}
+
+.rml-chips--compact .rml-chips__question {
+  font-size: var(--fs-sm);
+}
+
+.rml-chips--compact .rml-chips__row {
+  padding-left: 0;
+}
+
+.rml-chips--compact .rml-chip {
+  padding: 5px var(--sp-3);
+  font-size: var(--fs-xs);
+}

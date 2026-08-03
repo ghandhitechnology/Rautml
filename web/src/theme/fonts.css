@@ -1,0 +1,11 @@
+/* Rautml — typefaces
+ * Pretendard Variable  : UI face, flawless Korean + Latin in one file (npm `pretendard`)
+ * Lora                 : display serif for the wordmark + headings (npm `@fontsource/lora`)
+ * Both are self-hosted from node_modules; Vite fingerprints + inlines the woff2 URLs.
+ */
+
+@import 'pretendard/dist/web/variable/pretendardvariable.css';
+
+@import '@fontsource/lora/latin.css';
+@import '@fontsource/lora/latin-ext.css';
+@import '@fontsource/lora/latin-italic.css';

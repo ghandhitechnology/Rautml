@@ -1,0 +1,29 @@
+/* HistoryOverlay — the conversation sheet over the document. */
+
+.rml-history {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
+  /* heavier than the floating chrome: prose has to win over whatever the page
+   * underneath is doing, while a whisper of it still shows through */
+  background: color-mix(in srgb, var(--bg) 94%, transparent);
+  backdrop-filter: saturate(150%) blur(26px);
+  -webkit-backdrop-filter: saturate(150%) blur(26px);
+  will-change: transform, opacity;
+}
+
+/* clears the floating header above and the composer dock below */
+.rml-history__inner {
+  min-height: 100%;
+  padding: calc(var(--sp-12) + var(--sp-6)) var(--sp-6) calc(var(--sp-12) + var(--sp-10));
+}
+
+@media (max-width: 860px) {
+  .rml-history__inner {
+    padding-inline: var(--sp-4);
+  }
+}

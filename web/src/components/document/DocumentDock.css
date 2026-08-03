@@ -1,0 +1,141 @@
+/* DocumentDock — floating glass chrome at the foot of the document. */
+
+.rml-dock {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  pointer-events: none;
+}
+
+.rml-dock > * {
+  pointer-events: auto;
+  will-change: transform, opacity;
+}
+
+/* ------------------------------------------------------------ response sheet */
+
+.rml-dock__sheet {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-lg);
+  background: var(--glass);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.rml-dock__sheet-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4);
+  border-bottom: 1px solid color-mix(in srgb, var(--glass-border) 70%, transparent);
+}
+
+.rml-dock__pip {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--border);
+}
+
+.rml-dock__pip.is-live {
+  background: var(--accent);
+  animation: rml-pulse 1.4s var(--ease) infinite;
+}
+
+.rml-dock__sheet-title {
+  flex: 1 1 auto;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.006em;
+  color: var(--text-muted);
+}
+
+.rml-dock__sheet-close {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-pill);
+  color: var(--text-muted);
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.rml-dock__sheet-close:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.rml-dock__sheet-close:active {
+  transform: scale(0.92);
+}
+
+.rml-dock__sheet-close svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.rml-dock__sheet-prose {
+  max-height: min(34vh, 320px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--sp-3) var(--sp-4) var(--sp-4);
+}
+
+.rml-dock__sheet-prose .rml-md {
+  font-size: var(--fs-sm);
+}
+
+/* ------------------------------------------------------------ activity strip */
+
+.rml-dock__activity {
+  max-height: min(30vh, 260px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-md);
+  background: var(--glass);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--shadow-md);
+}
+
+/* ---------------------------------------------------------------- composer */
+
+.rml-dock__composer .rml-composer {
+  max-width: none;
+}
+
+.rml-dock__composer .rml-composer__field {
+  background: var(--glass);
+  border-color: var(--glass-border);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--shadow-lg);
+}
+
+.rml-dock__composer .rml-composer__field.is-running {
+  background: color-mix(in srgb, var(--surface-2) 46%, var(--glass));
+}
+
+.rml-dock__composer .rml-composer__footnote {
+  text-shadow: 0 1px 2px var(--bg);
+}

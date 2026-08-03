@@ -1,0 +1,217 @@
+.rml-thread {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: var(--thread-max);
+  min-height: 100%;
+  margin: 0 auto;
+}
+
+.rml-thread.is-empty {
+  justify-content: center;
+}
+
+.rml-thread__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-8);
+  width: 100%;
+  min-width: 0;
+  padding-top: var(--sp-2);
+}
+
+.rml-thread__turn {
+  width: 100%;
+  min-width: 0;
+  will-change: transform, opacity;
+}
+
+/* a user turn followed by its answer belongs closer together than two topics */
+.rml-thread__turn:has(.rml-msg--user) + .rml-thread__turn {
+  margin-top: calc(var(--sp-8) * -1 + var(--sp-6));
+}
+
+.rml-thread__tail {
+  height: var(--sp-6);
+  flex: 0 0 auto;
+}
+
+/* ------------------------------------------------------------ jump to latest */
+
+.rml-thread__sticky {
+  position: sticky;
+  bottom: var(--sp-2);
+  z-index: 4;
+  display: flex;
+  justify-content: center;
+  height: 0;
+  pointer-events: none;
+}
+
+.rml-thread__jump {
+  position: relative;
+  top: -38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px var(--sp-4) 7px var(--sp-3);
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: -0.002em;
+  box-shadow: var(--shadow-md);
+  pointer-events: auto;
+  will-change: transform;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.rml-thread__jump:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  color: var(--accent-hover);
+  transform: translateY(-1px);
+}
+
+.rml-thread__jump:active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* ------------------------------------------------------------- empty state */
+
+.rml-thread__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 auto;
+  padding: var(--sp-12) 0 calc(var(--sp-12) + var(--sp-8));
+}
+
+.rml-thread__empty-inner {
+  width: 100%;
+  max-width: 560px;
+  text-align: center;
+}
+
+.rml-thread__greet-en {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 32px;
+  line-height: 1.22;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.rml-thread__greet-ko {
+  margin-top: 6px;
+  font-size: 17px;
+  font-weight: 500;
+  line-height: 1.5;
+  letter-spacing: -0.014em;
+  color: color-mix(in srgb, var(--accent-hover) 62%, var(--text-muted));
+}
+
+.rml-thread__greet-sub {
+  margin-top: var(--sp-4);
+  font-size: var(--fs-sm);
+  line-height: 1.62;
+  color: var(--text-muted);
+  max-width: 42ch;
+  margin-inline: auto;
+}
+
+.rml-thread__hints {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-8);
+  text-align: left;
+}
+
+.rml-thread__hints button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: 11px var(--sp-3) 11px var(--sp-4);
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 62%, transparent);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  color: var(--text-muted);
+  text-align: left;
+  will-change: transform;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.rml-thread__hints button:hover {
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.rml-thread__hints button:active {
+  transform: translateY(0);
+}
+
+.rml-thread__hint-arrow {
+  flex: 0 0 auto;
+  rotate: -90deg;
+  opacity: 0;
+  color: var(--accent-hover);
+  transition: opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+}
+
+.rml-thread__hints button:hover .rml-thread__hint-arrow {
+  opacity: 1;
+  transform: translateX(2px);
+}
+
+/* ------------------------------------------------------------------ compact */
+
+.rml-thread--compact {
+  max-width: none;
+}
+
+.rml-thread--compact .rml-thread__list {
+  gap: var(--sp-6);
+}
+
+.rml-thread--compact .rml-thread__turn:has(.rml-msg--user) + .rml-thread__turn {
+  margin-top: calc(var(--sp-6) * -1 + var(--sp-4));
+}
+
+.rml-thread--compact .rml-thread__greet-en {
+  font-size: 22px;
+}
+
+.rml-thread--compact .rml-thread__greet-ko {
+  font-size: 14px;
+}
+
+.rml-thread--compact .rml-thread__hints {
+  display: none;
+}
+
+.rml-thread--compact .rml-thread__empty {
+  padding: var(--sp-8) 0;
+}
+
+@media (max-width: 860px) {
+  .rml-thread__greet-en {
+    font-size: 27px;
+  }
+}

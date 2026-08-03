@@ -1,0 +1,400 @@
+/* Prose styles for model output. Everything is token-driven; nothing here leaks
+ * outside `.rml-md` so asset iframes and widgets stay untouched. */
+
+.rml-md {
+  font-size: var(--fs-md);
+  line-height: var(--lh-body);
+  color: var(--text);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  /* Korean + Latin sit on the same baseline rhythm with Pretendard. */
+  font-family: var(--font-ui);
+}
+
+/* ------------------------------------------------------------ block rhythm */
+
+.rml-md > * + * {
+  margin-top: var(--sp-4);
+}
+
+.rml-md > h1 + *,
+.rml-md > h2 + *,
+.rml-md > h3 + *,
+.rml-md > h4 + * {
+  margin-top: var(--sp-3);
+}
+
+.rml-md > * + h1,
+.rml-md > * + h2,
+.rml-md > * + h3,
+.rml-md > * + h4 {
+  margin-top: var(--sp-8);
+}
+
+.rml-md p {
+  margin: 0;
+}
+
+/* ------------------------------------------------------------------ titles */
+
+.rml-md h1,
+.rml-md h2,
+.rml-md h3,
+.rml-md h4,
+.rml-md h5,
+.rml-md h6 {
+  font-weight: 600;
+  line-height: var(--lh-tight);
+  letter-spacing: -0.014em;
+  color: var(--text);
+  scroll-margin-top: var(--sp-8);
+}
+
+.rml-md h1 {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 24px;
+  letter-spacing: -0.018em;
+}
+
+.rml-md h2 {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 20px;
+  letter-spacing: -0.016em;
+}
+
+.rml-md h3 {
+  font-size: 16.5px;
+}
+
+.rml-md h4,
+.rml-md h5,
+.rml-md h6 {
+  font-size: var(--fs-md);
+}
+
+.rml-md h5,
+.rml-md h6 {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: var(--fs-xs);
+}
+
+.rml-md strong {
+  font-weight: 650;
+}
+
+.rml-md em {
+  font-style: italic;
+}
+
+.rml-md del {
+  color: var(--text-muted);
+  text-decoration-thickness: 1px;
+}
+
+/* ------------------------------------------------------------------- lists */
+
+.rml-md ul,
+.rml-md ol {
+  margin: 0;
+  padding-left: var(--sp-5);
+  list-style: revert;
+}
+
+.rml-md ul {
+  list-style-type: disc;
+}
+
+.rml-md li::marker {
+  color: color-mix(in srgb, var(--text-muted) 78%, transparent);
+}
+
+.rml-md li + li {
+  margin-top: 6px;
+}
+
+.rml-md li > ul,
+.rml-md li > ol {
+  margin-top: 6px;
+}
+
+.rml-md li > p + p {
+  margin-top: 8px;
+}
+
+/* GFM task lists */
+.rml-md li:has(> .rml-md__check) {
+  list-style: none;
+  margin-left: calc(var(--sp-5) * -1);
+  padding-left: 2px;
+  display: flex;
+  gap: 9px;
+  align-items: baseline;
+}
+
+.rml-md__check {
+  appearance: none;
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  translate: 0 2px;
+  border: 1.5px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+}
+
+.rml-md__check:checked {
+  border-color: var(--accent);
+  background:
+    linear-gradient(var(--accent), var(--accent)) padding-box,
+    var(--accent);
+  box-shadow: inset 0 0 0 2px var(--surface);
+}
+
+/* -------------------------------------------------------------- quotes/hr */
+
+.rml-md blockquote {
+  margin: 0;
+  padding: 2px 0 2px var(--sp-4);
+  border-left: 2px solid color-mix(in srgb, var(--accent) 42%, var(--border));
+  color: var(--text-muted);
+}
+
+.rml-md blockquote > * + * {
+  margin-top: var(--sp-3);
+}
+
+.rml-md hr {
+  height: 1px;
+  border: 0;
+  margin-block: var(--sp-6);
+  background: var(--border);
+}
+
+/* ------------------------------------------------------------------- links */
+
+.rml-md__link {
+  color: var(--accent-hover);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 34%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2.5px;
+  transition: text-decoration-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.rml-md__link:hover {
+  text-decoration-color: var(--accent);
+}
+
+/* ------------------------------------------------------------------ images */
+
+.rml-md__img {
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+/* ------------------------------------------------------------------ tables */
+
+.rml-md__table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+
+.rml-md table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+}
+
+.rml-md thead th {
+  position: sticky;
+  top: 0;
+  text-align: left;
+  font-weight: 600;
+  font-size: var(--fs-xs);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  white-space: nowrap;
+}
+
+.rml-md th,
+.rml-md td {
+  padding: 9px var(--sp-4);
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.rml-md tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.rml-md tbody tr {
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+.rml-md tbody tr:hover {
+  background: var(--hover);
+}
+
+/* --------------------------------------------------------------- code, inline */
+
+.rml-md__code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  padding: 0.12em 0.38em;
+  border-radius: 5px;
+  background: var(--surface-2);
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  color: color-mix(in srgb, var(--accent-hover) 76%, var(--text));
+  white-space: break-spaces;
+}
+
+/* ---------------------------------------------------------- code, block */
+
+.rml-code {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.rml-code__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: 5px 6px 5px var(--sp-3);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.rml-code__lang {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.rml-code__pre {
+  margin: 0;
+  padding: var(--sp-4);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 12.75px;
+  line-height: 1.62;
+  tab-size: 2;
+}
+
+.rml-code__pre code {
+  font: inherit;
+  color: var(--text);
+  white-space: pre;
+}
+
+/* ------------------------------------------------------------------- copy */
+
+.rml-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-xs);
+  font-weight: 550;
+  color: var(--text-muted);
+  opacity: 0.72;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    opacity var(--dur-fast) var(--ease);
+}
+
+.rml-code:hover .rml-copy,
+.rml-copy:focus-visible {
+  opacity: 1;
+}
+
+.rml-copy:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.rml-copy.is-copied {
+  color: var(--accent-hover);
+  opacity: 1;
+}
+
+.rml-copy__glyph {
+  display: grid;
+  place-items: center;
+  width: 13px;
+  height: 13px;
+}
+
+.rml-copy__glyph > span {
+  display: grid;
+  place-items: center;
+  grid-area: 1 / 1;
+}
+
+/* ------------------------------------------------------------------ katex */
+
+.rml-md .katex {
+  font-size: 1.04em;
+  color: var(--text);
+}
+
+.rml-md .katex-display {
+  margin: 0;
+  padding-block: 2px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.rml-md .katex-display > .katex {
+  white-space: nowrap;
+}
+
+.rml-md .katex-error {
+  color: var(--accent-hover);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+/* -------------------------------------------------------------- compact fork */
+
+.rml-md--compact {
+  font-size: var(--fs-sm);
+}
+
+.rml-md--compact > * + * {
+  margin-top: var(--sp-3);
+}
+
+.rml-md--compact h1 {
+  font-size: 19px;
+}
+
+.rml-md--compact h2 {
+  font-size: 17px;
+}
+
+.rml-md--compact h3 {
+  font-size: 15px;
+}
+
+.rml-md--compact .rml-code__pre {
+  padding: var(--sp-3);
+  font-size: 12px;
+}

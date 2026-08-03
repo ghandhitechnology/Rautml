@@ -1,0 +1,182 @@
+/* Compact activity strip for the fork thread. */
+
+.rml-forktl {
+  --forktl-danger: #b4462f;
+  margin: 0 0 var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--surface-2) 62%, transparent);
+  overflow: hidden;
+}
+
+:root[data-theme='dark'] .rml-forktl {
+  --forktl-danger: #e09b87;
+}
+
+/* ------------------------------------------------------------------- head */
+
+.rml-forktl__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px 7px 10px;
+  text-align: left;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.005em;
+  transition: color var(--dur-fast) var(--ease);
+}
+
+.rml-forktl__head:hover {
+  color: var(--text);
+}
+
+.rml-forktl__pip {
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--text-muted) 55%, transparent);
+}
+
+.rml-forktl.is-live .rml-forktl__pip {
+  background: var(--accent);
+  animation: rml-forktl-pulse 1.4s var(--ease) infinite;
+}
+
+.rml-forktl.has-error:not(.is-live) .rml-forktl__pip {
+  background: var(--forktl-danger);
+}
+
+@keyframes rml-forktl-pulse {
+  0%,
+  100% {
+    opacity: 0.32;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.rml-forktl__headline {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rml-forktl__chev {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  opacity: 0.6;
+  transform: rotate(-90deg);
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+.rml-forktl__chev.is-open {
+  transform: rotate(0deg);
+}
+
+/* ------------------------------------------------------------------- list */
+
+.rml-forktl__list {
+  padding: 0 9px 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rml-forktl__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 0 4px 0;
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+}
+
+.rml-forktl__icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.rml-forktl__icon svg {
+  width: 11px;
+  height: 11px;
+}
+
+.rml-forktl__item.is-running .rml-forktl__icon {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
+}
+
+.rml-forktl__item.is-error .rml-forktl__icon {
+  color: var(--forktl-danger);
+  border-color: color-mix(in srgb, var(--forktl-danger) 34%, var(--border));
+}
+
+.rml-forktl__body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.rml-forktl__label {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+}
+
+.rml-forktl__summary {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rml-forktl__item.is-error .rml-forktl__summary {
+  color: var(--forktl-danger);
+}
+
+.rml-forktl__state {
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  margin-top: 7px;
+  border-radius: var(--r-pill);
+  background: transparent;
+}
+
+.rml-forktl__item.is-running .rml-forktl__state {
+  background: var(--accent);
+  animation: rml-forktl-pulse 1.4s var(--ease) infinite;
+}
+
+.rml-forktl__item.is-ok .rml-forktl__state {
+  background: color-mix(in srgb, var(--text-muted) 42%, transparent);
+}
+
+.rml-forktl__item.is-error .rml-forktl__state {
+  background: var(--forktl-danger);
+}

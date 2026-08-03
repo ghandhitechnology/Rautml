@@ -1,0 +1,146 @@
+/* AssetFrame — the isolated document surface. Height is animated by framer-motion; everything
+ * else stays on transform/opacity. */
+
+.rml-frame {
+  position: relative;
+  width: 100%;
+  min-height: 200px;
+  overflow: hidden;
+  background: var(--surface);
+  contain: paint;
+}
+
+.rml-frame__layer {
+  position: absolute;
+  inset: 0 0 auto 0;
+  width: 100%;
+  will-change: opacity;
+  backface-visibility: hidden;
+}
+
+.rml-frame__iframe {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color-scheme: normal; /* the asset owns its own light/dark handling */
+}
+
+/* ------------------------------------------------------------------ skeleton */
+
+.rml-frame__skeleton {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--surface);
+  pointer-events: none;
+}
+
+.rml-frame__bones {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--sp-8) var(--sp-8) 0;
+}
+
+.rml-frame__bones span {
+  display: block;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+
+.rml-frame__bones span:first-child {
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--accent-soft) 70%, var(--surface-2));
+}
+
+.rml-frame__sheen {
+  position: absolute;
+  inset: 0;
+  transform: translate3d(-100%, 0, 0);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--text) 4%, transparent) 45%,
+    color-mix(in srgb, var(--text) 6%, transparent) 55%,
+    transparent 100%
+  );
+  animation: rml-frame-sheen 1.5s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  will-change: transform;
+}
+
+@keyframes rml-frame-sheen {
+  0% {
+    transform: translate3d(-100%, 0, 0);
+  }
+  100% {
+    transform: translate3d(100%, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rml-frame__sheen {
+    animation: none;
+    transform: none;
+    opacity: 0.35;
+  }
+}
+
+/* --------------------------------------------------------------------- error */
+
+.rml-frame__error {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  min-height: 200px;
+  padding: var(--sp-10) var(--sp-6);
+  text-align: center;
+}
+
+.rml-frame__error svg {
+  width: 22px;
+  height: 22px;
+  margin-bottom: var(--sp-1);
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.rml-frame__error-title {
+  font-size: var(--fs-md);
+  color: var(--text);
+}
+
+.rml-frame__error-detail {
+  max-width: 42ch;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-tight);
+  color: var(--text-muted);
+}
+
+.rml-frame__retry {
+  margin-top: var(--sp-3);
+  padding: 7px var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-sm);
+  color: var(--text);
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.rml-frame__retry:hover {
+  background: var(--hover);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+
+.rml-frame__retry:active {
+  transform: scale(0.97);
+}

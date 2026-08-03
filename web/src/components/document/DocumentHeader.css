@@ -1,0 +1,283 @@
+/* DocumentHeader — glass hovering over the page. Slim, quiet, never in the way. */
+
+.rml-dochead {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 12;
+  pointer-events: none;
+}
+
+/* grounds the bar so the document's own type never collides with it */
+.rml-dochead__scrim {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 84px;
+  background: linear-gradient(to bottom, var(--scrim), transparent);
+  opacity: 0.9;
+}
+
+.rml-dochead__bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: var(--sp-3) var(--sp-4) 0;
+  padding: 5px var(--sp-2) 5px var(--sp-2);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-pill);
+  background: var(--glass);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--shadow-md);
+  pointer-events: auto;
+  transition:
+    background-color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
+}
+
+.rml-dochead__bar:hover {
+  box-shadow: var(--shadow-lg);
+}
+
+/* ------------------------------------------------------------------ title */
+
+.rml-dochead__id {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.rml-dochead__title {
+  min-width: 0;
+  font-family: var(--font-serif);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.014em;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ------------------------------------------------------------------ tools */
+
+.rml-dochead__tools {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.rml-dochead__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-inline-end: var(--sp-1);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.rml-dochead__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  animation: rml-pulse 1.4s var(--ease) infinite;
+}
+
+.rml-dochead__divider {
+  width: 1px;
+  height: 15px;
+  margin: 0 var(--sp-1);
+  background: var(--glass-border);
+}
+
+.rml-dochead__btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-pill);
+  color: var(--text-muted);
+  text-decoration: none;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.rml-dochead__btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.rml-dochead__btn:active {
+  background: var(--pressed);
+  transform: scale(0.94);
+}
+
+.rml-dochead__btn.is-copied {
+  color: var(--accent);
+}
+
+.rml-dochead__glyph {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  will-change: transform, opacity;
+}
+
+.rml-dochead__history.is-on {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+.rml-dochead__theme {
+  width: 30px;
+  height: 30px;
+}
+
+/* --------------------------------------------------------------- switcher */
+
+.rml-dochead__switch {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.rml-dochead__switch-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 22px;
+  padding: 0 5px 0 6px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-pill);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.rml-dochead__switch-btn:hover,
+.rml-dochead__switch-btn.is-open {
+  background: var(--hover);
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--glass-border));
+  color: var(--text);
+}
+
+.rml-dochead__switch-count {
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.rml-dochead__switch-caret {
+  opacity: 0.7;
+}
+
+.rml-dochead__switch-btn.is-open .rml-dochead__switch-caret {
+  transform: rotate(180deg);
+}
+
+.rml-dochead__menu {
+  position: absolute;
+  top: calc(100% + 9px);
+  left: -6px;
+  z-index: 3;
+  width: min(320px, 62vw);
+  max-height: 46vh;
+  overflow-y: auto;
+  padding: var(--sp-1);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-md);
+  background: var(--glass);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--shadow-lg);
+  transform-origin: top left;
+  will-change: transform, opacity;
+}
+
+.rml-dochead__menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 7px var(--sp-2);
+  border-radius: var(--r-sm);
+  text-align: left;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+.rml-dochead__menu-item:hover {
+  background: var(--hover);
+}
+
+.rml-dochead__menu-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--border);
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+.rml-dochead__menu-item.is-active .rml-dochead__menu-dot {
+  background: var(--accent);
+}
+
+.rml-dochead__menu-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.rml-dochead__menu-title {
+  font-family: var(--font-serif);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rml-dochead__menu-meta {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+/* ------------------------------------------------------------- responsive */
+
+@media (max-width: 860px) {
+  .rml-dochead__bar {
+    margin-inline: var(--sp-3);
+    gap: var(--sp-2);
+  }
+
+  .rml-dochead__status {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .rml-dochead__theme,
+  .rml-dochead__divider:last-of-type {
+    display: none;
+  }
+}

@@ -1,0 +1,125 @@
+/* ForkBall — coral orb + hover tooltip. Transform/opacity only. */
+
+.rml-forkball {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ------------------------------------------------------------------ tooltip */
+
+.rml-forkball__tip {
+  pointer-events: none;
+  padding: 5px 10px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateX(8px);
+  transition:
+    opacity var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.rml-forkball:hover .rml-forkball__tip,
+.rml-forkball:focus-within .rml-forkball__tip {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* ---------------------------------------------------------------------- orb */
+
+.rml-forkball__btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--r-pill);
+  color: #fff;
+  background: linear-gradient(148deg, #e89a80 0%, var(--accent) 48%, #c25f3f 100%);
+  box-shadow:
+    0 1px 2px rgba(31, 30, 29, 0.12),
+    0 10px 30px color-mix(in srgb, var(--accent) 32%, transparent);
+  transition: box-shadow var(--dur) var(--ease);
+  will-change: transform;
+}
+
+.rml-forkball__btn:hover {
+  box-shadow:
+    0 1px 2px rgba(31, 30, 29, 0.14),
+    0 14px 38px color-mix(in srgb, var(--accent) 44%, transparent);
+}
+
+.rml-forkball__btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* inner top-light so the orb reads spherical, not flat */
+.rml-forkball__halo {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(72% 58% at 32% 24%, rgba(255, 255, 255, 0.42), transparent 62%),
+    radial-gradient(90% 80% at 70% 88%, rgba(120, 44, 20, 0.28), transparent 60%);
+  pointer-events: none;
+}
+
+.rml-forkball__glyph {
+  position: relative;
+  width: 21px;
+  height: 21px;
+  opacity: 0.95;
+}
+
+/* new-asset pulse */
+.rml-forkball__ring {
+  position: absolute;
+  inset: -2px;
+  border-radius: var(--r-pill);
+  border: 2px solid var(--accent);
+  pointer-events: none;
+}
+
+/* slow sweep while a fork run is streaming */
+.rml-forkball__spin {
+  position: absolute;
+  inset: -3px;
+  border-radius: var(--r-pill);
+  border: 1.5px solid transparent;
+  border-top-color: color-mix(in srgb, var(--accent) 62%, transparent);
+  border-right-color: color-mix(in srgb, var(--accent) 24%, transparent);
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+  pointer-events: none;
+}
+
+.rml-forkball__btn.is-running .rml-forkball__spin {
+  opacity: 1;
+  animation: rml-forkball-spin 1.5s linear infinite;
+}
+
+@keyframes rml-forkball-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 860px) {
+  .rml-forkball__btn {
+    width: 48px;
+    height: 48px;
+  }
+  .rml-forkball__glyph {
+    width: 19px;
+    height: 19px;
+  }
+}

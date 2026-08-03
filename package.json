@@ -1,0 +1,14 @@
+{
+  "name": "rautml",
+  "private": true,
+  "workspaces": ["server", "web"],
+  "scripts": {
+    "dev": "concurrently -n server,web -c blue,magenta \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "npm run dev -w server",
+    "dev:web": "npm run dev -w web",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w web"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

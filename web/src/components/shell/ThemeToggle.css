@@ -1,0 +1,41 @@
+.rml-theme-toggle {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-pill);
+  color: var(--text-muted);
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.rml-theme-toggle:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.rml-theme-toggle:active {
+  background: var(--pressed);
+}
+
+.rml-theme-toggle__icon {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  will-change: transform, opacity;
+}
+
+.rml-theme-toggle svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+  overflow: visible;
+}

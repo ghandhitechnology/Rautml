@@ -1,0 +1,94 @@
+/* VersionPicker — segmented pill. */
+
+.rml-vpick {
+  position: relative;
+  flex: 0 1 auto;
+  min-width: 0;
+  border-radius: var(--r-pill);
+}
+
+.rml-vpick__list {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 208px;
+  padding: 2px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  scrollbar-width: none;
+  transition: border-color var(--dur) var(--ease);
+}
+
+.rml-vpick__list::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.rml-vpick.is-pulsing .rml-vpick__list {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+
+.rml-vpick__seg {
+  position: relative;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  min-width: 32px;
+  height: 22px;
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  color: var(--text-muted);
+  transition:
+    color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+
+.rml-vpick__seg:hover:not(.is-active):not(:disabled) {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.rml-vpick__seg:focus-visible {
+  outline-offset: 1px;
+}
+
+.rml-vpick__seg.is-active {
+  color: var(--accent-contrast);
+}
+
+.rml-vpick__thumb {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  box-shadow: 0 1px 2px rgba(31, 30, 29, 0.18);
+}
+
+.rml-vpick__label {
+  position: relative;
+  z-index: 1;
+  line-height: 1;
+}
+
+.rml-vpick__ring {
+  position: absolute;
+  inset: -3px;
+  border: 1.5px solid var(--accent);
+  border-radius: var(--r-pill);
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.rml-vpick.is-disabled .rml-vpick__list {
+  opacity: 0.55;
+}
+
+.rml-vpick.is-disabled .rml-vpick__seg {
+  cursor: default;
+}

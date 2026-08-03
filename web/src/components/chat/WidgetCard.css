@@ -1,0 +1,44 @@
+.rml-widget {
+  width: 100%;
+  min-width: 0;
+  max-height: 400px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
+}
+
+.rml-widget:hover {
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--border));
+  box-shadow: var(--shadow-md);
+}
+
+.rml-widget__frame {
+  display: block;
+  width: 100%;
+  border: 0;
+  max-height: 400px;
+  background: transparent;
+  opacity: 0;
+  /* height is set inline from the reported document height */
+  transition:
+    height var(--dur) var(--ease),
+    opacity var(--dur) var(--ease);
+}
+
+.rml-widget.is-ready .rml-widget__frame {
+  opacity: 1;
+}
+
+.rml-widget--compact {
+  border-radius: var(--r-sm);
+  max-height: 280px;
+}
+
+.rml-widget--compact .rml-widget__frame {
+  max-height: 280px;
+}

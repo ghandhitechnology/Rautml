@@ -1,0 +1,60 @@
+/* DocumentView — the main column, given over to the page. */
+
+.rml-doc {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.rml-doc__stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--surface);
+  transform-origin: 50% 62%; /* roughly where the timeline sat in the chat */
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+}
+
+.rml-doc__sheetwrap {
+  position: absolute;
+  inset: 0;
+  will-change: opacity;
+}
+
+/* the coral breath of the takeover — purely decorative, gone in 0.7s */
+.rml-doc__flash {
+  position: absolute;
+  left: 50%;
+  top: 62%;
+  width: 78vmin;
+  height: 78vmin;
+  margin: -39vmin 0 0 -39vmin;
+  border-radius: var(--r-pill);
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--accent) 26%, transparent) 0%,
+    transparent 66%
+  );
+  pointer-events: none;
+  z-index: 10;
+  will-change: transform, opacity;
+}
+
+.rml-doc__chrome {
+  position: absolute;
+  inset: 0 0 auto 0;
+  z-index: 14;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.rml-doc__chrome > * {
+  pointer-events: none;
+}
+
+.rml-doc__chrome .rml-dochead__bar,
+.rml-doc__chrome .rml-dochead__menu {
+  pointer-events: auto;
+}

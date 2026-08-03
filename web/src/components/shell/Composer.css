@@ -1,0 +1,191 @@
+.rml-composer {
+  width: 100%;
+  max-width: var(--thread-max);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.rml-composer__field {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+
+.rml-composer__field:hover {
+  border-color: color-mix(in srgb, var(--accent) 26%, var(--border));
+}
+
+.rml-composer__field:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  box-shadow:
+    var(--shadow-md),
+    0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.rml-composer__field.is-running {
+  background: color-mix(in srgb, var(--surface-2) 55%, var(--surface));
+}
+
+.rml-composer__input {
+  flex: 1 1 auto;
+  min-height: 26px;
+  max-height: 208px;
+  resize: none;
+  overflow-y: hidden;
+  line-height: 1.6;
+  font-size: var(--fs-md);
+  color: var(--text);
+  background: transparent;
+  padding: 0;
+  /* keeps the caret off the border on the first line */
+  padding-block: 2px;
+}
+
+.rml-composer__input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.85;
+}
+
+.rml-composer__input:disabled {
+  color: var(--text-muted);
+}
+
+.rml-composer__input:focus-visible {
+  outline: none;
+}
+
+.rml-composer__actions {
+  position: relative;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+}
+
+.rml-composer__btn {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-pill);
+  will-change: transform, opacity;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.rml-composer__btn svg {
+  width: 17px;
+  height: 17px;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+
+.rml-composer__btn--send {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.rml-composer__btn--send:hover:not(:disabled) {
+  background: var(--accent-hover);
+  transform: translateY(-1px);
+}
+
+.rml-composer__btn--send:active:not(:disabled) {
+  transform: translateY(0) scale(0.94);
+}
+
+.rml-composer__btn--send:disabled {
+  background: var(--surface-2);
+  color: var(--text-muted);
+  opacity: 0.75;
+}
+
+.rml-composer__btn--stop {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+.rml-composer__btn--stop:hover {
+  background: color-mix(in srgb, var(--accent) 26%, var(--accent-soft));
+}
+
+.rml-composer__btn--stop:active {
+  transform: scale(0.94);
+}
+
+.rml-composer__stop-glyph {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: currentColor;
+}
+
+.rml-composer__footnote {
+  min-height: 16px;
+  padding-inline: var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  text-align: center;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.rml-composer:hover .rml-composer__footnote,
+.rml-composer:focus-within .rml-composer__footnote {
+  opacity: 1;
+}
+
+.rml-composer__hint kbd {
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+
+/* ------------------------------------------------------------- compact (fork) */
+
+.rml-composer--compact .rml-composer__field {
+  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3);
+  border-radius: var(--r-md);
+}
+
+.rml-composer--compact .rml-composer__input {
+  font-size: var(--fs-sm);
+}
+
+.rml-composer--compact .rml-composer__actions,
+.rml-composer--compact .rml-composer__btn {
+  width: 28px;
+  height: 28px;
+}
+
+.rml-composer--compact .rml-composer__btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+.rml-composer--compact .rml-composer__footnote {
+  display: none;
+}

@@ -1,0 +1,67 @@
+.rml-welcome {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  padding: var(--sp-10) var(--sp-4) var(--sp-12);
+}
+
+.rml-welcome__inner {
+  width: 100%;
+  max-width: var(--thread-max);
+  text-align: center;
+}
+
+.rml-welcome__eyebrow {
+  font-family: var(--font-serif);
+  font-size: var(--fs-sm);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: var(--sp-4);
+}
+
+.rml-welcome__title {
+  font-family: var(--font-serif);
+  font-size: clamp(26px, 3.6vw, 36px);
+  font-weight: 500;
+  line-height: var(--lh-tight);
+  letter-spacing: -0.02em;
+  color: var(--text);
+  word-break: keep-all;
+}
+
+.rml-welcome__sub {
+  margin-top: var(--sp-3);
+  font-size: var(--fs-md);
+  color: var(--text-muted);
+  word-break: keep-all;
+}
+
+.rml-welcome__hints {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-8);
+}
+
+.rml-welcome__hints li {
+  padding: 9px var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  box-shadow: var(--shadow-sm);
+  word-break: keep-all;
+  transition:
+    color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.rml-welcome__hints li:hover {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--border));
+  transform: translateY(-1px);
+}

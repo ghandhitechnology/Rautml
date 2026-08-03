@@ -1,0 +1,243 @@
+.rml-shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr) 0px;
+  height: 100dvh;
+  min-height: 0;
+  background: var(--bg);
+  transition: grid-template-columns var(--dur-slow) var(--ease);
+}
+
+.rml-shell.is-fork-open {
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--fork-w);
+}
+
+.rml-shell__sidebar {
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* -------------------------------------------------------------- main column */
+
+.rml-shell__main {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.rml-topbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  height: 56px;
+  padding: 0 var(--sp-5) 0 var(--sp-6);
+  border-bottom: 1px solid transparent;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: saturate(140%) blur(12px);
+  -webkit-backdrop-filter: saturate(140%) blur(12px);
+  z-index: 3;
+}
+
+.rml-topbar__lead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.rml-topbar__title {
+  font-family: var(--font-serif);
+  font-size: var(--fs-lg);
+  font-weight: 500;
+  letter-spacing: -0.014em;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 46ch;
+}
+
+.rml-topbar__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.rml-topbar__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  animation: rml-pulse 1.4s var(--ease) infinite;
+}
+
+@keyframes rml-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.rml-topbar__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+/* --------------------------------------------------------------------- body */
+
+.rml-shell__body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.rml-shell__scroll {
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
+  padding: var(--sp-6) var(--sp-6) var(--sp-8);
+}
+
+/* soft fade where content meets the composer dock */
+.rml-shell__body::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 32px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--bg));
+}
+
+.rml-shell__dock {
+  flex: 0 0 auto;
+  padding: 0 var(--sp-6) var(--sp-5);
+  background: var(--bg);
+  z-index: 2;
+}
+
+/* ---------------------------------------------------------- document mode */
+
+/* The page owns the column: no padding, no scroll of ours, no dock rail — the
+ * composer floats over the document and the body runs edge to edge. */
+.rml-shell.is-document .rml-shell__scroll {
+  padding: 0;
+  overflow: hidden;
+  scroll-behavior: auto;
+}
+
+.rml-shell.is-document .rml-shell__body::after {
+  content: none;
+}
+
+.rml-shell.is-document .rml-shell__dock {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 0 var(--sp-6) var(--sp-5);
+  background: transparent;
+  z-index: 16;
+  /* the rail itself is a ghost; DocumentDock re-arms its own children */
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------- fork slot */
+
+.rml-shell__fork {
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.rml-shell.is-fork-open .rml-shell__fork {
+  opacity: 1;
+}
+
+.rml-shell__fork-inner {
+  width: var(--fork-w);
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* -------------------------------------------------------------------- toast */
+
+.rml-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  translate: -50% 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  max-width: min(520px, calc(100vw - 48px));
+  padding: 10px var(--sp-3) 10px var(--sp-4);
+  border-radius: var(--r-md);
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border));
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  z-index: 40;
+}
+
+.rml-toast__text {
+  font-size: var(--fs-sm);
+  color: var(--text);
+}
+
+.rml-toast__close {
+  flex: 0 0 auto;
+  padding: 4px 9px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--accent-hover);
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+.rml-toast__close:hover {
+  background: var(--accent-soft);
+}
+
+/* --------------------------------------------------------------- responsive */
+
+@media (max-width: 1120px) {
+  .rml-shell {
+    --fork-w: 340px;
+  }
+}
+
+@media (max-width: 860px) {
+  .rml-shell {
+    --sidebar-w: 216px;
+  }
+  .rml-shell__scroll,
+  .rml-shell__dock {
+    padding-inline: var(--sp-4);
+  }
+  .rml-topbar {
+    padding-inline: var(--sp-4);
+  }
+}
