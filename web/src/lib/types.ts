@@ -158,6 +158,35 @@ export interface InputResolvedEvent {
 export interface ChatTitleEvent {
   title: string
 }
+export interface SubagentStartEvent {
+  subagentId: string
+  /** The spawn_subagents tool call this subagent belongs to. */
+  parentToolCallId: string
+  title: string
+  model: string
+}
+export interface SubagentDeltaEvent {
+  subagentId: string
+  text: string
+}
+export interface SubagentToolStartEvent {
+  subagentId: string
+  toolCallId: string
+  name: string
+  label: string
+}
+export interface SubagentToolEndEvent {
+  subagentId: string
+  toolCallId: string
+  name: string
+  ok: boolean
+  summary: string
+}
+export interface SubagentEndEvent {
+  subagentId: string
+  ok: boolean
+  summary: string
+}
 
 /** Every event type emitted by the server (CONTRACT.md § SSE events). */
 export const CHAT_EVENT_TYPES = [
@@ -174,6 +203,11 @@ export const CHAT_EVENT_TYPES = [
   'input.request',
   'input.resolved',
   'chat.title',
+  'subagent.start',
+  'subagent.delta',
+  'subagent.tool.start',
+  'subagent.tool.end',
+  'subagent.end',
 ] as const
 
 export type ChatEventType = (typeof CHAT_EVENT_TYPES)[number]
@@ -191,6 +225,24 @@ export interface TimelineItem {
   endedAt?: number
 }
 
+/** One research subagent spawned by a spawn_subagents call, with its own stream and tools. */
+export interface SubagentRun {
+  subagentId: string
+  /** The spawn_subagents tool call it belongs to (positions the group in the timeline). */
+  parentToolCallId: string
+  title: string
+  model: string
+  status: 'running' | 'ok' | 'error'
+  /** Final one-line result ("6 steps · 2,140 chars" / error text). */
+  summary?: string
+  /** The subagent's own streamed text, rebuilt from subagent.delta events. */
+  text: string
+  /** The subagent's own tool calls. */
+  items: TimelineItem[]
+  startedAt: number
+  endedAt?: number
+}
+
 /** Everything the timeline needs for a single run, keyed by runId in the store.
  *
  * All three timestamps come from `ChatEvent.at` (epoch ms recorded server-side), so a
@@ -200,6 +252,8 @@ export interface RunTimeline {
   thread: Thread
   status: RunStatus
   items: TimelineItem[]
+  /** Research subagents spawned during this run (absent until the first one starts). */
+  subagents?: SubagentRun[]
   /** When the run itself started (run.status → running). */
   startedAt: number
   /** When the first tool.start of this run landed — the anchor for the worked-for summary. */

@@ -228,6 +228,10 @@ function toolLabel(name: string, args: any): string {
       return 'Drawing a visual';
     case 'ask_user_input_v0':
       return `Asking: “${clip(str(args?.question), 70)}”`;
+    case 'spawn_subagents': {
+      const n = Array.isArray(args?.tasks) ? args.tasks.length : 0;
+      return n ? `Spawning ${n} research agent${n === 1 ? '' : 's'}` : 'Spawning research agents';
+    }
     default:
       return name.replace(/_/g, ' ');
   }
@@ -261,6 +265,8 @@ function pendingToolLabel(name: string): string {
       return 'Drawing a visual…';
     case 'ask_user_input_v0':
       return 'Preparing a question…';
+    case 'spawn_subagents':
+      return 'Dividing up the research…';
     default:
       return name.replace(/_/g, ' ');
   }
@@ -661,6 +667,7 @@ async function runLoop(ctx: LoopCtx): Promise<void> {
         thread,
         workspaceDir,
         messageId: hostMessageId,
+        signal: controller.signal,
         emit: (type: string, data: any) => emit(chatId, thread, type, data),
       };
 
@@ -722,7 +729,7 @@ async function runLoop(ctx: LoopCtx): Promise<void> {
             output = `Unknown tool: ${name}`;
           } else {
             try {
-              output = (await def.execute(args, toolCtx)) ?? '';
+              output = (await def.execute(args, { ...toolCtx, toolCallId: call.id })) ?? '';
             } catch (err) {
               if (isAbort(err)) throw err;
               ok = false;
