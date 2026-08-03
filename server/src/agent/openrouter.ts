@@ -18,6 +18,8 @@ export const MODEL = 'openai/gpt-5.6-sol';
 
 const DEFAULT_MAX_RETRIES = 3;
 const BASE_BACKOFF_MS = 600;
+/** A stream with no bytes at all for this long is considered dead. */
+const STREAM_IDLE_TIMEOUT_MS = 120_000;
 
 // ---------------------------------------------------------------------------
 // Wire types (OpenAI chat.completions shape)
@@ -65,6 +67,17 @@ export interface StreamChatOptions {
   signal?: AbortSignal;
   /** Called for every text delta as it arrives. */
   onText?: (delta: string) => void;
+  /**
+   * Called the moment a tool call first appears in the stream — long before its
+   * arguments have finished arriving. Lets the caller surface activity early.
+   * Fired at most once per tool call, and only when the provider sent an id.
+   */
+  onToolCallStart?: (call: { id: string; name: string }) => void;
+  /**
+   * Called when a failed attempt is about to be retried, so the caller can roll
+   * back anything it surfaced via onToolCallStart for the abandoned attempt.
+   */
+  onRetry?: () => void;
   model?: string;
   /** Provider reasoning effort, sent as OpenRouter's `reasoning: { effort }`. */
   reasoningEffort?: string;
@@ -223,7 +236,27 @@ async function readSse(res: Response, onChunk: (chunk: any) => void): Promise<vo
 
   try {
     for (;;) {
-      const { done, value } = await reader.read();
+      // Any bytes (including keep-alive comments) reset the stall clock; a
+      // connection that goes fully silent must not hang the run forever.
+      let idleTimer: ReturnType<typeof setTimeout> | undefined;
+      const idle = new Promise<never>((_, reject) => {
+        idleTimer = setTimeout(
+          () =>
+            reject(
+              new OpenRouterError(`stream stalled for ${STREAM_IDLE_TIMEOUT_MS / 1000}s`, {
+                retryable: true,
+              }),
+            ),
+          STREAM_IDLE_TIMEOUT_MS,
+        );
+      });
+      let read: ReadableStreamReadResult<Uint8Array>;
+      try {
+        read = await Promise.race([reader.read(), idle]);
+      } finally {
+        clearTimeout(idleTimer);
+      }
+      const { done, value } = read;
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
 
@@ -237,6 +270,10 @@ async function readSse(res: Response, onChunk: (chunk: any) => void): Promise<vo
     }
     buffer += decoder.decode();
     if (buffer.trim()) handleBlock(buffer);
+  } catch (err) {
+    // Drop the half-read body so the connection isn't left dangling.
+    void reader.cancel().catch(() => {});
+    throw err;
   } finally {
     reader.releaseLock?.();
   }
@@ -253,6 +290,8 @@ export async function streamChat(options: StreamChatOptions): Promise<StreamResu
     toolChoice = 'auto',
     signal,
     onText,
+    onToolCallStart,
+    onRetry,
     model = MODEL,
     reasoningEffort,
     temperature,
@@ -267,6 +306,7 @@ export async function streamChat(options: StreamChatOptions): Promise<StreamResu
     let emittedText = false;
     let content = '';
     const toolAcc = new Map<number, ToolCallAccumulator>();
+    const announced = new Set<number>();
     let finishReason: string | null = null;
 
     try {
@@ -311,6 +351,12 @@ export async function streamChat(options: StreamChatOptions): Promise<StreamResu
             if (typeof frag.function?.arguments === 'string') {
               acc.arguments += frag.function.arguments;
             }
+            // Announce the call as soon as we know who it is — its arguments
+            // may take many seconds more to stream (e.g. a whole HTML file).
+            if (!announced.has(index) && acc.id && acc.name) {
+              announced.add(index);
+              onToolCallStart?.({ id: acc.id, name: acc.name });
+            }
           }
         }
       });
@@ -324,6 +370,24 @@ export async function streamChat(options: StreamChatOptions): Promise<StreamResu
         }))
         .filter((tc) => tc.function.name.length > 0);
 
+      // No finish_reason means the connection dropped mid-response: the reader
+      // sees a clean end-of-stream, but the model never finished its turn.
+      // Treating that as a final answer is what makes runs silently die off.
+      if (!finishReason) {
+        const argsTruncated = toolCalls.some((tc) => {
+          try {
+            JSON.parse(tc.function.arguments);
+            return false;
+          } catch {
+            return true;
+          }
+        });
+        if (argsTruncated || (toolCalls.length === 0 && content.length === 0)) {
+          throw new OpenRouterError('stream ended unexpectedly (no finish_reason)', {
+            retryable: true,
+          });
+        }
+      }
       if (!finishReason && toolCalls.length > 0) finishReason = 'tool_calls';
 
       return { content, toolCalls, finishReason };
@@ -332,9 +396,11 @@ export async function streamChat(options: StreamChatOptions): Promise<StreamResu
       lastError = err;
 
       const retryable = err instanceof OpenRouterError ? err.retryable : true;
-      // Never retry once visible output has been produced — it would duplicate.
+      // Never retry once visible text has been produced — it would duplicate.
+      // Announced tool calls are fine: onRetry lets the caller roll them back.
       if (!retryable || emittedText || attempt === maxRetries - 1) break;
 
+      if (announced.size > 0) onRetry?.();
       await sleep(BASE_BACKOFF_MS * 2 ** attempt + Math.floor(Math.random() * 200), signal);
     }
   }

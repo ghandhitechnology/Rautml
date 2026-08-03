@@ -115,9 +115,14 @@ Types (data shape):
 - Context: main thread → all main model_turns. Fork thread → all **main** model_turns + all **fork** model_turns
   (fork system preamble: "You are answering focused questions about the conversation and its generated assets;
   be concise; do not create or edit assets — direct the user to the main chat for changes.").
-- Loop: call OpenRouter (stream). Stream text → message.delta. Tool calls → emit tool.start, execute via
-  registry, emit tool.end, append tool result turn, continue. Cap: 40 tool calls per run → inject a final
-  "wrap up now" user-role nudge. Retries: 3x exponential backoff on 429/5xx/network.
+- Loop: call OpenRouter (stream). Stream text → message.delta. Tool calls → emit a provisional tool.start
+  the moment the call appears in the stream (before its arguments finish arriving), then re-emit tool.start
+  with the full label at execution, execute via registry, emit tool.end, append tool result turn, continue.
+  Cap: 120 tool calls per run (env `RAUTML_MAX_TOOL_CALLS`) → inject a final "wrap up now" user-role nudge;
+  the iteration safety valve also forces a wrap-up round so a run always ends with a visible answer.
+  Retries: 3x exponential backoff on 429/5xx/network; a stream that stalls >120s or ends without a
+  finish_reason counts as a network failure (not a finished answer). A retry closes any provisionally
+  announced tool rows ("Connection dropped — retrying").
 - Tool result truncation: any tool result > 24k chars → truncate middle with `[…truncated…]`.
 - `ask_user_input_v0`: persist pending_input, emit input.request, set run status awaiting_input, **park** the
   loop (persist current turn state via model_turns; the resume endpoint re-enters the loop with the answer as

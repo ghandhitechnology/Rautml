@@ -33,11 +33,19 @@ import {
 // ---------------------------------------------------------------------------
 
 /** Hard cap on tool calls per run; hitting it injects a wrap-up nudge. */
-const MAX_TOOL_CALLS = 40;
+const MAX_TOOL_CALLS = envInt('RAUTML_MAX_TOOL_CALLS', 120);
 /** Tool results longer than this are truncated in the middle. */
 const TOOL_RESULT_MAX = 24_000;
-/** Safety valve on model round-trips (each may carry several tool calls). */
-const MAX_ITERATIONS = 64;
+/**
+ * Safety valve on model round-trips (each carries ≥1 tool call, so this only
+ * binds pathological runs). Sized off the budget with slack for the wrap-up.
+ */
+const MAX_ITERATIONS = MAX_TOOL_CALLS + 8;
+
+function envInt(name: string, fallback: number): number {
+  const parsed = Number.parseInt(process.env[name] ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
 
 const WRAP_UP_NUDGE =
   'You have reached this run\'s tool-call budget. Stop calling tools now and write your final answer using what you already have. If something is incomplete, say so briefly and offer to continue.';
@@ -220,6 +228,39 @@ function toolLabel(name: string, args: any): string {
       return 'Drawing a visual';
     case 'ask_user_input_v0':
       return `Asking: “${clip(str(args?.question), 70)}”`;
+    default:
+      return name.replace(/_/g, ' ');
+  }
+}
+
+/**
+ * Provisional label emitted the moment a tool call appears in the stream,
+ * before its arguments have arrived. Upgraded to toolLabel() at execution.
+ */
+function pendingToolLabel(name: string): string {
+  switch (name) {
+    case 'web_search':
+      return 'Searching the web…';
+    case 'image_search':
+      return 'Finding images…';
+    case 'web_fetch':
+      return 'Opening a page…';
+    case 'bash_tool':
+      return 'Preparing a command…';
+    case 'create_file':
+      return 'Writing a file…';
+    case 'str_replace':
+      return 'Editing a file…';
+    case 'view':
+      return 'Opening a file…';
+    case 'present_files':
+      return 'Preparing files…';
+    case 'visualize_read_me':
+      return 'Reading the design guide';
+    case 'visualize_show_widget':
+      return 'Drawing a visual…';
+    case 'ask_user_input_v0':
+      return 'Preparing a question…';
     default:
       return name.replace(/_/g, ' ');
   }
@@ -532,7 +573,18 @@ async function runLoop(ctx: LoopCtx): Promise<void> {
     for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
       if (controller.signal.aborted) throw new AbortedError();
 
+      // Last iteration coming up: force a wrap-up so the run can never fall
+      // out of the loop silently with no final message.
+      if (!nudged && iteration === MAX_ITERATIONS - 1) {
+        repo.appendModelTurn(chatId, thread, { role: 'user', content: WRAP_UP_NUDGE });
+        nudged = true;
+      }
+
       const messages = buildContext(chatId, thread, ctx.elaboration);
+
+      // Tool calls announced from the live stream but not yet executed. Rolled
+      // back if streamChat retries the attempt they belonged to.
+      const earlyStarts = new Map<string, string>();
 
       const result = await streamChat({
         messages,
@@ -546,6 +598,32 @@ async function runLoop(ctx: LoopCtx): Promise<void> {
           const id = openMessage();
           liveText += delta;
           emit(chatId, thread, 'message.delta', { messageId: id, text: delta });
+        },
+        // Surface each tool call the moment it appears in the stream — its
+        // arguments may take many seconds more to arrive, and this row is the
+        // only signal that the model is doing anything during that time.
+        onToolCallStart: (call) => {
+          if (earlyStarts.has(call.id)) return;
+          earlyStarts.set(call.id, call.name);
+          openMessage();
+          emit(chatId, thread, 'tool.start', {
+            toolCallId: call.id,
+            name: call.name,
+            label: pendingToolLabel(call.name),
+          });
+        },
+        onRetry: () => {
+          // The attempt these announcements came from is being abandoned;
+          // close their rows so they don't spin forever.
+          for (const [id, name] of earlyStarts) {
+            emit(chatId, thread, 'tool.end', {
+              toolCallId: id,
+              name,
+              ok: true,
+              summary: 'Connection dropped — retrying',
+            });
+          }
+          earlyStarts.clear();
         },
       });
 
@@ -678,6 +756,15 @@ async function runLoop(ctx: LoopCtx): Promise<void> {
             tool_call_id: skipped.id,
             content: '(not executed — the run paused to ask the user a question)',
           });
+          // Its provisional stream-time row must not spin while the run is parked.
+          if (earlyStarts.has(skipped.id)) {
+            emit(chatId, thread, 'tool.end', {
+              toolCallId: skipped.id,
+              name: skipped.function.name,
+              ok: true,
+              summary: 'Skipped — waiting for your answer',
+            });
+          }
         }
         repo.setRunStatus(runId, 'awaiting_input');
         emit(chatId, thread, 'run.status', { runId, status: 'awaiting_input' });

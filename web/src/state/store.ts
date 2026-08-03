@@ -463,25 +463,36 @@ function reduceEvent(cs: ChatState, ev: ChatEvent, ctx: ReduceCtx): ChatState {
       const runId = next.currentRunId[thread]
       if (!d?.toolCallId || !runId) break
       next = ensureTimeline(next, runId, thread, at)
-      next = patchTimeline(next, runId, (t) =>
-        t.items.some((i) => i.toolCallId === d.toolCallId)
-          ? t
-          : {
-              ...t,
-              // The summary clock starts at the first real step of the run.
-              firstStepAt: t.firstStepAt ?? at,
-              items: [
-                ...t.items,
-                {
-                  toolCallId: d.toolCallId,
-                  name: d.name,
-                  label: d.label ?? d.name,
-                  status: 'running',
-                  startedAt: at,
-                } satisfies TimelineItem,
-              ],
-            },
-      )
+      next = patchTimeline(next, runId, (t) => {
+        const idx = t.items.findIndex((i) => i.toolCallId === d.toolCallId)
+        if (idx !== -1) {
+          // The engine announces a call from the live stream first, then emits
+          // tool.start again with the full label once the arguments are known.
+          const items = t.items.slice()
+          const existing = items[idx]!
+          items[idx] = {
+            ...existing,
+            name: d.name ?? existing.name,
+            label: d.label ?? existing.label,
+          }
+          return { ...t, items }
+        }
+        return {
+          ...t,
+          // The summary clock starts at the first real step of the run.
+          firstStepAt: t.firstStepAt ?? at,
+          items: [
+            ...t.items,
+            {
+              toolCallId: d.toolCallId,
+              name: d.name,
+              label: d.label ?? d.name,
+              status: 'running',
+              startedAt: at,
+            } satisfies TimelineItem,
+          ],
+        }
+      })
       break
     }
 
