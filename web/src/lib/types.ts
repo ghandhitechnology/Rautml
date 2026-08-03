@@ -32,7 +32,12 @@ export interface Run {
   model?: string
   /** Provider reasoning effort the run was started with. */
   effort?: string
+  /** Elaboration level the run was started with (how much terms get explained). */
+  elaboration?: ElaborationLevel
 }
+
+/** How much the assistant unpacks domain-specific terms along the way. */
+export type ElaborationLevel = 'undergraduate' | 'bachelors' | 'doctor'
 
 /** One selectable model in the composer (GET /api/models). */
 export interface ModelInfo {

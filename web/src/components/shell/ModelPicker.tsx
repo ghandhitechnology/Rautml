@@ -1,12 +1,14 @@
 /* ModelPicker — the pill chip left of the send button ("Sol High ⌄") that
  * expands upward into the model list + reasoning-effort slider.
  *
- * The selection is global (store), applies to the next message, and each
- * model remembers its own effort dial. Efforts come straight from the
- * provider catalog served by GET /api/models.
+ * The selection is global (store) and shared by every composer — main, welcome
+ * and the fork panel — so any chip shows and changes the same pair. Each model
+ * remembers its own effort dial. Efforts come straight from the provider
+ * catalog served by GET /api/models. Open state is per-instance: the document
+ * pointerdown listener closes this popover whenever any other chip is clicked.
  */
 
-import { useCallback, useEffect, useId, useRef } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   useModels,
@@ -25,18 +27,19 @@ function capitalize(s: string): string {
 }
 
 export interface ModelPickerProps {
+  /** Tighter chip + narrower popover — used inside the fork panel. */
+  compact?: boolean
   className?: string
 }
 
-export function ModelPicker({ className }: ModelPickerProps) {
+export function ModelPicker({ compact = false, className }: ModelPickerProps) {
   const models = useModels()
   const model = useSelectedModel()
   const effort = useSelectedEffort()
   const setModel = useStore((s) => s.setModel)
   const setEffort = useStore((s) => s.setEffort)
 
-  const open = useStore((s) => s.modelPickerOpen)
-  const setOpen = useStore((s) => s.setModelPickerOpen)
+  const [open, setOpen] = useState(false)
 
   const rootRef = useRef<HTMLDivElement>(null)
   const chipRef = useRef<HTMLButtonElement>(null)
@@ -71,7 +74,7 @@ export function ModelPicker({ className }: ModelPickerProps) {
   if (!model || models.length === 0) return null
 
   return (
-    <div ref={rootRef} className={cx('rml-model', className)}>
+    <div ref={rootRef} className={cx('rml-model', compact && 'rml-model--compact', className)}>
       <button
         ref={chipRef}
         type="button"

@@ -95,7 +95,7 @@ export function sendMessage(
   chatId: string,
   content: string,
   thread: Thread,
-  selection?: { model?: string; effort?: string },
+  selection?: { model?: string; effort?: string; elaboration?: string },
 ): Promise<{ runId: string }> {
   return request<{ runId: string }>(`/chats/${encodeURIComponent(chatId)}/messages`, {
     method: 'POST',

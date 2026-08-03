@@ -1,9 +1,10 @@
 /* ForkComposer — the fork panel's own input.
  *
- * Self-contained (no shell/chat imports): autosizing textarea, Enter to send,
- * Shift+Enter for a newline, and an IME guard so a Korean composition commit never
- * fires a send. Sends through store.sendMessage('fork', …); swaps to a stop button
- * while the fork run streams.
+ * Autosizing textarea, Enter to send, Shift+Enter for a newline, and an IME
+ * guard so a Korean composition commit never fires a send. Sends through
+ * store.sendMessage('fork', …); swaps to a stop button while the fork run
+ * streams. Carries a compact ModelPicker so model + effort can be changed from
+ * the sidebar too — it is the same global selection the main composer shows.
  */
 
 import {
@@ -18,6 +19,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useIsRunning, useStore } from '../../state/store'
 import { cx } from '../../lib/utils'
 import { EASE } from '../../lib/motion'
+import { ModelPicker } from '../shell/ModelPicker'
 import './ForkComposer.css'
 
 export interface ForkComposerProps {
@@ -94,6 +96,9 @@ export function ForkComposer({
           spellCheck={false}
           aria-label="Follow-up message"
         />
+
+        {/* Same global model + effort selection as the main composer. */}
+        <ModelPicker compact className="rml-forkcomposer__model" />
 
         <AnimatePresence initial={false} mode="popLayout">
           {running ? (

@@ -102,12 +102,14 @@ CREATE INDEX IF NOT EXISTS idx_asset_versions_asset_version ON asset_versions (a
 CREATE INDEX IF NOT EXISTS idx_pending_inputs_chat_resolved ON pending_inputs (chat_id, resolved);
 `);
 
-// Migration: runs remember which model + reasoning effort they were started
-// with, so a parked run resumes on the same settings after a server restart.
+// Migration: runs remember which model + reasoning effort + elaboration level
+// they were started with, so a parked run resumes on the same settings after a
+// server restart.
 {
   const runCols = (db.prepare(`PRAGMA table_info(runs)`).all() as { name: string }[]).map(
     (c) => c.name,
   );
   if (!runCols.includes('model')) db.exec(`ALTER TABLE runs ADD COLUMN model TEXT`);
   if (!runCols.includes('effort')) db.exec(`ALTER TABLE runs ADD COLUMN effort TEXT`);
+  if (!runCols.includes('elaboration')) db.exec(`ALTER TABLE runs ADD COLUMN elaboration TEXT`);
 }

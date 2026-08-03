@@ -12,6 +12,7 @@ import { uid } from '../lib/utils'
 import type {
   Asset,
   AssetCreatedEvent,
+  ElaborationLevel,
   AssetVersionEvent,
   Chat,
   ChatEvent,
@@ -96,11 +97,12 @@ export interface StoreState {
   selectedModelId: string | null
   /** Chosen effort per model id, so switching models remembers each one's dial. */
   effortByModel: Record<string, string>
+  /** How much the next answer explains domain terms (the audience pebble). */
+  elaboration: ElaborationLevel
 
   /* ui */
   theme: ThemeName
   forkOpen: boolean
-  modelPickerOpen: boolean
   connection: SseStatus
   error: string | null
 
@@ -108,7 +110,7 @@ export interface StoreState {
   loadModels: () => Promise<void>
   setModel: (modelId: string) => void
   setEffort: (effort: string) => void
-  setModelPickerOpen: (open: boolean) => void
+  setElaboration: (level: ElaborationLevel) => void
   loadChats: () => Promise<void>
   newChat: () => Promise<Chat | null>
   /** Drop the untouched draft chat (list + server). No-op if it was typed into. */
@@ -170,6 +172,22 @@ export function initTheme(): ThemeName {
 
 const MODEL_KEY = 'rautml.model'
 const EFFORT_KEY = 'rautml.efforts'
+const ELABORATION_KEY = 'rautml.elaboration'
+
+export const ELABORATION_LEVELS: ElaborationLevel[] = ['undergraduate', 'bachelors', 'doctor']
+
+const DEFAULT_ELABORATION: ElaborationLevel = 'bachelors'
+
+function readStoredElaboration(): ElaborationLevel {
+  try {
+    const raw = localStorage.getItem(ELABORATION_KEY)
+    return ELABORATION_LEVELS.includes(raw as ElaborationLevel)
+      ? (raw as ElaborationLevel)
+      : DEFAULT_ELABORATION
+  } catch {
+    return DEFAULT_ELABORATION
+  }
+}
 
 function readStoredModel(): string | null {
   try {
@@ -716,12 +734,12 @@ export const useStore = create<StoreState>()((set, get) => ({
   models: [],
   selectedModelId: readStoredModel(),
   effortByModel: readStoredEfforts(),
+  elaboration: readStoredElaboration(),
 
   theme: typeof document !== 'undefined' && document.documentElement.dataset.theme === 'dark'
     ? 'dark'
     : 'light',
   forkOpen: false,
-  modelPickerOpen: false,
   connection: 'closed',
   error: null,
 
@@ -763,6 +781,16 @@ export const useStore = create<StoreState>()((set, get) => ({
       persistSelection(s.selectedModelId, effortByModel)
       return { effortByModel }
     }),
+
+  setElaboration: (level) => {
+    if (!ELABORATION_LEVELS.includes(level)) return
+    try {
+      localStorage.setItem(ELABORATION_KEY, level)
+    } catch {
+      /* private mode — selection just won't persist */
+    }
+    set({ elaboration: level })
+  },
 
   loadChats: async () => {
     set({ chatsLoading: true })
@@ -994,11 +1022,14 @@ export const useStore = create<StoreState>()((set, get) => ({
     })
 
     try {
-      const { models, selectedModelId, effortByModel } = get()
+      const { models, selectedModelId, effortByModel, elaboration } = get()
       const model = models.find((m) => m.id === selectedModelId)
-      const selection = model
-        ? { model: model.id, effort: effortByModel[model.id] ?? model.defaultEffort }
-        : undefined
+      const selection = {
+        ...(model
+          ? { model: model.id, effort: effortByModel[model.id] ?? model.defaultEffort }
+          : {}),
+        elaboration,
+      }
       const { runId } = await api.sendMessage(chatId, trimmed, thread, selection)
       set((s) => {
         const current = s.byChat[chatId]
@@ -1106,8 +1137,6 @@ export const useStore = create<StoreState>()((set, get) => ({
       set({ error: errorMessage(err) })
     }
   },
-
-  setModelPickerOpen: (open) => set({ modelPickerOpen: open }),
 
   setForkOpen: (open) => set({ forkOpen: open }),
   toggleFork: () => set((s) => ({ forkOpen: !s.forkOpen })),
@@ -1286,6 +1315,8 @@ export const useSelectedEffort = () =>
     const remembered = s.effortByModel[model.id]
     return remembered && model.efforts.includes(remembered) ? remembered : model.defaultEffort
   })
+
+export const useElaboration = () => useStore((s) => s.elaboration)
 
 export const useTheme = () => useStore((s) => s.theme)
 export const useForkOpen = () => useStore((s) => s.forkOpen)

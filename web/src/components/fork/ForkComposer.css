@@ -57,6 +57,11 @@
   opacity: 0.55;
 }
 
+.rml-forkcomposer__model {
+  /* optically centers the 26px chip against the 30px send button */
+  margin-bottom: 2px;
+}
+
 /* ----------------------------------------------------------------- buttons */
 
 .rml-forkcomposer__btn {

@@ -67,7 +67,7 @@ model_turns(id INTEGER PK AUTOINCREMENT, chat_id TEXT, thread TEXT, seq INTEGER,
 runs(id TEXT PK, chat_id TEXT, thread TEXT,
      status TEXT,  -- 'running'|'awaiting_input'|'done'|'error'|'stopped'
      error TEXT, created_at INTEGER, finished_at INTEGER,
-     model TEXT, effort TEXT);  -- selection the run was started with (resume reuses it)
+     model TEXT, effort TEXT, elaboration TEXT);  -- selection the run was started with (resume reuses it)
 -- every SSE event persisted here; seq monotonic per chat (for replay)
 tool_events(id INTEGER PK AUTOINCREMENT, chat_id TEXT, run_id TEXT, seq INTEGER,
             type TEXT, payload TEXT, created_at INTEGER);
@@ -83,7 +83,7 @@ pending_inputs(id TEXT PK, run_id TEXT, chat_id TEXT, thread TEXT, payload TEXT,
 - `DELETE /api/chats/:id`
 - `GET  /api/chats/:id` → `{ chat, messages, assets: AssetWithVersions[], events: ChatEvent[], pendingInput: PendingInput|null, activeRun: Run|null }`
 - `POST /api/chats/:id/retitle` → `{ title: string, changed: boolean }` (GPT-5.6 Luna at effort `none`; invoked when leaving a chat that changed since its initial title)
-- `POST /api/chats/:id/messages` `{ content: string, thread: 'main'|'fork', model?: string, effort?: string }` → `{ runId }` (409 if a run is active on that thread; 400 on unknown model or an effort the model doesn't offer)
+- `POST /api/chats/:id/messages` `{ content: string, thread: 'main'|'fork', model?: string, effort?: string, elaboration?: 'undergraduate'|'bachelors'|'doctor' }` → `{ runId }` (409 if a run is active on that thread; 400 on unknown model, an effort the model doesn't offer, or an unknown elaboration level)
 - `GET  /api/models` → `{ models: ModelInfo[], defaultModelId: string }` (the selectable catalog)
 - `POST /api/chats/:id/input` `{ pendingInputId, value: string }` → resumes paused run
 - `POST /api/chats/:id/stop` → stops active run(s)
@@ -195,7 +195,15 @@ Motion: framer-motion; standard easing `[0.22, 1, 0.36, 1]`; durations 200–450
 - **ModelPicker** (components/shell): pill chip left of the send button (“Sol High ⌄”) → popover with the
   model list and a reasoning-effort slider (magnetic detents, provider wire values verbatim). Selection is
   global, persisted to localStorage (`rautml.model`, `rautml.efforts` per-model map), sent with each
-  POST /messages; each run stores it so parked runs resume on the same settings. Fork sends inherit it.
+  POST /messages; each run stores it so parked runs resume on the same settings. The fork composer
+  renders a compact variant of the same picker (same global selection), so model + effort can also be
+  changed from the sidebar.
+- **ElaborationPicker** (components/shell): pill chip left of the model pebble → popover with three audience
+  levels — `undergraduate` (explain most domain terms, extra approachable sections allowed), `bachelors`
+  (one-or-two-sentence reminders of terms, no dedicated sections), `doctor` (terms used directly, no extra
+  explanation). Appends an extra system-prompt layer per run (prompts.ts `ELABORATION_PREAMBLES`); it changes
+  the path, never the conclusions. Global, default `bachelors`, persisted to localStorage
+  (`rautml.elaboration`), sent with each POST /messages; runs store it so resume keeps it.
 - **InputChips**: input.request renders tappable option chips in the thread; tap → POST input, chips lock in.
 - **Markdown**: react-markdown + remark-gfm + remark-math + rehype-katex. Code blocks styled, copy button.
 - **Reload/reconnect**: on chat open, GET /api/chats/:id renders full state incl. timeline from events; SSE
@@ -210,7 +218,8 @@ interface Chat { id:string; title:string; createdAt:number; updatedAt:number }
 interface Message { id:string; chatId:string; thread:Thread; role:'user'|'assistant';
   content:string; status:'streaming'|'complete'|'error'; runId?:string; createdAt:number }
 interface Run { id:string; chatId:string; thread:Thread; status:'running'|'awaiting_input'|'done'|'error'|'stopped';
-  model?:string; effort?:string }
+  model?:string; effort?:string; elaboration?:ElaborationLevel }
+type ElaborationLevel = 'undergraduate'|'bachelors'|'doctor';
 interface ModelInfo { id:string; name:string; shortName:string; provider:string; description:string;
   efforts:string[]; defaultEffort:string }
 interface Asset { id:string; chatId:string; messageId:string; title:string; latestVersion:number; createdAt:number }

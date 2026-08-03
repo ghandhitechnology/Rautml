@@ -141,7 +141,9 @@ router.post('/chats/:id/messages', async (req: Request, res: Response) => {
 
   const model = typeof req.body?.model === 'string' ? req.body.model : undefined;
   const effort = typeof req.body?.effort === 'string' ? req.body.effort : undefined;
-  const selection = resolveSelection(model, effort);
+  const elaboration =
+    typeof req.body?.elaboration === 'string' ? req.body.elaboration : undefined;
+  const selection = resolveSelection(model, effort, elaboration);
   if (typeof selection === 'string') return fail(res, 400, selection);
 
   const active = repo.getActiveRun(chatId, thread);

@@ -46,6 +46,19 @@
   transform: rotate(180deg);
 }
 
+/* ------------------------------------------------- compact (fork composer) */
+
+.rml-model--compact .rml-model__chip {
+  height: 26px;
+  padding: 0 8px 0 10px;
+  font-size: var(--fs-xs);
+}
+
+/* Narrow enough to stay inside the fork panel (380px, 340px on small screens). */
+.rml-model--compact .rml-model__pop {
+  width: 272px;
+}
+
 /* ---------------------------------------------------------------- popover */
 
 .rml-model__pop {

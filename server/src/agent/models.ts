@@ -9,7 +9,7 @@
 // The wire values are sent verbatim as `reasoning: { effort }` — OpenRouter
 // passes them through to each provider.
 
-import type { ModelInfo } from '../types.js';
+import type { ElaborationLevel, ModelInfo } from '../types.js';
 
 const GPT56_EFFORTS = ['none', 'low', 'medium', 'high', 'xhigh', 'max'];
 
@@ -64,6 +64,11 @@ export const MODELS: ModelInfo[] = [
 /** CONTRACT.md § Environment — the model the product defaults to. */
 export const DEFAULT_MODEL_ID = 'openai/gpt-5.6-sol';
 
+/** Elaboration levels the composer's audience pebble offers, least → most expert. */
+export const ELABORATIONS: ElaborationLevel[] = ['undergraduate', 'bachelors', 'doctor'];
+
+export const DEFAULT_ELABORATION: ElaborationLevel = 'bachelors';
+
 export function getModel(id: string): ModelInfo | undefined {
   return MODELS.find((m) => m.id === id);
 }
@@ -75,11 +80,19 @@ export function getModel(id: string): ModelInfo | undefined {
 export function resolveSelection(
   model?: string,
   effort?: string,
-): { model: string; effort: string } | string {
+  elaboration?: string,
+): { model: string; effort: string; elaboration: ElaborationLevel } | string {
   const def = getModel(model || DEFAULT_MODEL_ID);
   if (!def) return `Unknown model: ${model}`;
   if (effort !== undefined && !def.efforts.includes(effort)) {
     return `${def.name} supports reasoning effort ${def.efforts.join(' | ')}, got: ${effort}`;
   }
-  return { model: def.id, effort: effort ?? def.defaultEffort };
+  if (elaboration !== undefined && !ELABORATIONS.includes(elaboration as ElaborationLevel)) {
+    return `elaboration must be ${ELABORATIONS.join(' | ')}, got: ${elaboration}`;
+  }
+  return {
+    model: def.id,
+    effort: effort ?? def.defaultEffort,
+    elaboration: (elaboration as ElaborationLevel) ?? DEFAULT_ELABORATION,
+  };
 }

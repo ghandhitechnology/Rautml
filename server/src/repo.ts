@@ -8,6 +8,7 @@ import type {
   AssetWithVersions,
   Chat,
   ChatEvent,
+  ElaborationLevel,
   Message,
   PendingInput,
   Run,
@@ -43,6 +44,7 @@ function rowToRun(row: any): Run {
     status: row.status,
     model: row.model ?? undefined,
     effort: row.effort ?? undefined,
+    elaboration: row.elaboration ?? undefined,
   };
 }
 
@@ -189,14 +191,20 @@ export function listModelTurns(chatId: string, thread: Thread): any[] {
 // runs
 // ---------------------------------------------------------------------------
 
-export function createRun(chatId: string, thread: Thread, model?: string, effort?: string): Run {
+export function createRun(
+  chatId: string,
+  thread: Thread,
+  model?: string,
+  effort?: string,
+  elaboration?: ElaborationLevel,
+): Run {
   const id = randomUUID();
   const now = Date.now();
   db.prepare(
-    `INSERT INTO runs (id, chat_id, thread, status, error, created_at, finished_at, model, effort)
-     VALUES (?, ?, ?, 'running', NULL, ?, NULL, ?, ?)`,
-  ).run(id, chatId, thread, now, model ?? null, effort ?? null);
-  return { id, chatId, thread, status: 'running', model, effort };
+    `INSERT INTO runs (id, chat_id, thread, status, error, created_at, finished_at, model, effort, elaboration)
+     VALUES (?, ?, ?, 'running', NULL, ?, NULL, ?, ?, ?)`,
+  ).run(id, chatId, thread, now, model ?? null, effort ?? null, elaboration ?? null);
+  return { id, chatId, thread, status: 'running', model, effort, elaboration };
 }
 
 export function setRunStatus(runId: string, status: Run['status'], error?: string): void {

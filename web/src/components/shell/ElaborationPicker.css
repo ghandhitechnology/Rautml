@@ -1,0 +1,125 @@
+/* ElaborationPicker — chip + popover, visually a sibling of the model pebble. */
+
+.rml-elab {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+/* ------------------------------------------------------------------- chip */
+
+.rml-elab__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px 0 12px;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  letter-spacing: -0.006em;
+  white-space: nowrap;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.rml-elab__chip:hover,
+.rml-elab__chip.is-open {
+  background: color-mix(in srgb, var(--text) 9%, var(--surface-2));
+}
+
+.rml-elab__chevron {
+  width: 9px;
+  height: 6px;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+  opacity: 0.65;
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+.rml-elab__chip.is-open .rml-elab__chevron {
+  transform: rotate(180deg);
+}
+
+/* ---------------------------------------------------------------- popover */
+
+.rml-elab__pop {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  right: 0;
+  z-index: 40;
+  width: 288px;
+  padding: var(--sp-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+  transform-origin: bottom right;
+}
+
+.rml-elab__head {
+  padding: var(--sp-1) var(--sp-3) var(--sp-2);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-muted);
+}
+
+/* ------------------------------------------------------------ option list */
+
+.rml-elab__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-sm);
+  text-align: left;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+.rml-elab__option:hover {
+  background: var(--hover);
+}
+
+.rml-elab__option.is-selected {
+  background: var(--accent-soft);
+}
+
+.rml-elab__option-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.rml-elab__option-name {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: -0.006em;
+  color: var(--text);
+  line-height: var(--lh-tight);
+}
+
+.rml-elab__option-desc {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.rml-elab__check {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}

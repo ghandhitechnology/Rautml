@@ -12,7 +12,7 @@ import { db, WORKSPACES_DIR } from '../db.js';
 import * as repo from '../repo.js';
 import * as sse from '../sse.js';
 import { buildToolRegistry } from '../tools/index.js';
-import type { PendingInput, Thread, ToolCtx, ToolDef } from '../types.js';
+import type { ElaborationLevel, PendingInput, Thread, ToolCtx, ToolDef } from '../types.js';
 import { resolveSelection } from './models.js';
 import {
   nonStreaming,
@@ -21,6 +21,7 @@ import {
   type OpenRouterTool,
 } from './openrouter.js';
 import {
+  ELABORATION_PREAMBLES,
   FORK_PREAMBLE,
   RETITLE_SYSTEM_PROMPT,
   SYSTEM_PROMPT,
@@ -323,10 +324,16 @@ function sanitizeTurns(turns: any[]): ChatMessage[] {
 /**
  * main → system prompt + all main turns.
  * fork → system prompt + fork preamble, then all main turns, then all fork turns.
+ * Either way the run's elaboration layer (audience pebble) is appended last.
  */
-function buildContext(chatId: string, thread: Thread): ChatMessage[] {
-  const system =
-    thread === 'fork' ? `${SYSTEM_PROMPT}\n\n---\n\n${FORK_PREAMBLE}` : SYSTEM_PROMPT;
+function buildContext(
+  chatId: string,
+  thread: Thread,
+  elaboration?: ElaborationLevel,
+): ChatMessage[] {
+  let system = thread === 'fork' ? `${SYSTEM_PROMPT}\n\n---\n\n${FORK_PREAMBLE}` : SYSTEM_PROMPT;
+  const layer = elaboration ? ELABORATION_PREAMBLES[elaboration] : undefined;
+  if (layer) system = `${system}\n\n---\n\n${layer}`;
   const turns =
     thread === 'fork'
       ? [...repo.listModelTurns(chatId, 'main'), ...repo.listModelTurns(chatId, 'fork')]
@@ -347,17 +354,17 @@ export async function startRun(
   chatId: string,
   thread: Thread,
   userContent: string,
-  selection: { model?: string; effort?: string } = {},
+  selection: { model?: string; effort?: string; elaboration?: string } = {},
 ): Promise<{ runId: string }> {
   // Routes validate first; this re-resolve is the safety net for other callers.
-  const resolved = resolveSelection(selection.model, selection.effort);
+  const resolved = resolveSelection(selection.model, selection.effort, selection.elaboration);
   if (typeof resolved === 'string') throw new Error(resolved);
 
   repo.insertMessage({ chatId, thread, role: 'user', content: userContent, status: 'complete' });
   repo.appendModelTurn(chatId, thread, { role: 'user', content: userContent });
   repo.touchChat(chatId);
 
-  const run = repo.createRun(chatId, thread, resolved.model, resolved.effort);
+  const run = repo.createRun(chatId, thread, resolved.model, resolved.effort, resolved.elaboration);
   emit(chatId, thread, 'run.status', { runId: run.id, status: 'running' });
 
   const controller = new AbortController();
@@ -372,6 +379,7 @@ export async function startRun(
     toolCallCount: 0,
     model: resolved.model,
     effort: resolved.effort,
+    elaboration: resolved.elaboration,
   }).catch((err) => {
     console.error('[engine] unhandled run failure', err);
   });
@@ -423,9 +431,10 @@ export async function resumeRun(
     runId: pending.runId,
     controller,
     toolCallCount: 0,
-    // The run resumes on the same model + effort it was started with.
+    // The run resumes on the same model + effort + elaboration it was started with.
     model: run.model,
     effort: run.effort,
+    elaboration: run.elaboration,
   }).catch((err) => {
     console.error('[engine] unhandled resume failure', err);
   });
@@ -473,6 +482,8 @@ interface LoopCtx {
   /** Undefined on legacy runs — streamChat falls back to the default model. */
   model?: string;
   effort?: string;
+  /** Undefined on legacy runs — no elaboration layer is appended. */
+  elaboration?: ElaborationLevel;
 }
 
 async function runLoop(ctx: LoopCtx): Promise<void> {
@@ -521,7 +532,7 @@ async function runLoop(ctx: LoopCtx): Promise<void> {
     for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
       if (controller.signal.aborted) throw new AbortedError();
 
-      const messages = buildContext(chatId, thread);
+      const messages = buildContext(chatId, thread, ctx.elaboration);
 
       const result = await streamChat({
         messages,

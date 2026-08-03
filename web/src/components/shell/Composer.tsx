@@ -12,6 +12,7 @@ import { useActiveChatId, useIsRunning, useStore } from '../../state/store'
 import type { Thread } from '../../lib/types'
 import { cx } from '../../lib/utils'
 import { EASE } from '../../lib/motion'
+import { ElaborationPicker } from './ElaborationPicker'
 import { ModelPicker } from './ModelPicker'
 import './Composer.css'
 
@@ -118,7 +119,9 @@ export function Composer({
           aria-label={thread === 'fork' ? 'Fork message' : 'Message'}
         />
 
-        {/* Model + effort selection travels with the next message; fork inherits it. */}
+        {/* Elaboration + model + effort selection travels with the next message;
+            fork inherits it. The audience pebble sits left of the model pebble. */}
+        {!compact && <ElaborationPicker className="rml-composer__model" />}
         {!compact && <ModelPicker className="rml-composer__model" />}
 
         <div className="rml-composer__actions">
