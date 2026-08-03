@@ -1,9 +1,10 @@
-/* HistoryOverlay — the conversation, slid back over its own document.
+/* HistoryOverlay — the conversation, faded over its own document.
  *
  * A full-column glass sheet with its own scroll (ChatThread finds it through the
  * `data-scroll-container` hook, so pinning and the jump pill keep working). Assets appear
  * here only as compact chips: tapping one closes the overlay and puts that document on stage.
- * The floating composer and the document header stay put above this — the chrome never moves.
+ * The document header and composer stay put; DocumentDock fades its response/activity slabs
+ * in place for the duration so they don't sit on top of the conversation.
  */
 
 import { motion, useReducedMotion } from 'framer-motion'
@@ -45,14 +46,10 @@ export function HistoryOverlay({ className }: HistoryOverlayProps) {
     <motion.div
       className={cx('rml-history', className)}
       data-scroll-container=""
-      initial={reduceMotion ? { opacity: 0 } : { opacity: 0, x: -22, scale: 0.995 }}
-      animate={{ opacity: 1, x: 0, scale: 1 }}
-      exit={
-        reduceMotion
-          ? { opacity: 0, transition: { duration: 0.16 } }
-          : { opacity: 0, x: -16, scale: 0.997, transition: { duration: 0.22, ease: EASE } }
-      }
-      transition={{ duration: 0.34, ease: EASE }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0, transition: { duration: reduceMotion ? 0 : 0.18, ease: EASE } }}
+      transition={reduceMotion ? { duration: 0 } : { duration: 0.22, ease: EASE }}
       aria-label="Conversation"
     >
       <div className="rml-history__inner">

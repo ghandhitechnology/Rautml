@@ -13,7 +13,7 @@
   background: color-mix(in srgb, var(--bg) 94%, transparent);
   backdrop-filter: saturate(150%) blur(26px);
   -webkit-backdrop-filter: saturate(150%) blur(26px);
-  will-change: transform, opacity;
+  will-change: opacity;
 }
 
 /* clears the floating header above and the composer dock below */

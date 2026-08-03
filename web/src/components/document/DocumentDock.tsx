@@ -6,10 +6,9 @@
  * The sheet is only ever raised for a run we watched live — reloading a finished chat lands
  * on the document, not on a wall of text.
  *
- * Both floating slabs mount/unmount themselves (`Slab` below) rather than leaning on
- * AnimatePresence: an exit that fails to complete there strands an invisible, full-height
- * ghost in this flex column, which shoves the composer off its mark. Owning the lifecycle
- * means the worst case is a slab that lingers *visible*, never one that haunts the layout.
+ * Opening the conversation overlay fades the floating slabs out in place (layout stays put)
+ * so returning to the document reveals them exactly where they were — no rise from the
+ * bottom. Slabs only height-collapse when their content is truly gone.
  */
 
 import {
@@ -24,7 +23,7 @@ import {
 import { motion, useReducedMotion } from 'framer-motion'
 import { Composer } from '../shell'
 import { ActivityTimeline, Markdown } from '../chat'
-import { useActiveChat, useStore } from '../../state/store'
+import { useActiveChat, useHistoryOpen, useStore } from '../../state/store'
 import { cx } from '../../lib/utils'
 import { EASE } from '../../lib/motion'
 import './DocumentDock.css'
@@ -35,45 +34,139 @@ export interface DocumentDockProps {
 
 const LIVE = new Set(['running', 'awaiting_input'])
 
-const SHOWN = { opacity: 1, y: 0, scale: 1 }
-const HIDDEN = { opacity: 0, y: 12, scale: 0.985 }
-const ENTER = { opacity: 0, y: 16, scale: 0.98 }
+/** Matches `--sp-2`; animated with height so dismissing slabs release the flex gap too. */
+const SLAB_GAP = 8
+
+const EXPAND = { duration: 0.32, ease: EASE }
+const COLLAPSE = { duration: 0.24, ease: EASE }
+const FADE = { duration: 0.2, ease: EASE }
+const SNAP = { duration: 0 }
+
+/* ------------------------------------------------------------------- measure */
+
+/** Measured height of an element, kept fresh through a ResizeObserver. */
+function useMeasuredHeight<T extends HTMLElement>() {
+  const ref = useRef<T | null>(null)
+  const [height, setHeight] = useState(0)
+
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const read = () => setHeight(el.getBoundingClientRect().height)
+    read()
+    const ro = new ResizeObserver(read)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  return [ref, height] as const
+}
 
 /* ------------------------------------------------------------------- slab */
 
-/** A floating pane that rises in, and takes itself out of the tree once it has faded. */
+/**
+ * A floating pane. `open` means content still belongs here; `covered` means the chat
+ * overlay is up — fade out in place without collapsing, so uncovering looks like it
+ * never moved. Leaving the tree only happens after a real close (`!open`).
+ */
 function Slab({
   open,
+  covered,
   className,
   label,
   children,
   onGone,
 }: {
   open: boolean
+  covered: boolean
   className?: string
   label?: string
   children: ReactNode
-  /** Fired after the closing animation, when the slab is about to leave the layout. */
+  /** Fired after a real close animation, when the slab may leave the layout. */
   onGone?: () => void
 }) {
   const reduceMotion = useReducedMotion()
+  const [inner, height] = useMeasuredHeight<HTMLDivElement>()
   const gone = useRef(onGone)
   gone.current = onGone
 
+  const visible = open && !covered
+  // After a chat cover, the next reveal is a fade — not a fresh expand-from-bottom.
+  const [uncover, setUncover] = useState(false)
+  useLayoutEffect(() => {
+    if (open && covered) setUncover(true)
+  }, [open, covered])
+
+  // First entrance may expand; later size changes (streaming) snap so the slab doesn't bob.
+  const entered = useRef(false)
+  const sized = height > 0 ? height : undefined
+  const inPlace = uncover || !visible || entered.current
+
   return (
     <motion.section
-      className={className}
+      className="rml-dock__slab"
       aria-label={label}
-      initial={reduceMotion ? { opacity: 0 } : ENTER}
-      animate={open ? SHOWN : HIDDEN}
-      transition={reduceMotion ? { duration: 0 } : { duration: 0.3, ease: EASE }}
+      initial={
+        reduceMotion
+          ? { opacity: 0, height: 0, marginBottom: 0 }
+          : { opacity: 0, y: 14, scale: 0.985, height: 0, marginBottom: 0 }
+      }
+      animate={
+        !open
+          ? {
+              opacity: 0,
+              y: 10,
+              scale: 0.985,
+              height: 0,
+              marginBottom: 0,
+            }
+          : {
+              opacity: visible ? 1 : 0,
+              y: 0,
+              scale: 1,
+              height: sized ?? 'auto',
+              marginBottom: SLAB_GAP,
+            }
+      }
+      transition={
+        reduceMotion
+          ? { duration: 0 }
+          : !open
+            ? {
+                height: COLLAPSE,
+                marginBottom: COLLAPSE,
+                opacity: { duration: 0.18, ease: EASE },
+                y: COLLAPSE,
+                scale: COLLAPSE,
+              }
+            : inPlace
+              ? {
+                  // Cover / uncover / live resize: footprint stays put; only opacity fades.
+                  height: SNAP,
+                  marginBottom: SNAP,
+                  opacity: FADE,
+                  y: SNAP,
+                  scale: SNAP,
+                }
+              : {
+                  height: EXPAND,
+                  marginBottom: EXPAND,
+                  opacity: FADE,
+                  y: EXPAND,
+                  scale: EXPAND,
+                }
+      }
       onAnimationComplete={() => {
+        if (open) entered.current = true
+        if (visible && uncover) setUncover(false)
         if (!open) gone.current?.()
       }}
-      aria-hidden={!open}
-      style={{ pointerEvents: open ? 'auto' : 'none' }}
+      aria-hidden={!visible}
+      style={{ pointerEvents: visible ? 'auto' : 'none' }}
     >
-      {children}
+      <div ref={inner} className={className}>
+        {children}
+      </div>
     </motion.section>
   )
 }
@@ -82,6 +175,7 @@ function Slab({
 
 export function DocumentDock({ className }: DocumentDockProps) {
   const state = useActiveChat()
+  const historyOpen = useHistoryOpen()
   const dismissSheet = useStore((s) => s.dismissSheet)
 
   const chatId = state?.chat.id ?? null
@@ -119,7 +213,7 @@ export function DocumentDock({ className }: DocumentDockProps) {
   const sheetOpen = !!sheetMessage && !dismissed && !!sheetMessage.content.trim()
   const activityOpen = running && !!timeline && timeline.items.length > 0
 
-  /* Each slab keeps its last content while it fades, then drops out of the column. */
+  /* Hold while content is relevant; Slab drops itself after a real close. */
   const [sheetHeld, setSheetHeld] = useState<{ id: string; text: string; streaming: boolean } | null>(
     null,
   )
@@ -158,6 +252,7 @@ export function DocumentDock({ className }: DocumentDockProps) {
         <Slab
           key="sheet"
           open={sheetOpen}
+          covered={historyOpen}
           className="rml-dock__sheet"
           label="Response"
           onGone={dropSheet}
@@ -197,6 +292,7 @@ export function DocumentDock({ className }: DocumentDockProps) {
         <Slab
           key="activity"
           open={activityOpen}
+          covered={historyOpen}
           className="rml-dock__activity"
           label="Activity"
           onGone={dropActivity}

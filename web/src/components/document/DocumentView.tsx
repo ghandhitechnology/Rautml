@@ -33,6 +33,14 @@ import './DocumentView.css'
 const BLOOM = { type: 'spring' as const, stiffness: 220, damping: 28, mass: 0.9 }
 const SETTLE = { duration: 0.34, ease: EASE }
 
+/* Coming back from the conversation: the page snaps forward past its resting size and
+ * settles. Transform and opacity only — the stage never changes position or footprint. */
+const RECEDED = 0.978
+const POP_KEYFRAMES = [RECEDED, 1.008, 1]
+/* Delayed just enough to land after the conversation has faded, so the pop is seen. */
+const POP = { duration: 0.42, times: [0, 0.52, 1], ease: EASE, delay: 0.07 }
+const POP_OPACITY = { duration: 0.18, ease: EASE }
+
 export interface DocumentViewProps {
   className?: string
 }
@@ -56,6 +64,14 @@ export function DocumentView({ className }: DocumentViewProps) {
   useEffect(() => {
     if (bloom) clearBloom()
   }, [bloom, clearBloom])
+
+  /* One-shot pop on the way back to the document — armed only by a real close. */
+  const [popping, setPopping] = useState(false)
+  const wasHistoryOpen = useRef(historyOpen)
+  useEffect(() => {
+    if (wasHistoryOpen.current && !historyOpen && !reduceMotion) setPopping(true)
+    wasHistoryOpen.current = historyOpen
+  }, [historyOpen, reduceMotion])
 
   const ordered = useMemo(() => assetsNewestFirst(assets), [assets])
   const latest = Math.max(1, asset?.latestVersion || 1)
@@ -121,11 +137,18 @@ export function DocumentView({ className }: DocumentViewProps) {
         }
         animate={{
           opacity: historyOpen ? 0.55 : 1,
-          scale: historyOpen ? 0.985 : 1,
+          scale: reduceMotion ? 1 : historyOpen ? RECEDED : popping ? POP_KEYFRAMES : 1,
           y: 0,
           borderRadius: 0,
         }}
-        transition={shouldBloom.current ? BLOOM : SETTLE}
+        transition={
+          popping && !historyOpen
+            ? { ...SETTLE, scale: POP, opacity: POP_OPACITY }
+            : shouldBloom.current
+              ? BLOOM
+              : SETTLE
+        }
+        onAnimationComplete={() => setPopping(false)}
       >
         {/* one asset in, one asset out — the page itself never blinks */}
         <AnimatePresence initial={false} mode="popLayout">

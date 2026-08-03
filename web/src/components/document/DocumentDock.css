@@ -4,7 +4,8 @@
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  gap: var(--sp-2);
+  /* Gap is animated on each slab's marginBottom so collapse releases space too. */
+  gap: 0;
   width: 100%;
   max-width: 720px;
   margin: 0 auto;
@@ -13,7 +14,12 @@
 
 .rml-dock > * {
   pointer-events: auto;
-  will-change: transform, opacity;
+}
+
+/* Height clip wrapper — chrome styles live on the inner sheet/activity. */
+.rml-dock__slab {
+  overflow: hidden;
+  will-change: transform, opacity, height;
 }
 
 /* ------------------------------------------------------------ response sheet */
