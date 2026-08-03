@@ -211,7 +211,9 @@ export function DocumentDock({ className }: DocumentDockProps) {
 
   const dismissed = !!(stickyId && state?.dismissedSheets[stickyId])
   const sheetOpen = !!sheetMessage && !dismissed && !!sheetMessage.content.trim()
-  const activityOpen = running && !!timeline && timeline.items.length > 0
+  // Opens as soon as the run is live — waiting for the first step is what left
+  // the dock blank through the whole reasoning stretch.
+  const activityOpen = running && !!timeline
 
   /* Hold while content is relevant; Slab drops itself after a real close. */
   const [sheetHeld, setSheetHeld] = useState<{ id: string; text: string; streaming: boolean } | null>(

@@ -208,7 +208,10 @@ export function ChatThread({
     if (!state) return []
     return state.runOrder.filter((runId) => {
       const t = state.timelines[runId]
-      return !!t && t.thread === thread && t.items.length > 0 && !anchorByRun.has(runId)
+      if (!t || t.thread !== thread || anchorByRun.has(runId)) return false
+      // A live run shows even with no steps yet — that window is exactly when
+      // the reader most needs to see that something is happening.
+      return t.items.length > 0 || t.status === 'running' || t.status === 'awaiting_input'
     })
   }, [state, thread, anchorByRun])
 

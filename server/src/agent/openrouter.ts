@@ -11,7 +11,9 @@
 // errors. streamChat deliberately stops retrying once it has emitted its first
 // text delta: a retry at that point would duplicate visible output.
 
-const ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
+/** Override to point at a proxy or a local mock (no trailing slash). */
+const BASE_URL = process.env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1';
+const ENDPOINT = `${BASE_URL}/chat/completions`;
 
 /** The model this product is built around (CONTRACT.md § Environment). */
 export const MODEL = 'openai/gpt-5.6-sol';
@@ -67,6 +69,14 @@ export interface StreamChatOptions {
   signal?: AbortSignal;
   /** Called for every text delta as it arrives. */
   onText?: (delta: string) => void;
+  /**
+   * Called for every reasoning delta. Reasoning is where a high-effort run
+   * spends most of its wall clock, and it is the only evidence of life before
+   * the first tool call or visible token.
+   */
+  onReasoning?: (delta: string) => void;
+  /** Called once the provider has accepted the request and the body is open. */
+  onStreamOpen?: () => void;
   /**
    * Called the moment a tool call first appears in the stream — long before its
    * arguments have finished arriving. Lets the caller surface activity early.
@@ -207,6 +217,26 @@ interface ToolCallAccumulator {
 }
 
 /**
+ * Reasoning text out of a delta, across the shapes providers use behind
+ * OpenRouter's normalisation: `reasoning` (most), `reasoning_content`
+ * (DeepSeek), and `reasoning_details[]` (when details are passed through).
+ */
+function reasoningOf(delta: any): string {
+  if (typeof delta?.reasoning === 'string') return delta.reasoning;
+  if (typeof delta?.reasoning_content === 'string') return delta.reasoning_content;
+  const details = delta?.reasoning_details;
+  if (Array.isArray(details)) {
+    let out = '';
+    for (const d of details) {
+      if (typeof d?.text === 'string') out += d.text;
+      else if (typeof d?.summary === 'string') out += d.summary;
+    }
+    return out;
+  }
+  return '';
+}
+
+/**
  * Reads an SSE body, feeding each `data:` JSON payload to `onChunk`.
  * Stops on `[DONE]` or stream end.
  */
@@ -290,6 +320,8 @@ export async function streamChat(options: StreamChatOptions): Promise<StreamResu
     toolChoice = 'auto',
     signal,
     onText,
+    onReasoning,
+    onStreamOpen,
     onToolCallStart,
     onRetry,
     model = MODEL,
@@ -323,6 +355,7 @@ export async function streamChat(options: StreamChatOptions): Promise<StreamResu
       if (typeof temperature === 'number') body.temperature = temperature;
 
       const res = await postChat(body, signal);
+      onStreamOpen?.();
 
       await readSse(res, (chunk) => {
         const choice = chunk?.choices?.[0];
@@ -330,6 +363,9 @@ export async function streamChat(options: StreamChatOptions): Promise<StreamResu
         if (choice.finish_reason) finishReason = choice.finish_reason;
 
         const delta = choice.delta ?? {};
+
+        const thought = reasoningOf(delta);
+        if (thought) onReasoning?.(thought);
 
         if (typeof delta.content === 'string' && delta.content.length > 0) {
           content += delta.content;

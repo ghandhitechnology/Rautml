@@ -136,16 +136,21 @@ export function ForkTimeline({ runId, className }: ForkTimelineProps) {
   const timeline = useTimeline(runId)
   const [override, setOverride] = useState<boolean | null>(null)
 
-  if (!timeline || timeline.items.length === 0) return null
+  const live = !!timeline && (timeline.status === 'running' || timeline.status === 'awaiting_input')
 
-  const live = timeline.status === 'running' || timeline.status === 'awaiting_input'
+  // A live run keeps its strip even before the first step, so the fork column
+  // shows the reasoning phase instead of nothing.
+  if (!timeline || (!live && timeline.items.length === 0)) return null
+
   const expanded = override ?? live
   const elapsed = (timeline.endedAt ?? Date.now()) - timeline.startedAt
   const steps = timeline.items.length
   const failed = timeline.items.some((i) => i.status === 'error')
 
   const summary = live
-    ? (timeline.items.find((i) => i.status === 'running')?.label ?? 'Working…')
+    ? (timeline.items.find((i) => i.status === 'running')?.label ??
+      timeline.phaseLabel ??
+      'Working…')
     : `Worked for ${formatDuration(elapsed)} · ${steps} step${steps === 1 ? '' : 's'}`
 
   return (

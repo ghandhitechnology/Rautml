@@ -107,6 +107,17 @@ export interface RunStatusEvent {
   runId: string
   status: RunStatus
 }
+/**
+ * What the run is doing between visible events. Emitted from the moment the
+ * request leaves, so a long reasoning stretch is never silent.
+ */
+export type RunPhase = 'connecting' | 'thinking' | 'responding' | 'tools'
+export interface RunPhaseEvent {
+  runId: string
+  phase: RunPhase
+  /** Human line for the timeline header, e.g. a clipped reasoning summary. */
+  label: string
+}
 export interface MessageStartEvent {
   messageId: string
   role: 'user' | 'assistant'
@@ -259,6 +270,10 @@ export interface RunTimeline {
   /** When the first tool.start of this run landed — the anchor for the worked-for summary. */
   firstStepAt?: number
   endedAt?: number
+  /** What the run is doing right now. Cleared when the run reaches a terminal status. */
+  phase?: RunPhase
+  /** Header line for the current phase (reasoning summary while thinking). */
+  phaseLabel?: string
 }
 
 /** An ask_user_input_v0 request, positioned in the thread it belongs to. */

@@ -28,7 +28,9 @@ import type {
   OpenRouterTool,
 } from './openrouter.js';
 
-const ENDPOINT = 'https://chatgpt.com/backend-api/codex/responses';
+/** Override to point at a proxy or a local mock (tests use this). */
+const ENDPOINT =
+  process.env.CODEX_RESPONSES_URL ?? 'https://chatgpt.com/backend-api/codex/responses';
 const TOKEN_ENDPOINT = 'https://auth.openai.com/oauth/token';
 /** The Codex CLI's public OAuth client id (PKCE — not a secret). */
 const OAUTH_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
@@ -257,6 +259,8 @@ function buildBody(
   toolChoice: ToolChoice,
   model: string,
   reasoningEffort?: string,
+  /** Ask for reasoning summaries (what the Codex CLI itself sends). */
+  wantSummary = true,
 ): Record<string, unknown> {
   const { instructions, input } = toInput(messages);
   const body: Record<string, unknown> = {
@@ -270,8 +274,20 @@ function buildBody(
     stream: true,
     include: [],
   };
-  if (reasoningEffort) body.reasoning = { effort: reasoningEffort };
+  // Summaries are the only readable signal during a long reasoning stretch, so
+  // they are requested even when no explicit effort was chosen.
+  const reasoning: Record<string, unknown> = {};
+  if (reasoningEffort) reasoning.effort = reasoningEffort;
+  if (wantSummary) reasoning.summary = 'auto';
+  if (Object.keys(reasoning).length > 0) body.reasoning = reasoning;
   return body;
+}
+
+/** A 400 blaming the reasoning.summary field — retry once without asking for it. */
+function rejectsSummary(err: unknown): boolean {
+  return (
+    err instanceof CodexError && err.status === 400 && /summary/i.test(err.message)
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -385,6 +401,8 @@ export async function codexStreamChat(options: StreamChatOptions): Promise<Strea
     toolChoice = 'auto',
     signal,
     onText,
+    onReasoning,
+    onStreamOpen,
     onToolCallStart,
     onRetry,
     model,
@@ -393,7 +411,8 @@ export async function codexStreamChat(options: StreamChatOptions): Promise<Strea
   } = options;
   if (!model) throw new CodexError('codexStreamChat requires an explicit model', { retryable: false });
 
-  const body = buildBody(messages, tools, toolChoice, model, reasoningEffort);
+  let wantSummary = true;
+  let body = buildBody(messages, tools, toolChoice, model, reasoningEffort, wantSummary);
 
   let lastError: unknown;
   let forceRefresh = false;
@@ -412,9 +431,18 @@ export async function codexStreamChat(options: StreamChatOptions): Promise<Strea
       const tokens = await getTokens(forceRefresh);
       forceRefresh = false;
       const res = await postResponses(body, tokens, signal);
+      onStreamOpen?.();
 
       await readSse(res, (ev) => {
-        switch (ev?.type) {
+        const type: string = typeof ev?.type === 'string' ? ev.type : '';
+        // Reasoning arrives as summary text, raw reasoning text, or (on newer
+        // backends) a variant of both — anything reasoning-shaped counts.
+        if (type.includes('reasoning') && type.endsWith('.delta')) {
+          const delta = typeof ev.delta === 'string' ? ev.delta : '';
+          if (delta) onReasoning?.(delta);
+          return;
+        }
+        switch (type) {
           case 'response.output_text.delta': {
             const delta = typeof ev.delta === 'string' ? ev.delta : '';
             if (!delta) break;
@@ -470,6 +498,15 @@ export async function codexStreamChat(options: StreamChatOptions): Promise<Strea
     } catch (err) {
       if (isAbortError(err)) throw err;
       lastError = err;
+
+      // The backend doesn't want reasoning summaries — drop them and retry.
+      // Costs one attempt at most; every later call in this process still asks.
+      if (wantSummary && rejectsSummary(err)) {
+        wantSummary = false;
+        body = buildBody(messages, tools, toolChoice, model, reasoningEffort, false);
+        attempt -= 1;
+        continue;
+      }
 
       const codexErr = err instanceof CodexError ? err : null;
       const retryable = codexErr ? codexErr.retryable : true;

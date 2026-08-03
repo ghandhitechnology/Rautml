@@ -47,6 +47,9 @@ function envInt(name: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+/** Floor between streamed reasoning phase updates (one SSE frame + row each). */
+const PHASE_THROTTLE_MS = 700;
+
 const WRAP_UP_NUDGE =
   'You have reached this run\'s tool-call budget. Stop calling tools now and write your final answer using what you already have. If something is incomplete, say so briefly and offer to continue.';
 
@@ -235,6 +238,24 @@ function toolLabel(name: string, args: any): string {
     default:
       return name.replace(/_/g, ' ');
   }
+}
+
+/**
+ * A readable one-liner from streamed reasoning. Summaries arrive as markdown
+ * sections opening with a bold title, which is exactly the line worth showing;
+ * raw reasoning has no titles, so the newest complete line is used instead.
+ */
+function reasoningHeadline(text: string): string {
+  const flat = text.replace(/\r/g, '');
+  const titles = [...flat.matchAll(/\*\*(.+?)\*\*/g)];
+  const lastTitle = titles.length > 0 ? (titles[titles.length - 1]![1] ?? '') : '';
+  if (lastTitle.trim()) return clip(lastTitle, 90);
+  const lines = flat
+    .split('\n')
+    .map((line) => line.replace(/^#+\s*/, '').trim())
+    .filter((line) => line.length > 0);
+  const tail = lines[lines.length - 1] ?? '';
+  return tail ? clip(tail, 90) : '';
 }
 
 /**
@@ -550,6 +571,23 @@ async function runLoop(ctx: LoopCtx): Promise<void> {
   let nudged = false;
   let completedFirstAnswer = false;
 
+  // --- run phase -----------------------------------------------------------
+  // Between "you pressed send" and the first tool row there can be a minute of
+  // reasoning. These events are what the timeline header shows in that window,
+  // so something is on screen within a round-trip of the request leaving.
+  let phaseLabel = '';
+  let phaseAt = 0;
+  const emitPhase = (phase: string, label: string, throttle = false): void => {
+    if (label === phaseLabel) return;
+    const now = Date.now();
+    // Reasoning deltas arrive many times a second; every emit is an SSE frame
+    // and a row in tool_events, so the streaming ones are rate-limited.
+    if (throttle && now - phaseAt < PHASE_THROTTLE_MS) return;
+    phaseLabel = label;
+    phaseAt = now;
+    emit(chatId, thread, 'run.phase', { runId, phase, label });
+  };
+
   const openMessage = (): string => {
     if (liveMessageId) return liveMessageId;
     const message = repo.insertMessage({
@@ -592,6 +630,11 @@ async function runLoop(ctx: LoopCtx): Promise<void> {
       // back if streamChat retries the attempt they belonged to.
       const earlyStarts = new Map<string, string>();
 
+      // Something is on screen from here on: this lands before the provider has
+      // even accepted the request.
+      emitPhase('connecting', 'Connecting…');
+      let reasoning = '';
+
       const result = await streamChat({
         messages,
         tools: wireTools.length > 0 ? wireTools : undefined,
@@ -600,7 +643,15 @@ async function runLoop(ctx: LoopCtx): Promise<void> {
         model: ctx.model,
         reasoningEffort: ctx.effort,
         signal: controller.signal,
+        onStreamOpen: () => emitPhase('thinking', 'Thinking…'),
+        // The model can reason for a minute before its first visible move; the
+        // summary headline is the only honest thing to show in that window.
+        onReasoning: (delta) => {
+          reasoning += delta;
+          emitPhase('thinking', reasoningHeadline(reasoning) || 'Thinking…', true);
+        },
         onText: (delta) => {
+          emitPhase('responding', 'Writing the answer');
           const id = openMessage();
           liveText += delta;
           emit(chatId, thread, 'message.delta', { messageId: id, text: delta });
@@ -619,6 +670,8 @@ async function runLoop(ctx: LoopCtx): Promise<void> {
           });
         },
         onRetry: () => {
+          reasoning = '';
+          emitPhase('connecting', 'Reconnecting…');
           // The attempt these announcements came from is being abandoned;
           // close their rows so they don't spin forever.
           for (const [id, name] of earlyStarts) {
@@ -659,6 +712,10 @@ async function runLoop(ctx: LoopCtx): Promise<void> {
       // would leave one empty assistant message behind for every tool round.
       // Content is flushed to the DB so a mid-run reload sees what's there.
       if (liveMessageId) repo.updateMessageContent(liveMessageId, liveText);
+
+      // The rows below carry the detail from here; the header steps out of
+      // the way rather than leaving a stale "Thinking…" over live tool rows.
+      emitPhase('tools', 'Running tools');
 
       // --- execute tool calls -------------------------------------------------
       const toolCtx: ToolCtx = {

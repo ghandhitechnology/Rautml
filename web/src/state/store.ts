@@ -30,6 +30,7 @@ import type {
   PendingInput,
   PresentedFile,
   Run,
+  RunPhaseEvent,
   RunStatusEvent,
   RunTimeline,
   SubagentDeltaEvent,
@@ -415,6 +416,9 @@ function reduceEvent(cs: ChatState, ev: ChatEvent, ctx: ReduceCtx): ChatState {
         ...t,
         status: d.status,
         endedAt: isLive(d.status) ? undefined : (t.endedAt ?? at),
+        // A run that stopped is not thinking about anything.
+        phase: isLive(d.status) ? t.phase : undefined,
+        phaseLabel: isLive(d.status) ? t.phaseLabel : undefined,
       }))
       if (!isLive(d.status)) {
         // A finished run can never still be waiting on input.
@@ -467,6 +471,18 @@ function reduceEvent(cs: ChatState, ev: ChatEvent, ctx: ReduceCtx): ChatState {
           },
         }
       }
+      break
+    }
+
+    case 'run.phase': {
+      const d = ev.data as RunPhaseEvent
+      if (!d?.runId || !d.phase) break
+      next = ensureTimeline(next, d.runId, thread, at)
+      next = patchTimeline(next, d.runId, (t) => ({
+        ...t,
+        phase: d.phase,
+        phaseLabel: d.label || undefined,
+      }))
       break
     }
 
