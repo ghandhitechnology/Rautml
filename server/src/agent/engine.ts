@@ -19,7 +19,7 @@ import {
   streamChat,
   type ChatMessage,
   type OpenRouterTool,
-} from './openrouter.js';
+} from './llm.js';
 import {
   ELABORATION_PREAMBLES,
   FORK_PREAMBLE,

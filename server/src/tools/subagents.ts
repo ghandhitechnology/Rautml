@@ -7,7 +7,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { getModel } from '../agent/models.js';
-import { streamChat, type ChatMessage, type OpenRouterTool } from '../agent/openrouter.js';
+import { streamChat, type ChatMessage, type OpenRouterTool } from '../agent/llm.js';
 import { SUBAGENT_SYSTEM_PROMPT } from '../agent/prompts.js';
 import type { ToolCtx, ToolDef } from '../types.js';
 import { researchTools } from './research.js';

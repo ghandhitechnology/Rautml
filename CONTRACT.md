@@ -47,6 +47,13 @@ shell→components/shell+theme+state+lib, chat→components/chat, asset→compon
 
 - `OPENROUTER_API_KEY`, `FIRECRAWL_API_KEY` in `/Users/pyu/projects/hobbies/Rautml/.env` (already present).
 - Default model: `openai/gpt-5.6-sol` via `https://openrouter.ai/api/v1/chat/completions`. Tool calling: OpenAI format, `tool_choice: "auto"`, streaming SSE.
+- **Provider dispatch** (src/agent/llm.ts): when Codex CLI OAuth credentials exist (`~/.codex/auth.json`, via
+  `codex login`), `openai/*` models run on the user's ChatGPT subscription through the Codex backend
+  (`https://chatgpt.com/backend-api/codex/responses`, Responses API, SSE-only; src/agent/codex.ts translates
+  to/from the chat.completions shapes so callers can't tell providers apart). Wire ids drop the `openai/`
+  prefix (`gpt-5.6-sol`). `max_output_tokens`/`temperature` are unsupported there and omitted; reasoning
+  efforts none…max pass through. Tokens auto-refresh via `auth.openai.com` and are written back to auth.json.
+  All other models — and everything when auth is absent or `RAUTML_CODEX=0` — stay on OpenRouter.
 - Selectable models (server/src/agent/models.ts owns the catalog; efforts are the provider's own
   `reasoning_effort` values, sent as OpenRouter `reasoning: { effort }`):
   - `openai/gpt-5.6-sol` / `-terra` / `-luna` — none | low | medium | high | xhigh | max (default medium)
