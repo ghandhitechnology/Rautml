@@ -12,8 +12,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { fetchAssetHtml } from '../../lib/api'
+import { stampFrameTheme, withThemeAttr } from '../../lib/frameTheme'
 import { cx } from '../../lib/utils'
 import { EASE } from '../../lib/motion'
+import { useStore, useTheme } from '../../state/store'
 import './DocumentFrame.css'
 
 export interface DocumentFrameProps {
@@ -72,6 +74,13 @@ export function DocumentFrame({
   const [reloadNonce, setReloadNonce] = useState(0)
 
   const seq = useRef(0)
+  const frames = useRef(new Map<string, HTMLIFrameElement>())
+
+  /* keep every live document on the app's theme (assets honour [data-theme]) */
+  const theme = useTheme()
+  useEffect(() => {
+    for (const el of frames.current.values()) stampFrameTheme(el, theme)
+  }, [theme])
 
   /* ------------------------------------------------------------------ load */
 
@@ -92,7 +101,8 @@ export function DocumentFrame({
           key: `${requestKey}#${seq.current}`,
           assetId,
           version,
-          html: withFrameGuards(html),
+          // Theme attr goes in before first paint; live toggles are stamped below.
+          html: withThemeAttr(withFrameGuards(html), useStore.getState().theme),
         }
         // First paint goes straight in; later ones queue behind whatever is visible.
         setLayers((prev) => (prev.length === 0 ? [layer] : [prev[0]!, layer]))
@@ -126,6 +136,7 @@ export function DocumentFrame({
       } catch {
         /* never cross-origin here, but never let this throw either */
       }
+      stampFrameTheme(el, useStore.getState().theme)
       markLoaded(key)
     },
     [markLoaded],
@@ -134,6 +145,7 @@ export function DocumentFrame({
   /* drop bookkeeping for layers that are gone */
   useEffect(() => {
     const live = new Set(layers.map((l) => l.key))
+    for (const key of frames.current.keys()) if (!live.has(key)) frames.current.delete(key)
     setReady((prev) => {
       const keys = Object.keys(prev)
       if (keys.every((k) => live.has(k))) return prev
@@ -176,6 +188,10 @@ export function DocumentFrame({
             style={{ pointerEvents: i === 0 ? 'auto' : 'none' }}
           >
             <iframe
+              ref={(el) => {
+                if (el) frames.current.set(layer.key, el)
+                else frames.current.delete(layer.key)
+              }}
               className="rml-docframe__iframe"
               title={`${title ?? 'Document'} — v${layer.version}`}
               srcDoc={layer.html}

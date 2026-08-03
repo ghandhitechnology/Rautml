@@ -14,8 +14,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { fetchAssetHtml } from '../../lib/api'
+import { stampFrameTheme, withThemeAttr } from '../../lib/frameTheme'
 import { cx } from '../../lib/utils'
 import { EASE } from '../../lib/motion'
+import { useStore, useTheme } from '../../state/store'
 import './AssetFrame.css'
 
 /** postMessage discriminator shared with the injected reporter. */
@@ -121,6 +123,12 @@ export function AssetFrame({
   const loadedKey = useRef('')
   const seq = useRef(0)
 
+  /* keep every live document on the app's theme (assets honour [data-theme]) */
+  const theme = useTheme()
+  useEffect(() => {
+    for (const el of frames.current.values()) stampFrameTheme(el, theme)
+  }, [theme])
+
   /* ------------------------------------------------------------------ load */
 
   useEffect(() => {
@@ -140,7 +148,9 @@ export function AssetFrame({
           key: `${requestKey}#${seq.current}`,
           version,
           raw,
-          doc: injectHeightReporter(raw),
+          // Theme attr goes in before first paint so a house-styled asset never flashes
+          // the wrong scheme; live toggles are stamped into the open document below.
+          doc: withThemeAttr(injectHeightReporter(raw), useStore.getState().theme),
         }
         // First load paints straight away; later versions queue behind the visible one.
         setLayers((prev) => (prev.length === 0 ? [layer] : [prev[0]!, layer]))
@@ -251,6 +261,7 @@ export function AssetFrame({
               className="rml-frame__iframe"
               title={`${title ?? 'Asset'} — v${layer.version}`}
               srcDoc={layer.doc}
+              onLoad={(e) => stampFrameTheme(e.currentTarget, useStore.getState().theme)}
               scrolling="no"
               style={{ height: `${Math.max(minHeight, heights[layer.key] ?? frameHeight)}px` }}
             />
