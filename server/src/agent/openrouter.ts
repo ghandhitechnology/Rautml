@@ -70,9 +70,9 @@ export interface StreamChatOptions {
   /** Called for every text delta as it arrives. */
   onText?: (delta: string) => void;
   /**
-   * Called for every reasoning delta. Reasoning is where a high-effort run
-   * spends most of its wall clock, and it is the only evidence of life before
-   * the first tool call or visible token.
+   * Called for every reasoning-trace delta (models that stream one). Reasoning
+   * is not visible output, but it is evidence of life before the first tool
+   * call or visible token and never counts as emitted text for retry purposes.
    */
   onReasoning?: (delta: string) => void;
   /** Called once the provider has accepted the request and the body is open. */

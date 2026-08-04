@@ -421,6 +421,7 @@ export async function codexStreamChat(options: StreamChatOptions): Promise<Strea
     if (signal?.aborted) throw new AbortedError();
 
     let emittedText = false;
+    let emittedReasoning = false;
     let content = '';
     const toolCalls: ToolCall[] = [];
     const announced = new Set<string>();
@@ -437,9 +438,17 @@ export async function codexStreamChat(options: StreamChatOptions): Promise<Strea
         const type: string = typeof ev?.type === 'string' ? ev.type : '';
         // Reasoning arrives as summary text, raw reasoning text, or (on newer
         // backends) a variant of both — anything reasoning-shaped counts.
+        // Summary parts are separated so an expanded trace stays readable.
+        if (type === 'response.reasoning_summary_part.added') {
+          if (emittedReasoning) onReasoning?.('\n\n');
+          return;
+        }
         if (type.includes('reasoning') && type.endsWith('.delta')) {
           const delta = typeof ev.delta === 'string' ? ev.delta : '';
-          if (delta) onReasoning?.(delta);
+          if (delta) {
+            emittedReasoning = true;
+            onReasoning?.(delta);
+          }
           return;
         }
         switch (type) {

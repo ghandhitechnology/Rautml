@@ -223,6 +223,82 @@
   }
 }
 
+/* --------------------------------------------------------------- thinking */
+
+.rml-tl__think {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.rml-tl__think-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px 6px 6px;
+  border-radius: var(--r-sm);
+  text-align: left;
+}
+
+/* Only the expandable variant (a <button>) invites a click. */
+button.rml-tl__think-head {
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+button.rml-tl__think-head:hover {
+  background: var(--hover);
+}
+
+.rml-tl__think-label {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.rml-tl__think.is-running .rml-tl__think-label {
+  color: var(--text);
+}
+
+.rml-tl__think.is-running .rml-tl__icon {
+  color: var(--accent-hover);
+  background: var(--accent-soft);
+}
+
+.rml-tl__think-chevron {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  opacity: 0.6;
+  transition: transform var(--dur) var(--ease), opacity var(--dur-fast) var(--ease);
+}
+
+.rml-tl__think.is-open .rml-tl__think-chevron {
+  transform: rotate(180deg);
+}
+
+button.rml-tl__think-head:hover .rml-tl__think-chevron {
+  opacity: 1;
+}
+
+.rml-tl__think-trace {
+  margin: 2px 8px 4px 32px;
+  max-height: 132px;
+  overflow-y: auto;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* -------------------------------------------------------------- subagents */
 
 .rml-tl__sub {
@@ -357,4 +433,14 @@
 .rml-tl--compact .rml-tl__sub-model,
 .rml-tl--compact .rml-tl__sub-tail {
   display: none;
+}
+
+.rml-tl--compact .rml-tl__think-head {
+  gap: 8px;
+  padding: 5px 6px;
+}
+
+.rml-tl--compact .rml-tl__think-trace {
+  margin-left: 27px;
+  max-height: 96px;
 }

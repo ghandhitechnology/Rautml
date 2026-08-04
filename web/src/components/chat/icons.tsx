@@ -24,6 +24,7 @@ export type IconName =
   | 'code'
   | 'chat'
   | 'stack'
+  | 'thought'
   | 'menu'
 
 const PATHS: Record<IconName, ReactNode> = {
@@ -146,6 +147,13 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="m3.6 16.6 8.4 4.2 8.4-4.2" />
     </>
   ),
+  thought: (
+    <>
+      <path d="M16.8 16.6H7.4a3.8 3.8 0 0 1-1-7.5A5.2 5.2 0 0 1 16.6 7.9a4.4 4.4 0 0 1 .2 8.7z" />
+      <circle cx="8.2" cy="19.4" r="1" />
+      <circle cx="5.6" cy="21.4" r="0.5" />
+    </>
+  ),
   menu: (
     <>
       <path d="M4.2 8.4h15.6" />
@@ -205,6 +213,8 @@ export function toolIcon(name: string): IconName {
       return 'question'
     case 'spawn_subagents':
       return 'stack'
+    case 'thinking':
+      return 'thought'
     default:
       break
   }
