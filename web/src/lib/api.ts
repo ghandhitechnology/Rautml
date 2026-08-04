@@ -1,7 +1,7 @@
 /* Typed fetch wrappers for every route in CONTRACT.md § HTTP API.
  * Dev server proxies /api → http://localhost:5175 (see vite.config.ts). */
 
-import type { Chat, ChatSnapshot, ModelInfo, Thread } from './types'
+import type { Chat, ChatSnapshot, FollowUpAttachment, ModelInfo, Thread } from './types'
 
 export const API_BASE = '/api'
 
@@ -96,10 +96,11 @@ export function sendMessage(
   content: string,
   thread: Thread,
   selection?: { model?: string; effort?: string; elaboration?: string },
+  attachments?: FollowUpAttachment[],
 ): Promise<{ runId: string }> {
   return request<{ runId: string }>(`/chats/${encodeURIComponent(chatId)}/messages`, {
     method: 'POST',
-    body: JSON.stringify({ content, thread, ...selection }),
+    body: JSON.stringify({ content, thread, ...selection, attachments }),
   })
 }
 

@@ -46,6 +46,13 @@
   overflow-wrap: anywhere;
 }
 
+.rml-forkmsg__context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
 .rml-forkmsg--assistant {
   padding-right: var(--sp-2);
 }

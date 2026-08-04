@@ -20,6 +20,7 @@ import { cx } from '../../lib/utils'
 import { EASE } from '../../lib/motion'
 import ForkMarkdown from './ForkMarkdown'
 import ForkTimeline from './ForkTimeline'
+import ContextAttachmentTile from './ContextAttachmentTile'
 import './ForkThread.css'
 
 export interface ForkThreadProps {
@@ -44,7 +45,16 @@ function UserBubble({ message }: { message: Message }) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.24, ease: EASE }}
     >
-      <div className="rml-forkmsg__bubble">{message.content}</div>
+      <div className="rml-forkmsg__bubble">
+        {message.attachments?.length ? (
+          <div className="rml-forkmsg__context" aria-label="Attached context">
+            {message.attachments.map((attachment) => (
+              <ContextAttachmentTile key={attachment.id} attachment={attachment} compact />
+            ))}
+          </div>
+        ) : null}
+        {message.content}
+      </div>
     </motion.div>
   )
 }

@@ -1,6 +1,7 @@
 .rml-shell {
+  --sidebar-track: var(--sidebar-w);
   display: grid;
-  grid-template-columns: var(--sidebar-w) minmax(0, 1fr) 0px;
+  grid-template-columns: var(--sidebar-track) minmax(0, 1fr) 0px;
   height: 100dvh;
   min-height: 0;
   background: var(--bg);
@@ -8,7 +9,11 @@
 }
 
 .rml-shell.is-fork-open {
-  grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--fork-w);
+  grid-template-columns: var(--sidebar-track) minmax(0, 1fr) var(--fork-w);
+}
+
+.rml-shell.is-sidebar-collapsed {
+  --sidebar-track: 52px;
 }
 
 .rml-shell__sidebar {

@@ -24,6 +24,15 @@ function rowToChat(row: any): Chat {
 }
 
 function rowToMessage(row: any): Message {
+  let attachments: Message['attachments'];
+  if (typeof row.attachments === 'string' && row.attachments) {
+    try {
+      const parsed = JSON.parse(row.attachments);
+      if (Array.isArray(parsed)) attachments = parsed;
+    } catch {
+      /* A corrupt optional payload must not make the conversation unreadable. */
+    }
+  }
   return {
     id: row.id,
     chatId: row.chat_id,
@@ -32,6 +41,7 @@ function rowToMessage(row: any): Message {
     content: row.content,
     status: row.status,
     runId: row.run_id ?? undefined,
+    ...(attachments?.length ? { attachments } : {}),
     createdAt: row.created_at,
   };
 }
@@ -128,14 +138,25 @@ export function insertMessage(input: {
   status?: Message['status'];
   runId?: string;
   id?: string;
+  attachments?: Message['attachments'];
 }): Message {
   const id = input.id ?? randomUUID();
   const now = Date.now();
   const status = input.status ?? 'complete';
   db.prepare(
-    `INSERT INTO messages (id, chat_id, thread, role, content, status, run_id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(id, input.chatId, input.thread, input.role, input.content, status, input.runId ?? null, now);
+    `INSERT INTO messages (id, chat_id, thread, role, content, status, run_id, attachments, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    id,
+    input.chatId,
+    input.thread,
+    input.role,
+    input.content,
+    status,
+    input.runId ?? null,
+    input.attachments?.length ? JSON.stringify(input.attachments) : null,
+    now,
+  );
   return {
     id,
     chatId: input.chatId,
@@ -144,6 +165,7 @@ export function insertMessage(input: {
     content: input.content,
     status,
     runId: input.runId,
+    ...(input.attachments?.length ? { attachments: input.attachments } : {}),
     createdAt: now,
   };
 }

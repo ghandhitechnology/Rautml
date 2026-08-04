@@ -17,6 +17,12 @@ import { fetchAssetHtml } from '../../lib/api'
 import { stampFrameTheme, withThemeAttr } from '../../lib/frameTheme'
 import { cx } from '../../lib/utils'
 import { EASE } from '../../lib/motion'
+import {
+  FRAME_CONTEXT_DOM_EVENT,
+  injectFollowUpContext,
+  isFrameContextPayload,
+  type FrameContextPayload,
+} from '../../lib/frameContext'
 import { useStore, useTheme } from '../../state/store'
 import './AssetFrame.css'
 
@@ -150,7 +156,10 @@ export function AssetFrame({
           raw,
           // Theme attr goes in before first paint so a house-styled asset never flashes
           // the wrong scheme; live toggles are stamped into the open document below.
-          doc: withThemeAttr(injectHeightReporter(raw), useStore.getState().theme),
+          doc: withThemeAttr(
+            injectFollowUpContext(injectHeightReporter(raw)),
+            useStore.getState().theme,
+          ),
         }
         // First load paints straight away; later versions queue behind the visible one.
         setLayers((prev) => (prev.length === 0 ? [layer] : [prev[0]!, layer]))
@@ -195,6 +204,47 @@ export function AssetFrame({
     window.addEventListener('message', handleMessage)
     return () => window.removeEventListener('message', handleMessage)
   }, [handleMessage])
+
+  useEffect(() => {
+    const attach = (data: FrameContextPayload, key: string) => {
+      const layer = layers.find((candidate) => candidate.key === key)
+      if (!layer) return
+      useStore.getState().addFollowUpAttachment({
+        id: data.id,
+        kind: data.kind,
+        preview: data.preview,
+        content: data.content,
+        assetId,
+        assetTitle: title || 'Untitled asset',
+        version: layer.version,
+      })
+    }
+    const onContextMessage = (event: MessageEvent) => {
+      if (!isFrameContextPayload(event.data)) return
+      let key: string | null = null
+      for (const [candidate, frame] of frames.current) {
+        if (frame.contentWindow === event.source) {
+          key = candidate
+          break
+        }
+      }
+      if (!key) return
+      attach(event.data, key)
+    }
+    const onDomAttach = (event: Event) => {
+      const custom = event as CustomEvent<unknown>
+      if (!isFrameContextPayload(custom.detail)) return
+      for (const [key, frame] of frames.current) {
+        if (frame === custom.target) return attach(custom.detail, key)
+      }
+    }
+    window.addEventListener('message', onContextMessage)
+    window.addEventListener(FRAME_CONTEXT_DOM_EVENT, onDomAttach)
+    return () => {
+      window.removeEventListener('message', onContextMessage)
+      window.removeEventListener(FRAME_CONTEXT_DOM_EVENT, onDomAttach)
+    }
+  }, [assetId, layers, title])
 
   /* ----------------------------------------------------------- derivations */
 

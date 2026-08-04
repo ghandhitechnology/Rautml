@@ -71,7 +71,7 @@ chats(id TEXT PK, title TEXT, created_at INTEGER, updated_at INTEGER);
 -- thread: 'main' | 'fork'
 messages(id TEXT PK, chat_id TEXT, thread TEXT, role TEXT, content TEXT,
          status TEXT DEFAULT 'complete',  -- 'streaming'|'complete'|'error'
-         run_id TEXT, created_at INTEGER);
+         run_id TEXT, attachments TEXT, created_at INTEGER); -- optional JSON FollowUpAttachment[]
 -- canonical model-side transcript for context rebuilding (incl. tool calls/results), per thread
 model_turns(id INTEGER PK AUTOINCREMENT, chat_id TEXT, thread TEXT, seq INTEGER, json TEXT);
 runs(id TEXT PK, chat_id TEXT, thread TEXT,
@@ -93,7 +93,7 @@ pending_inputs(id TEXT PK, run_id TEXT, chat_id TEXT, thread TEXT, payload TEXT,
 - `DELETE /api/chats/:id`
 - `GET  /api/chats/:id` → `{ chat, messages, assets: AssetWithVersions[], events: ChatEvent[], pendingInput: PendingInput|null, activeRun: Run|null }`
 - `POST /api/chats/:id/retitle` → `{ title: string, changed: boolean }` (GPT-5.6 Luna at effort `none`; invoked when leaving a chat that changed since its initial title)
-- `POST /api/chats/:id/messages` `{ content: string, thread: 'main'|'fork', model?: string, effort?: string, elaboration?: 'undergraduate'|'bachelors'|'doctor' }` → `{ runId }` (409 if a run is active on that thread; 400 on unknown model, an effort the model doesn't offer, or an unknown elaboration level)
+- `POST /api/chats/:id/messages` `{ content: string, thread: 'main'|'fork', model?: string, effort?: string, elaboration?: 'undergraduate'|'bachelors'|'doctor', attachments?: FollowUpAttachment[] }` → `{ runId }` (attachments are supported on the fork thread; 409 if a run is active; 400 on invalid selections)
 - `GET  /api/models` → `{ models: ModelInfo[], defaultModelId: string }` (the selectable catalog)
 - `POST /api/chats/:id/input` `{ pendingInputId, value: string }` → resumes paused run
 - `POST /api/chats/:id/stop` → stops active run(s)
@@ -265,8 +265,12 @@ Motion: framer-motion; standard easing `[0.22, 1, 0.36, 1]`; durations 200–450
 ```ts
 type Thread = 'main'|'fork';
 interface Chat { id:string; title:string; createdAt:number; updatedAt:number }
+type FollowUpAttachmentKind = 'text'|'diagram';
+interface FollowUpAttachment { id:string; kind:FollowUpAttachmentKind; label:string; preview:string;
+  content:string; assetId:string; assetTitle:string; version:number }
 interface Message { id:string; chatId:string; thread:Thread; role:'user'|'assistant';
-  content:string; status:'streaming'|'complete'|'error'; runId?:string; createdAt:number }
+  content:string; status:'streaming'|'complete'|'error'; runId?:string;
+  attachments?:FollowUpAttachment[]; createdAt:number }
 interface Run { id:string; chatId:string; thread:Thread; status:'running'|'awaiting_input'|'done'|'error'|'stopped';
   model?:string; effort?:string; elaboration?:ElaborationLevel }
 type ElaborationLevel = 'undergraduate'|'bachelors'|'doctor';

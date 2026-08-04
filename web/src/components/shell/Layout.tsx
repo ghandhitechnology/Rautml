@@ -10,6 +10,16 @@ import ThemeToggle from './ThemeToggle'
 import TypewriterText from './TypewriterText'
 import './Layout.css'
 
+const SIDEBAR_COLLAPSED_KEY = 'rautml.sidebarCollapsed'
+
+function readSidebarCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
 export interface LayoutProps {
   /** Left column. Defaults to the chat list. */
   sidebar?: ReactNode
@@ -48,6 +58,16 @@ export function Layout({
   const connection = useConnection()
   const error = useStoreError()
   const dismissError = useStore((s) => s.dismissError)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed)
+
+  const setDesktopSidebarCollapsed = (collapsed: boolean) => {
+    setSidebarCollapsed(collapsed)
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed))
+    } catch {
+      /* private mode — the choice lasts for this session */
+    }
+  }
 
   /* Small screens collapse the sidebar into an off-canvas drawer. The state is
    * harmless on desktop: the drawer classes only take effect under 640px. */
@@ -72,10 +92,18 @@ export function Layout({
         forkOpen && 'is-fork-open',
         documentMode && 'is-document',
         navOpen && 'is-nav-open',
+        sidebarCollapsed && 'is-sidebar-collapsed',
         className,
       )}
     >
-      <aside className="rml-shell__sidebar">{sidebar ?? <ChatListSidebar />}</aside>
+      <aside className="rml-shell__sidebar">
+        {sidebar ?? (
+          <ChatListSidebar
+            collapsed={sidebarCollapsed}
+            onCollapsedChange={setDesktopSidebarCollapsed}
+          />
+        )}
+      </aside>
 
       {navOpen ? (
         <button
