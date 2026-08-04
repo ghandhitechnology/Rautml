@@ -2,6 +2,10 @@
   --sidebar-track: var(--sidebar-w);
   display: grid;
   grid-template-columns: var(--sidebar-track) minmax(0, 1fr) 0px;
+  /* Pin the single row to the viewport: an auto row grows with column content
+   * (a long fork thread), pushing every column past 100dvh and breaking each
+   * column's inner scroll regions. */
+  grid-template-rows: minmax(0, 1fr);
   height: 100dvh;
   min-height: 0;
   background: var(--bg);

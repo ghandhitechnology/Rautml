@@ -35,6 +35,29 @@
   padding-left: var(--sp-6);
 }
 
+/* landing glow when an in-asset mark pointed here */
+.rml-forkmsg.is-flash .rml-forkmsg__bubble,
+.rml-forkmsg--assistant.is-flash {
+  animation: rml-fork-flash 1.6s var(--ease) 1;
+  border-radius: var(--r-lg) var(--r-lg) 5px var(--r-lg);
+}
+
+@keyframes rml-fork-flash {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 62%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 14px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rml-forkmsg.is-flash .rml-forkmsg__bubble,
+  .rml-forkmsg--assistant.is-flash {
+    animation: none;
+  }
+}
+
 .rml-forkmsg__bubble {
   padding: 8px 12px;
   border-radius: var(--r-lg) var(--r-lg) 5px var(--r-lg);

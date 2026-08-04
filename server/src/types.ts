@@ -51,6 +51,12 @@ export interface Run {
   effort?: string;
   /** Elaboration level the run was started with (how much terms get explained). */
   elaboration?: ElaborationLevel;
+  /**
+   * Main-thread turn watermark. Main run: the last main `model_turns.seq`
+   * present before this run appended anything. Fork run: the highest main seq
+   * its context may include — the last fully generated main state at start.
+   */
+  contextSeq?: number;
 }
 
 /** How much the assistant unpacks domain-specific terms along the way. */

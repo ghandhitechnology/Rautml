@@ -134,7 +134,10 @@ Types (data shape):
 
 - `startRun(chatId, thread, userContent)`: persist user message + model_turn, create run, then loop
   detached from any HTTP response (fire-and-forget promise; survives client disconnect — SSE replay covers reload).
-- Context: main thread → all main model_turns. Fork thread → all **main** model_turns + all **fork** model_turns
+- Context: main thread → all main model_turns. Fork thread → **main** model_turns up to the fork run's
+  `context_seq` watermark + all **fork** model_turns. The watermark is captured at run creation: the last
+  fully generated main state — with a main run live, its half-finished turns never leak into a fork's context
+  (runs.context_seq; main runs record their own pre-run watermark for forks to snapshot).
   (fork system preamble: "You are answering focused questions about the conversation and its generated assets;
   be concise; do not create or edit assets — direct the user to the main chat for changes.").
 - Loop: call OpenRouter (stream). Stream text → message.delta. Tool calls → emit a provisional tool.start
@@ -241,6 +244,12 @@ Motion: framer-motion; standard easing `[0.22, 1, 0.36, 1]`; durations 200–450
 - **Fork ball**: after first asset exists, floating ball bottom-right (draggable optional). Click → expands into
   right sidebar panel (~380px, spring animation, main chat stays interactive). One persistent fork thread per chat.
   Fork panel = mini chat: own composer, own streaming, markdown+KaTeX, its own ActivityTimeline (fork may search).
+- **Questioned-selection marks**: selections already sent with a fork question re-render inside the asset frames
+  as persistent marks — text selections get a dotted coral underline, diagram selections a note icon at the
+  element's top-right corner. Marks rebuild from the fork messages' persisted attachments (they survive reload)
+  and are pushed parent→frame over postMessage ('__rautml_context_marks'); clicking a mark posts
+  '__rautml_context_open' back, which opens the fork panel scrolled to (and flashing) the exact message that
+  asked about it.
 - **Composer**: textarea autosize, Enter=send/Shift+Enter=newline, disabled-with-stop-button while running.
 - **ModelPicker** (components/shell): pill chip left of the send button (“Sol High ⌄”) → popover with the
   model list and a reasoning-effort slider (magnetic detents, provider wire values verbatim). Selection is

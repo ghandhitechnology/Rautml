@@ -19,11 +19,14 @@ import { cx } from '../../lib/utils'
 import { EASE } from '../../lib/motion'
 import {
   FRAME_CONTEXT_DOM_EVENT,
+  FRAME_CONTEXT_OPEN_DOM_EVENT,
   injectFollowUpContext,
+  isFrameContextOpenPayload,
   isFrameContextPayload,
+  postFrameMarks,
   type FrameContextPayload,
 } from '../../lib/frameContext'
-import { useStore, useTheme } from '../../state/store'
+import { useQuestionedMarks, useStore, useTheme } from '../../state/store'
 import './AssetFrame.css'
 
 /** postMessage discriminator shared with the injected reporter. */
@@ -219,7 +222,17 @@ export function AssetFrame({
         version: layer.version,
       })
     }
+    const ownsSource = (source: MessageEvent['source']) => {
+      for (const frame of frames.current.values()) {
+        if (frame.contentWindow === source) return true
+      }
+      return false
+    }
     const onContextMessage = (event: MessageEvent) => {
+      if (isFrameContextOpenPayload(event.data)) {
+        if (ownsSource(event.source)) useStore.getState().focusForkAttachment(event.data.id)
+        return
+      }
       if (!isFrameContextPayload(event.data)) return
       let key: string | null = null
       for (const [candidate, frame] of frames.current) {
@@ -238,13 +251,32 @@ export function AssetFrame({
         if (frame === custom.target) return attach(custom.detail, key)
       }
     }
+    const onDomOpen = (event: Event) => {
+      const custom = event as CustomEvent<unknown>
+      if (!isFrameContextOpenPayload(custom.detail)) return
+      for (const frame of frames.current.values()) {
+        if (frame === custom.target) {
+          useStore.getState().focusForkAttachment(custom.detail.id)
+          return
+        }
+      }
+    }
     window.addEventListener('message', onContextMessage)
     window.addEventListener(FRAME_CONTEXT_DOM_EVENT, onDomAttach)
+    window.addEventListener(FRAME_CONTEXT_OPEN_DOM_EVENT, onDomOpen)
     return () => {
       window.removeEventListener('message', onContextMessage)
       window.removeEventListener(FRAME_CONTEXT_DOM_EVENT, onDomAttach)
+      window.removeEventListener(FRAME_CONTEXT_OPEN_DOM_EVENT, onDomOpen)
     }
   }, [assetId, layers, title])
+
+  /* ---------------------------------------------- questioned-selection marks */
+
+  const marks = useQuestionedMarks(assetId)
+  useEffect(() => {
+    for (const el of frames.current.values()) postFrameMarks(el, marks)
+  }, [marks, layers])
 
   /* ----------------------------------------------------------- derivations */
 
@@ -311,7 +343,10 @@ export function AssetFrame({
               className="rml-frame__iframe"
               title={`${title ?? 'Asset'} — v${layer.version}`}
               srcDoc={layer.doc}
-              onLoad={(e) => stampFrameTheme(e.currentTarget, useStore.getState().theme)}
+              onLoad={(e) => {
+                stampFrameTheme(e.currentTarget, useStore.getState().theme)
+                postFrameMarks(e.currentTarget, marks)
+              }}
               scrolling="no"
               style={{ height: `${Math.max(minHeight, heights[layer.key] ?? frameHeight)}px` }}
             />

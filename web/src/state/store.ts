@@ -5,11 +5,12 @@
  * `applyEvent` is the single reducer for every SSE event type in CONTRACT.md.
  */
 
+import { useMemo } from 'react'
 import { create } from 'zustand'
 import * as api from '../lib/api'
 import { connectChatEvents, type SseConnection, type SseStatus } from '../lib/sse'
 import { uid } from '../lib/utils'
-import { removeFrameContext } from '../lib/frameContext'
+import { removeFrameContext, type QuestionedMark } from '../lib/frameContext'
 import type {
   Asset,
   AssetCreatedEvent,
@@ -119,6 +120,11 @@ export interface StoreState {
   /* ui */
   theme: ThemeName
   forkOpen: boolean
+  /**
+   * A clicked in-asset mark targeting its fork message. The nonce retriggers
+   * the scroll even when the same mark is clicked twice.
+   */
+  forkFocus: { messageId: string; nonce: number } | null
   /** Asset fragments staged above the fork composer for the next follow-up. */
   followUpAttachments: FollowUpAttachment[]
   connection: SseStatus
@@ -149,6 +155,9 @@ export interface StoreState {
   stopRun: () => Promise<void>
   setForkOpen: (open: boolean) => void
   toggleFork: () => void
+  /** Open the fork panel on the message that carries this attachment. */
+  focusForkAttachment: (attachmentId: string) => void
+  clearForkFocus: () => void
   addFollowUpAttachment: (attachment: Omit<FollowUpAttachment, 'label'>) => void
   removeFollowUpAttachment: (id: string) => void
   clearFollowUpAttachments: () => void
@@ -1041,6 +1050,7 @@ export const useStore = create<StoreState>()((set, get) => ({
     ? 'dark'
     : 'light',
   forkOpen: false,
+  forkFocus: null,
   followUpAttachments: [],
   connection: 'closed',
   error: null,
@@ -1372,16 +1382,22 @@ export const useStore = create<StoreState>()((set, get) => ({
       set((s) => {
         const current = s.byChat[chatId]
         if (!current) return {}
+        // A very fast run can fully stream over SSE before this response lands —
+        // its terminal run.status must not be clobbered back to 'running'.
+        const reduced = current.timelines[runId]?.status
+        const finished = !!reduced && reduced !== 'running' && reduced !== 'awaiting_input'
         return {
           byChat: {
             ...s.byChat,
             [chatId]: {
               ...current,
               currentRunId: { ...current.currentRunId, [thread]: runId },
-              activeRun: {
-                ...current.activeRun,
-                [thread]: { id: runId, chatId, thread, status: 'running' },
-              },
+              activeRun: finished
+                ? current.activeRun
+                : {
+                    ...current.activeRun,
+                    [thread]: { id: runId, chatId, thread, status: 'running' },
+                  },
               messages: {
                 ...current.messages,
                 [thread]: current.messages[thread].map((m) =>
@@ -1487,6 +1503,22 @@ export const useStore = create<StoreState>()((set, get) => ({
 
   setForkOpen: (open) => set({ forkOpen: open }),
   toggleFork: () => set((s) => ({ forkOpen: !s.forkOpen })),
+
+  focusForkAttachment: (attachmentId) =>
+    set((s) => {
+      const cs = activeChatState(s)
+      const message = cs?.messages.fork.find((m) =>
+        m.attachments?.some((attachment) => attachment.id === attachmentId),
+      )
+      // Even without a resolvable message the panel still opens on the thread.
+      if (!message) return { forkOpen: true }
+      return {
+        forkOpen: true,
+        forkFocus: { messageId: message.id, nonce: (s.forkFocus?.nonce ?? 0) + 1 },
+      }
+    }),
+
+  clearForkFocus: () => set((s) => (s.forkFocus ? { forkFocus: null } : {})),
 
   addFollowUpAttachment: (attachment) => {
     const current = get().followUpAttachments
@@ -1728,6 +1760,29 @@ export const useElaboration = () => useStore((s) => s.elaboration)
 
 export const useTheme = () => useStore((s) => s.theme)
 export const useForkOpen = () => useStore((s) => s.forkOpen)
+export const useForkFocus = () => useStore((s) => s.forkFocus)
+
+const EMPTY_MARKS: QuestionedMark[] = []
+
+/**
+ * Every selection of this asset that was already sent with a fork question,
+ * in thread order — what the asset frames render as underlines/note badges.
+ */
+export const useQuestionedMarks = (assetId: string | undefined): QuestionedMark[] => {
+  const messages = useMessages('fork')
+  return useMemo(() => {
+    if (!assetId) return EMPTY_MARKS
+    const marks: QuestionedMark[] = []
+    for (const message of messages) {
+      if (message.role !== 'user' || !message.attachments) continue
+      for (const attachment of message.attachments) {
+        if (attachment.assetId !== assetId) continue
+        marks.push({ id: attachment.id, kind: attachment.kind, content: attachment.content })
+      }
+    }
+    return marks.length ? marks : EMPTY_MARKS
+  }, [messages, assetId])
+}
 export const useFollowUpAttachments = () => useStore((s) => s.followUpAttachments)
 export const useConnection = () => useStore((s) => s.connection)
 export const useStoreError = () => useStore((s) => s.error)

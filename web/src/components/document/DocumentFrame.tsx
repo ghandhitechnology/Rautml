@@ -17,11 +17,14 @@ import { cx } from '../../lib/utils'
 import { EASE } from '../../lib/motion'
 import {
   FRAME_CONTEXT_DOM_EVENT,
+  FRAME_CONTEXT_OPEN_DOM_EVENT,
   injectFollowUpContext,
+  isFrameContextOpenPayload,
   isFrameContextPayload,
+  postFrameMarks,
   type FrameContextPayload,
 } from '../../lib/frameContext'
-import { useStore, useTheme } from '../../state/store'
+import { useQuestionedMarks, useStore, useTheme } from '../../state/store'
 import './DocumentFrame.css'
 
 export interface DocumentFrameProps {
@@ -138,6 +141,14 @@ export function DocumentFrame({
     setLayers((prev) => (prev.length > 1 && prev[1]!.key === key ? [prev[1]!] : prev))
   }, [])
 
+  /* marks live in a ref so the stable handleLoad callback always sends the latest set */
+  const marks = useQuestionedMarks(assetId)
+  const marksRef = useRef(marks)
+  marksRef.current = marks
+  useEffect(() => {
+    for (const el of frames.current.values()) postFrameMarks(el, marks)
+  }, [marks, layers])
+
   const handleLoad = useCallback(
     (key: string, el: HTMLIFrameElement) => {
       // Some browsers fire one `load` for the initial empty document before srcDoc lands.
@@ -148,6 +159,7 @@ export function DocumentFrame({
         /* never cross-origin here, but never let this throw either */
       }
       stampFrameTheme(el, useStore.getState().theme)
+      postFrameMarks(el, marksRef.current)
       markLoaded(key)
     },
     [markLoaded],
@@ -182,7 +194,17 @@ export function DocumentFrame({
         version: layer.version,
       })
     }
+    const ownsSource = (source: MessageEvent['source']) => {
+      for (const frame of frames.current.values()) {
+        if (frame.contentWindow === source) return true
+      }
+      return false
+    }
     const onMessage = (event: MessageEvent) => {
+      if (isFrameContextOpenPayload(event.data)) {
+        if (ownsSource(event.source)) useStore.getState().focusForkAttachment(event.data.id)
+        return
+      }
       if (!isFrameContextPayload(event.data)) return
       let key: string | null = null
       for (const [candidate, frame] of frames.current) {
@@ -201,11 +223,23 @@ export function DocumentFrame({
         if (frame === custom.target) return attach(custom.detail, key)
       }
     }
+    const onDomOpen = (event: Event) => {
+      const custom = event as CustomEvent<unknown>
+      if (!isFrameContextOpenPayload(custom.detail)) return
+      for (const frame of frames.current.values()) {
+        if (frame === custom.target) {
+          useStore.getState().focusForkAttachment(custom.detail.id)
+          return
+        }
+      }
+    }
     window.addEventListener('message', onMessage)
     window.addEventListener(FRAME_CONTEXT_DOM_EVENT, onDomAttach)
+    window.addEventListener(FRAME_CONTEXT_OPEN_DOM_EVENT, onDomOpen)
     return () => {
       window.removeEventListener('message', onMessage)
       window.removeEventListener(FRAME_CONTEXT_DOM_EVENT, onDomAttach)
+      window.removeEventListener(FRAME_CONTEXT_OPEN_DOM_EVENT, onDomOpen)
     }
   }, [layers, title])
 

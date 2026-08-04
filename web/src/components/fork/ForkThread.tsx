@@ -5,10 +5,11 @@
  * imported from components/chat — the fork owns its own bubbles, timeline and markdown.
  */
 
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   useActiveRun,
+  useForkFocus,
   useInputRequests,
   useIsRunning,
   useMessages,
@@ -40,6 +41,7 @@ const SUGGESTIONS = [
 function UserBubble({ message }: { message: Message }) {
   return (
     <motion.div
+      data-fork-msg={message.id}
       className="rml-forkmsg rml-forkmsg--user"
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
@@ -65,6 +67,7 @@ function AssistantBlock({ message }: { message: Message }) {
 
   return (
     <motion.div
+      data-fork-msg={message.id}
       className={cx('rml-forkmsg', 'rml-forkmsg--assistant', message.status === 'error' && 'is-error')}
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
@@ -148,6 +151,7 @@ export function ForkThread({ empty, className }: ForkThreadProps) {
   const [atBottom, setAtBottom] = useState(true)
 
   const steps = liveTimeline?.items.length ?? 0
+  const isEmpty = messages.length === 0 && inputs.length === 0 && !running
   const awaitingFirstToken =
     running && !!activeRunId && !messages.some((m) => m.role === 'assistant' && m.runId === activeRunId)
 
@@ -157,6 +161,47 @@ export function ForkThread({ empty, className }: ForkThreadProps) {
     if (!el || !stick.current) return
     el.scrollTop = el.scrollHeight
   }, [messages, inputs, running, steps])
+
+  // An in-asset mark was clicked: settle on that message and flash it. The
+  // short delay lets a freshly opened panel finish entering before we measure.
+  const forkFocus = useForkFocus()
+  useEffect(() => {
+    if (!forkFocus) return
+    const { messageId } = forkFocus
+    window.setTimeout(() => {
+      const container = scrollRef.current
+      const target = container?.querySelector<HTMLElement>(`[data-fork-msg="${messageId}"]`)
+      if (container && target) {
+        stick.current = false
+        const containerRect = container.getBoundingClientRect()
+        const targetRect = target.getBoundingClientRect()
+        container.scrollTo({
+          top:
+            container.scrollTop +
+            (targetRect.top - containerRect.top) -
+            Math.max(24, (container.clientHeight - targetRect.height) / 2),
+          behavior: 'smooth',
+        })
+        for (const lit of container.querySelectorAll('.is-flash')) lit.classList.remove('is-flash')
+        void target.offsetWidth // restart the animation on repeat clicks
+        target.classList.add('is-flash')
+      }
+      useStore.getState().clearForkFocus()
+    }, 260)
+  }, [forkFocus])
+
+  // Content can also grow without a store update (timeline rows expanding,
+  // images loading, the panel resizing) — keep the pin through those too.
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => {
+      if (stick.current) el.scrollTop = el.scrollHeight
+    })
+    ro.observe(el)
+    for (const child of el.children) ro.observe(child)
+    return () => ro.disconnect()
+  }, [isEmpty])
 
   const onScroll = () => {
     const el = scrollRef.current
@@ -173,8 +218,6 @@ export function ForkThread({ empty, className }: ForkThreadProps) {
     setAtBottom(true)
     el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
   }
-
-  const isEmpty = messages.length === 0 && inputs.length === 0 && !running
 
   return (
     <div className={cx('rml-forkthread', className)}>

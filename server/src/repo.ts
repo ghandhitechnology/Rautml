@@ -55,6 +55,7 @@ function rowToRun(row: any): Run {
     model: row.model ?? undefined,
     effort: row.effort ?? undefined,
     elaboration: row.elaboration ?? undefined,
+    contextSeq: typeof row.context_seq === 'number' ? row.context_seq : undefined,
   };
 }
 
@@ -209,6 +210,24 @@ export function listModelTurns(chatId: string, thread: Thread): any[] {
   return rows.map((r) => JSON.parse(r.json));
 }
 
+/** Turns up to (and including) a watermark seq — a point-in-time transcript. */
+export function listModelTurnsUpTo(chatId: string, thread: Thread, maxSeq: number): any[] {
+  const rows = db
+    .prepare(
+      `SELECT json FROM model_turns WHERE chat_id = ? AND thread = ? AND seq <= ? ORDER BY seq ASC`,
+    )
+    .all(chatId, thread, maxSeq) as any[];
+  return rows.map((r) => JSON.parse(r.json));
+}
+
+/** The highest turn seq on a thread right now (0 when the thread is empty). */
+export function maxModelTurnSeq(chatId: string, thread: Thread): number {
+  const row = db
+    .prepare(`SELECT COALESCE(MAX(seq), 0) as maxSeq FROM model_turns WHERE chat_id = ? AND thread = ?`)
+    .get(chatId, thread) as any;
+  return row.maxSeq;
+}
+
 // ---------------------------------------------------------------------------
 // runs
 // ---------------------------------------------------------------------------
@@ -219,14 +238,15 @@ export function createRun(
   model?: string,
   effort?: string,
   elaboration?: ElaborationLevel,
+  contextSeq?: number,
 ): Run {
   const id = randomUUID();
   const now = Date.now();
   db.prepare(
-    `INSERT INTO runs (id, chat_id, thread, status, error, created_at, finished_at, model, effort, elaboration)
-     VALUES (?, ?, ?, 'running', NULL, ?, NULL, ?, ?, ?)`,
-  ).run(id, chatId, thread, now, model ?? null, effort ?? null, elaboration ?? null);
-  return { id, chatId, thread, status: 'running', model, effort, elaboration };
+    `INSERT INTO runs (id, chat_id, thread, status, error, created_at, finished_at, model, effort, elaboration, context_seq)
+     VALUES (?, ?, ?, 'running', NULL, ?, NULL, ?, ?, ?, ?)`,
+  ).run(id, chatId, thread, now, model ?? null, effort ?? null, elaboration ?? null, contextSeq ?? null);
+  return { id, chatId, thread, status: 'running', model, effort, elaboration, contextSeq };
 }
 
 export function setRunStatus(runId: string, status: Run['status'], error?: string): void {
