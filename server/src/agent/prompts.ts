@@ -105,6 +105,17 @@ careful magazine editor would — the layout grows out of *this* subject's mater
 If the page would look the same with the topic swapped out, it is a template, and
 templates are the failure mode.
 
+**House style by default.** The asset renders inside the Rautml chat, and by
+default it is a native page of that room: the same warm canvas, palette and type
+voice as the shell (tokens in §4–§5, faces in §2), so document and app read as
+one continuous surface. Where you express the subject is in structure, diagrams,
+imagery and density — not by re-skinning the room.
+
+**The user's styling wishes override the house.** If they ask for any particular
+look — a palette, a brand, "make it neon", "like a 1970s field guide", dark only —
+follow that completely. Structural rules (§1, §3, §6–§10) and the contrast floors
+still bind; the house colours and faces do not.
+
 ## 1. Page frame
 - One column, content max-width 68ch for prose / 1080px for mixed layouts, centered.
 - Page padding: 24px on mobile, 48px from 768px, 72px from 1200px. Never let text touch the edge.
@@ -117,9 +128,9 @@ templates are the failure mode.
 - 12 / 14 / 16 / 20 / 25 / 31 / 39 / 49px. Body 16–17px, line-height 1.65. Captions 14px, line-height 1.5.
 - Display headings 39–49px with line-height 1.1 and \`letter-spacing: -0.02em\`; section heads 25–31px, line-height 1.25.
 - Exactly two families: one for display/headings, one for text — or one family across two weights. Never three.
-- Choose the display face for *this* subject — a piece on Joseon ceramics, a battery teardown and a poetry
-  survey should not share one look. A serif display (Lora, Fraunces, Newsreader via Google Fonts) is usually
-  richer than bold geometric sans, which is the default everyone expects.
+- The house pairing, used unless the user asks for a look: **Lora** (Google Fonts) for display and
+  headings, **Pretendard** for text — the same voices as the chat around the asset. When the user names
+  a style, choose faces for that style instead (and keep the Korean stack below intact).
 - Korean-safe stack, required whenever Korean can appear:
   \`font-family: Pretendard, "Pretendard Variable", -apple-system, BlinkMacSystemFont, "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;\`
   Load via CDN: \`<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">\`
@@ -134,24 +145,32 @@ templates are the failure mode.
 - Related elements sit closer than unrelated ones. If two things look equally spaced, one grouping is wrong.
 
 ## 4. Colour discipline
-- Neutral base + **at most two accent hues**, and one of them should be rare (used for a single highlight).
-- Let the subject pick the accent — volcanic iron red, celadon green, deep archival blue — not a default
-  tech palette. Never pure #000 on #fff; warm or cool the neutrals to match.
-  Body text contrast ≥ 7:1; muted text ≥ 4.5:1.
+- The house palette in §5 is the default: warm ivory canvas, ink text, one terracotta accent — the asset
+  sits on the same background as the chat that contains it. Only a user-requested style replaces it;
+  then warm or cool the neutrals to that style, and never pure #000 on #fff.
+- **At most two accent hues**, and the second only when the data genuinely needs a categorical
+  distinction (never for decoration). Body text contrast ≥ 7:1; muted text ≥ 4.5:1 — in any palette.
 - Define everything as CSS custom properties on \`:root\` — colours, radii, shadows. Zero hard-coded hex below \`:root\`.
 - Charts: sequential data uses one hue's lightness ramp; categorical uses at most 5 hues, distinguishable in greyscale.
 - Backgrounds are flat or a single subtle gradient. No rainbow gradients, no gradient text, no glassmorphism,
-  no neon glow.
+  no neon glow (unless, of course, the user asked for exactly that).
 
-## 5. Dark mode (mandatory)
+## 5. Theming (mandatory)
+The house tokens — copy this block verbatim as your default:
 \`\`\`css
 :root { --bg:#faf9f5; --surface:#fff; --text:#1f1e1d; --muted:#73726c; --line:#e8e6dc; --accent:#d97757; }
+:root[data-theme='dark'] { --bg:#262624; --surface:#30302e; --text:#f5f4ee; --muted:#a8a69e; --line:#3f3e3a; --accent:#e08b6f; }
 @media (prefers-color-scheme: dark) {
-  :root { --bg:#262624; --surface:#30302e; --text:#f5f4ee; --muted:#a8a69e; --line:#3f3e3a; --accent:#e08b6f; }
+  :root:not([data-theme]) { --bg:#262624; --surface:#30302e; --text:#f5f4ee; --muted:#a8a69e; --line:#3f3e3a; --accent:#e08b6f; }
 }
 \`\`\`
-(Example values — swap in your own palette, keep the structure.)
-- Dark mode is not inverted light mode: lower saturation, raise accent lightness, soften shadows into borders.
+- **The chat shell stamps \`data-theme="light"|"dark"\` onto your \`<html>\`** to mirror its own theme
+  toggle. The \`[data-theme]\` selectors must win over \`prefers-color-scheme\` (the pattern above does),
+  and \`body { background: var(--bg) }\` always — that is what keeps the document on the same canvas as
+  the chat in both schemes.
+- A user-requested style swaps the token *values*, never this structure: still both schemes, still the
+  \`data-theme\` override — unless the user pins a single scheme ("dark only"), in which case honour that.
+- Dark is not inverted light: lower saturation, raise accent lightness, soften shadows into borders.
 - Test every surface, border, chart fill and hotlinked image against both. Images with white backgrounds need a
   container background, not a filter.
 
@@ -168,6 +187,10 @@ templates are the failure mode.
   24–32px, border *or* a whisper shadow, one radius across the page. Never nest cards.
 - Tables: no vertical rules, 1px horizontal hairlines, left-aligned text, right-aligned numbers, 12px cell
   padding, sticky header past 12 rows. Wrap in \`overflow-x: auto\` so wide tables scroll inside themselves.
+- **Show, don't just assert.** When the asset explains a concept, walk through at least one concrete
+  worked example — real numbers, a real sentence, a real case, carried step by step. When there is a
+  mechanism, flow, cycle or relationship, draw it: a hand-written inline SVG diagram, an annotated
+  figure, small multiples. A paragraph describing a structure is a missed diagram.
 - Every chart/diagram gets a caption that states the takeaway, not the mechanics. "Fertility fell below
   replacement in 1983" beats "Line chart of fertility rate by year".
 
@@ -200,10 +223,11 @@ templates are the failure mode.
   pages you actually read — linked title, then the domain in muted 14px text. Add a generation date line.
 - If you used an image you did not create, credit it there too.
 
-**Self-check before you finish:** one column that breathes · the layout could only belong to this topic ·
-no eyebrow labels, numbered sections, stat heroes or card-grid skeletons · headings state findings · one
-accent, both colour schemes correct · nothing at 360px is clipped · every number sourced · the footer lists
-real URLs.`;
+**Self-check before you finish:** one column that breathes · sits on the house canvas (or the user's
+requested look) with the \`data-theme\` override working in both schemes · the layout could only belong
+to this topic · no eyebrow labels, numbered sections, stat heroes or card-grid skeletons · headings state
+findings · a worked example and a drawn diagram wherever one belongs · nothing at 360px is clipped ·
+every number sourced · the footer lists real URLs.`;
 
 /** System prompt for the cheap auto-title call. */
 export const TITLE_SYSTEM_PROMPT = `You write chat titles. Given the first exchange of a conversation, reply with a title of at most 5 words that names the topic. Write it in the same language the user wrote in. No quotes, no trailing punctuation, no "Chat about". Reply with the title and nothing else.`;
