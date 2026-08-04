@@ -46,6 +46,9 @@ shell→components/shell+theme+state+lib, chat→components/chat, asset→compon
 ## Environment
 
 - `OPENROUTER_API_KEY`, `FIRECRAWL_API_KEY` in `/Users/pyu/projects/hobbies/Rautml/.env` (already present).
+- Optional overrides: `PORT` (server, default 5175), `WEB_PORT` / `API_PORT` (vite dev + its /api proxy),
+  `OPENROUTER_BASE_URL` and `CODEX_RESPONSES_URL` (point a provider at a proxy or a local mock). These let a
+  second checkout — or a test harness driving the app against a fake provider — run without port conflicts.
 - Default model: `openai/gpt-5.6-sol` via `https://openrouter.ai/api/v1/chat/completions`. Tool calling: OpenAI format, `tool_choice: "auto"`, streaming SSE.
 - **Provider dispatch** (src/agent/llm.ts): when Codex CLI OAuth credentials exist (`~/.codex/auth.json`, via
   `codex login`), `openai/*` models run on the user's ChatGPT subscription through the Codex backend
@@ -102,6 +105,10 @@ pending_inputs(id TEXT PK, run_id TEXT, chat_id TEXT, thread TEXT, payload TEXT,
 `{ seq: number, chatId: string, thread: 'main'|'fork', type: string, data: any }`
 Types (data shape):
 - `run.status` `{ runId, status }`
+- `run.phase` `{ runId, phase, label }` — what the run is doing between visible events.
+  phase is `connecting|thinking|responding|tools`; label is the timeline header line
+  (`Thinking…`, or a streamed reasoning headline like `Planning the search`). Emitted before the
+  provider request leaves, so the UI is never blank while the model reasons. Throttled to ≥700ms.
 - `message.start` `{ messageId, role }`
 - `message.delta` `{ messageId, text }` — append text
 - `message.complete` `{ messageId, content }`
@@ -135,6 +142,11 @@ Types (data shape):
   Retries: 3x exponential backoff on 429/5xx/network; a stream that stalls >120s or ends without a
   finish_reason counts as a network failure (not a finished answer). A retry closes any provisionally
   announced tool rows ("Connection dropped — retrying").
+- Run phase: every iteration emits `run.phase` — `connecting` before the request leaves, `thinking`
+  once the provider accepts it, then a reasoning headline as reasoning streams (both providers surface
+  reasoning deltas; Codex requests `reasoning.summary: auto` and falls back once if the backend rejects
+  it), `responding` on the first visible token, `tools` while tool calls execute. This is what fills the
+  minute-long reasoning window that otherwise reaches the client as silence.
 - Tool result truncation: any tool result > 24k chars → truncate middle with `[…truncated…]`.
 - `ask_user_input_v0`: persist pending_input, emit input.request, set run status awaiting_input, **park** the
   loop (persist current turn state via model_turns; the resume endpoint re-enters the loop with the answer as

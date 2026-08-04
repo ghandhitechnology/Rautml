@@ -22,7 +22,9 @@ const app = express();
 app.use(express.json({ limit: '20mb' }));
 app.use('/api', apiRouter);
 
-const PORT = 5175;
+// Overridable so a second checkout (or a test harness) can run alongside the
+// usual dev server instead of fighting it for the port.
+const PORT = Number(process.env.PORT) || 5175;
 app.listen(PORT, () => {
   console.log(`Rautml server listening on http://localhost:${PORT}`);
 });

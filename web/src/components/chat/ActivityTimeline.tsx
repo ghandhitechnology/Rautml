@@ -258,7 +258,9 @@ export function ActivityTimeline({
 
   const subagents = timeline?.subagents ?? []
 
-  if (!timeline || (timeline.items.length === 0 && subagents.length === 0)) return null
+  // A live run always shows its header, even before the first step: the whole
+  // reasoning stretch happens here, and hiding it is what made the UI go quiet.
+  if (!timeline || (!live && timeline.items.length === 0 && subagents.length === 0)) return null
 
   // Each subagent group renders right under the spawn_subagents row it came from.
   const byParent = new Map<string, SubagentRun[]>()
@@ -284,15 +286,23 @@ export function ActivityTimeline({
   const steps = timeline.items.length + subagents.reduce((n, s) => n + s.items.length, 0)
   // Anchored on the run's first real step and closed by its completion event — both are
   // server timestamps (ChatEvent.at), so this reads the same before and after a reload.
-  const from = timeline.firstStepAt ?? timeline.items[0]?.startedAt ?? timeline.startedAt
+  // Live, the honest clock is "since you pressed send" — it must not jump
+  // backwards when the first step finally lands and sets firstStepAt.
+  const from = live
+    ? timeline.startedAt
+    : (timeline.firstStepAt ?? timeline.items[0]?.startedAt ?? timeline.startedAt)
   const to = timeline.endedAt ?? (live ? Date.now() : lastActivity(timeline))
   const elapsed = Math.max(0, to - from)
   const failed =
     timeline.items.some((i) => i.status === 'error') || subagents.some((s) => s.status === 'error')
 
+  // While live the header carries the phase — "Thinking…", or the reasoning
+  // headline once one arrives — so it keeps moving between tool rows.
   const summary = live
-    ? `Working · ${formatDuration(elapsed)}`
+    ? `${timeline.phaseLabel || 'Working'} · ${formatDuration(elapsed)}`
     : `Worked for ${formatDuration(elapsed)} · ${steps} step${steps === 1 ? '' : 's'}`
+
+  const open = expanded && rendered.length > 0
 
   return (
     <section
@@ -301,7 +311,7 @@ export function ActivityTimeline({
         compact && 'rml-tl--compact',
         live && 'is-live',
         failed && 'has-error',
-        expanded && 'is-expanded',
+        open && 'is-expanded',
         className,
       )}
       aria-label="Activity"
@@ -313,7 +323,7 @@ export function ActivityTimeline({
           pinned.current = true
           setExpanded((v) => !v)
         }}
-        aria-expanded={expanded}
+        aria-expanded={open}
       >
         <span className="rml-tl__pip" aria-hidden="true" />
         <span className="rml-tl__summary-text">{summary}</span>
@@ -322,20 +332,22 @@ export function ActivityTimeline({
         </span>
       </button>
 
+      {/* Before the first step there is nothing to open into — the header alone
+          carries the phase, so the panel stays shut rather than gaping. */}
       <motion.div
         className="rml-tl__panel"
-        initial={live && expanded && !reduceMotion ? { height: 0, opacity: 0 } : false}
-        animate={{ height: expanded ? height : 0, opacity: expanded ? 1 : 0 }}
+        initial={live && open && !reduceMotion ? { height: 0, opacity: 0 } : false}
+        animate={{ height: open ? height : 0, opacity: open ? 1 : 0 }}
         transition={
           reduceMotion
             ? { duration: 0 }
             : {
-                height: expanded ? EXPAND : COLLAPSE,
-                opacity: { duration: expanded ? 0.22 : 0.14, ease: EASE },
+                height: open ? EXPAND : COLLAPSE,
+                opacity: { duration: open ? 0.22 : 0.14, ease: EASE },
               }
         }
         style={{ overflow: 'hidden' }}
-        aria-hidden={!expanded}
+        aria-hidden={!open}
       >
         <div ref={inner} className="rml-tl__inner">
           <ul className="rml-tl__list">
