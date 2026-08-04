@@ -1,0 +1,131 @@
+.rml-contexttile {
+  position: relative;
+  flex: 0 0 106px;
+  width: 106px;
+  height: 64px;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  grid-template-rows: 20px 1fr;
+  align-content: center;
+  column-gap: 5px;
+  padding: 9px 8px 8px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--accent-soft) 62%, var(--bg));
+  color: var(--text);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.rml-contexttile__icon {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 20px;
+  color: var(--accent-hover);
+}
+
+.rml-contexttile__icon svg {
+  width: 15px;
+  height: 15px;
+  stroke: currentColor;
+  stroke-width: 1.55;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.rml-contexttile__label {
+  min-width: 0;
+  align-self: center;
+  overflow: hidden;
+  color: var(--accent-hover);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: -0.018em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rml-contexttile__source {
+  grid-column: 1 / -1;
+  min-width: 0;
+  align-self: end;
+  overflow: hidden;
+  color: color-mix(in srgb, var(--text-muted) 88%, var(--accent));
+  font-size: 9.5px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rml-contexttile__remove {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: grid;
+  place-items: center;
+  width: 19px;
+  height: 19px;
+  border-radius: var(--r-pill);
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--bg) 86%, transparent);
+  opacity: 0;
+  transform: scale(0.82);
+  transition:
+    opacity var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+
+.rml-contexttile:hover .rml-contexttile__remove,
+.rml-contexttile:focus-within .rml-contexttile__remove {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.rml-contexttile__remove:hover {
+  color: var(--accent-hover);
+  background: var(--bg);
+}
+
+.rml-contexttile__remove:focus-visible {
+  opacity: 1;
+  transform: scale(1);
+  outline: 2px solid color-mix(in srgb, var(--accent) 44%, transparent);
+  outline-offset: 1px;
+}
+
+.rml-contexttile__remove svg {
+  width: 11px;
+  height: 11px;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+
+.rml-contexttile.is-compact {
+  flex-basis: 78px;
+  width: 78px;
+  height: 46px;
+  grid-template-columns: 14px minmax(0, 1fr);
+  grid-template-rows: 1fr;
+  padding: 7px;
+  box-shadow: none;
+}
+
+.rml-contexttile.is-compact .rml-contexttile__icon {
+  width: 14px;
+  height: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rml-contexttile__remove { transition-duration: 0ms; }
+}
+
+@media (hover: none) {
+  .rml-contexttile__remove {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

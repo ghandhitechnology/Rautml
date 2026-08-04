@@ -1,6 +1,11 @@
 .rml-shell {
+  --sidebar-track: var(--sidebar-w);
   display: grid;
-  grid-template-columns: var(--sidebar-w) minmax(0, 1fr) 0px;
+  grid-template-columns: var(--sidebar-track) minmax(0, 1fr) 0px;
+  /* Pin the single row to the viewport: an auto row grows with column content
+   * (a long fork thread), pushing every column past 100dvh and breaking each
+   * column's inner scroll regions. */
+  grid-template-rows: minmax(0, 1fr);
   height: 100dvh;
   min-height: 0;
   background: var(--bg);
@@ -8,7 +13,11 @@
 }
 
 .rml-shell.is-fork-open {
-  grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--fork-w);
+  grid-template-columns: var(--sidebar-track) minmax(0, 1fr) var(--fork-w);
+}
+
+.rml-shell.is-sidebar-collapsed {
+  --sidebar-track: 52px;
 }
 
 .rml-shell__sidebar {

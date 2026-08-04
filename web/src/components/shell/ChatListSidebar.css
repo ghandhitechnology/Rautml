@@ -13,6 +13,8 @@
 .rml-sidebar__head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
   height: 40px;
   padding-inline: var(--sp-3);
   margin-bottom: var(--sp-3);
@@ -44,6 +46,40 @@
   font-weight: 500;
   letter-spacing: -0.012em;
   color: var(--text);
+}
+
+.rml-sidebar__toggle {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.rml-sidebar__toggle:hover {
+  background: var(--hover);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.rml-sidebar__toggle:active {
+  transform: scale(0.94);
+}
+
+.rml-sidebar__toggle svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 /* --------------------------------------------------------------- new chat */
@@ -277,4 +313,76 @@
   letter-spacing: 0.01em;
   color: var(--text-muted);
   opacity: 0.7;
+}
+
+/* ---------------------------------------------------------- compact rail */
+
+.rml-sidebar.is-collapsed {
+  padding-inline: var(--sp-2);
+}
+
+.rml-sidebar.is-collapsed .rml-sidebar__head {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+.rml-sidebar.is-collapsed .rml-brand,
+.rml-sidebar.is-collapsed .rml-chatlist,
+.rml-sidebar.is-collapsed .rml-sidebar__foot {
+  display: none;
+}
+
+.rml-sidebar.is-collapsed .rml-sidebar__toggle {
+  width: 36px;
+  height: 36px;
+}
+
+.rml-sidebar.is-collapsed .rml-newchat {
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin-inline: 0;
+  padding: 0;
+}
+
+.rml-sidebar.is-collapsed .rml-newchat span {
+  display: none;
+}
+
+/* Compacting is a desktop workspace preference. The phone drawer always opens
+ * with the complete brand, chat list, and footer. */
+@media (max-width: 640px) {
+  .rml-sidebar.is-collapsed {
+    padding: var(--sp-3) var(--sp-2) var(--sp-2);
+  }
+
+  .rml-sidebar.is-collapsed .rml-sidebar__head {
+    justify-content: space-between;
+    padding-inline: var(--sp-3);
+  }
+
+  .rml-sidebar.is-collapsed .rml-brand {
+    display: inline-flex;
+  }
+
+  .rml-sidebar.is-collapsed .rml-sidebar__toggle {
+    display: none;
+  }
+
+  .rml-sidebar.is-collapsed .rml-newchat {
+    justify-content: flex-start;
+    width: calc(100% - var(--sp-2));
+    height: auto;
+    margin: 0 var(--sp-1) var(--sp-4);
+    padding: 9px var(--sp-3);
+  }
+
+  .rml-sidebar.is-collapsed .rml-newchat span {
+    display: initial;
+  }
+
+  .rml-sidebar.is-collapsed .rml-chatlist,
+  .rml-sidebar.is-collapsed .rml-sidebar__foot {
+    display: block;
+  }
 }

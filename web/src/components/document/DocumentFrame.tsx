@@ -15,7 +15,16 @@ import { fetchAssetHtml } from '../../lib/api'
 import { stampFrameTheme, withThemeAttr } from '../../lib/frameTheme'
 import { cx } from '../../lib/utils'
 import { EASE } from '../../lib/motion'
-import { useStore, useTheme } from '../../state/store'
+import {
+  FRAME_CONTEXT_DOM_EVENT,
+  FRAME_CONTEXT_OPEN_DOM_EVENT,
+  injectFollowUpContext,
+  isFrameContextOpenPayload,
+  isFrameContextPayload,
+  postFrameMarks,
+  type FrameContextPayload,
+} from '../../lib/frameContext'
+import { useQuestionedMarks, useStore, useTheme } from '../../state/store'
 import './DocumentFrame.css'
 
 export interface DocumentFrameProps {
@@ -32,7 +41,8 @@ interface Layer {
   key: string
   assetId: string
   version: number
-  html: string
+  raw: string
+  doc: string
 }
 
 type Status = 'loading' | 'ready' | 'error'
@@ -101,8 +111,12 @@ export function DocumentFrame({
           key: `${requestKey}#${seq.current}`,
           assetId,
           version,
-          // Theme attr goes in before first paint; live toggles are stamped below.
-          html: withThemeAttr(withFrameGuards(html), useStore.getState().theme),
+          raw: html,
+          // Theme + contextual selection affordances go in before first paint.
+          doc: withThemeAttr(
+            injectFollowUpContext(withFrameGuards(html)),
+            useStore.getState().theme,
+          ),
         }
         // First paint goes straight in; later ones queue behind whatever is visible.
         setLayers((prev) => (prev.length === 0 ? [layer] : [prev[0]!, layer]))
@@ -127,6 +141,14 @@ export function DocumentFrame({
     setLayers((prev) => (prev.length > 1 && prev[1]!.key === key ? [prev[1]!] : prev))
   }, [])
 
+  /* marks live in a ref so the stable handleLoad callback always sends the latest set */
+  const marks = useQuestionedMarks(assetId)
+  const marksRef = useRef(marks)
+  marksRef.current = marks
+  useEffect(() => {
+    for (const el of frames.current.values()) postFrameMarks(el, marks)
+  }, [marks, layers])
+
   const handleLoad = useCallback(
     (key: string, el: HTMLIFrameElement) => {
       // Some browsers fire one `load` for the initial empty document before srcDoc lands.
@@ -137,6 +159,7 @@ export function DocumentFrame({
         /* never cross-origin here, but never let this throw either */
       }
       stampFrameTheme(el, useStore.getState().theme)
+      postFrameMarks(el, marksRef.current)
       markLoaded(key)
     },
     [markLoaded],
@@ -155,6 +178,71 @@ export function DocumentFrame({
     })
   }, [layers])
 
+  /* ----------------------------------------------- selected asset context */
+
+  useEffect(() => {
+    const attach = (data: FrameContextPayload, key: string) => {
+      const layer = layers.find((candidate) => candidate.key === key)
+      if (!layer) return
+      useStore.getState().addFollowUpAttachment({
+        id: data.id,
+        kind: data.kind,
+        preview: data.preview,
+        content: data.content,
+        assetId: layer.assetId,
+        assetTitle: title || 'Untitled asset',
+        version: layer.version,
+      })
+    }
+    const ownsSource = (source: MessageEvent['source']) => {
+      for (const frame of frames.current.values()) {
+        if (frame.contentWindow === source) return true
+      }
+      return false
+    }
+    const onMessage = (event: MessageEvent) => {
+      if (isFrameContextOpenPayload(event.data)) {
+        if (ownsSource(event.source)) useStore.getState().focusForkAttachment(event.data.id)
+        return
+      }
+      if (!isFrameContextPayload(event.data)) return
+      let key: string | null = null
+      for (const [candidate, frame] of frames.current) {
+        if (frame.contentWindow === event.source) {
+          key = candidate
+          break
+        }
+      }
+      if (!key) return
+      attach(event.data, key)
+    }
+    const onDomAttach = (event: Event) => {
+      const custom = event as CustomEvent<unknown>
+      if (!isFrameContextPayload(custom.detail)) return
+      for (const [key, frame] of frames.current) {
+        if (frame === custom.target) return attach(custom.detail, key)
+      }
+    }
+    const onDomOpen = (event: Event) => {
+      const custom = event as CustomEvent<unknown>
+      if (!isFrameContextOpenPayload(custom.detail)) return
+      for (const frame of frames.current.values()) {
+        if (frame === custom.target) {
+          useStore.getState().focusForkAttachment(custom.detail.id)
+          return
+        }
+      }
+    }
+    window.addEventListener('message', onMessage)
+    window.addEventListener(FRAME_CONTEXT_DOM_EVENT, onDomAttach)
+    window.addEventListener(FRAME_CONTEXT_OPEN_DOM_EVENT, onDomOpen)
+    return () => {
+      window.removeEventListener('message', onMessage)
+      window.removeEventListener(FRAME_CONTEXT_DOM_EVENT, onDomAttach)
+      window.removeEventListener(FRAME_CONTEXT_OPEN_DOM_EVENT, onDomOpen)
+    }
+  }, [layers, title])
+
   const visible = layers[0] ?? null
   const painted = !!visible && !!ready[visible.key]
 
@@ -162,12 +250,7 @@ export function DocumentFrame({
   notify.current = onHtmlChange
   useEffect(() => {
     if (!visible) return
-    // Hand the header the raw asset HTML (without our injected guard script).
-    const raw = visible.html.replace(
-      /<script data-rautml-guard>[\s\S]*?<\/script>/i,
-      '',
-    )
-    notify.current?.(raw, visible.assetId, visible.version)
+    notify.current?.(visible.raw, visible.assetId, visible.version)
   }, [visible])
 
   const retry = () => setReloadNonce((n) => n + 1)
@@ -194,7 +277,7 @@ export function DocumentFrame({
               }}
               className="rml-docframe__iframe"
               title={`${title ?? 'Document'} — v${layer.version}`}
-              srcDoc={layer.html}
+              srcDoc={layer.doc}
               onLoad={(e) => handleLoad(layer.key, e.currentTarget)}
             />
           </motion.div>

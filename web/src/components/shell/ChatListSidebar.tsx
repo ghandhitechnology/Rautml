@@ -8,9 +8,16 @@ import './ChatListSidebar.css'
 
 export interface ChatListSidebarProps {
   className?: string
+  /** Desktop compact-rail state. Mobile always renders the full drawer. */
+  collapsed?: boolean
+  onCollapsedChange?: (collapsed: boolean) => void
 }
 
-export function ChatListSidebar({ className }: ChatListSidebarProps) {
+export function ChatListSidebar({
+  className,
+  collapsed = false,
+  onCollapsedChange,
+}: ChatListSidebarProps) {
   const chats = useChats()
   const activeChatId = useActiveChatId()
   const chatsLoading = useStore((s) => s.chatsLoading)
@@ -52,12 +59,29 @@ export function ChatListSidebar({ className }: ChatListSidebarProps) {
   }
 
   return (
-    <div className={cx('rml-sidebar', className)}>
+    <div className={cx('rml-sidebar', collapsed && 'is-collapsed', className)}>
       <div className="rml-sidebar__head">
         <div className="rml-brand">
           <span className="rml-brand__mark" aria-hidden="true" />
           <span className="rml-brand__word">Rautml</span>
         </div>
+        {onCollapsedChange ? (
+          <button
+            type="button"
+            className="rml-sidebar__toggle"
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-expanded={!collapsed}
+            aria-controls="rautml-conversation-list"
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            onClick={() => onCollapsedChange(!collapsed)}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3.5" y="4" width="17" height="16" rx="3" />
+              <path d="M9 4v16" />
+              <path d={collapsed ? 'm14 9 3 3-3 3' : 'm16 9-3 3 3 3'} />
+            </svg>
+          </button>
+        ) : null}
       </div>
 
       <button
@@ -73,7 +97,7 @@ export function ChatListSidebar({ className }: ChatListSidebarProps) {
         <span>New chat</span>
       </button>
 
-      <nav className="rml-chatlist" aria-label="Conversations">
+      <nav id="rautml-conversation-list" className="rml-chatlist" aria-label="Conversations">
         {chats.length === 0 && !chatsLoading ? (
           <div className="rml-chatlist__empty">
             <p className="rml-chatlist__empty-title">No conversations yet</p>

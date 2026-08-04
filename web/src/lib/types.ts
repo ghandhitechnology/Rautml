@@ -3,6 +3,23 @@
 
 export type Thread = 'main' | 'fork'
 
+export type FollowUpAttachmentKind = 'text' | 'diagram'
+
+/** A user-selected fragment from a rendered asset, attached to a fork message. */
+export interface FollowUpAttachment {
+  id: string
+  kind: FollowUpAttachmentKind
+  /** Stable human label without brackets, e.g. "diagram 1". */
+  label: string
+  /** Short, safe-to-render summary used by attachment tiles. */
+  preview: string
+  /** Exact selected text or the selected diagram block's serialized HTML. */
+  content: string
+  assetId: string
+  assetTitle: string
+  version: number
+}
+
 export interface Chat {
   id: string
   title: string
@@ -18,6 +35,7 @@ export interface Message {
   content: string
   status: 'streaming' | 'complete' | 'error'
   runId?: string
+  attachments?: FollowUpAttachment[]
   createdAt: number
 }
 

@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS messages (
   content TEXT,
   status TEXT DEFAULT 'complete',
   run_id TEXT,
+  attachments TEXT,
   created_at INTEGER
 );
 
@@ -112,4 +113,20 @@ CREATE INDEX IF NOT EXISTS idx_pending_inputs_chat_resolved ON pending_inputs (c
   if (!runCols.includes('model')) db.exec(`ALTER TABLE runs ADD COLUMN model TEXT`);
   if (!runCols.includes('effort')) db.exec(`ALTER TABLE runs ADD COLUMN effort TEXT`);
   if (!runCols.includes('elaboration')) db.exec(`ALTER TABLE runs ADD COLUMN elaboration TEXT`);
+  // Main-thread turn watermark: for a main run, the last main turn seq that
+  // existed before the run appended anything; for a fork run, the main seq it
+  // is allowed to read. Lets forks build context from the last *completed*
+  // main state instead of a mid-generation transcript.
+  if (!runCols.includes('context_seq')) db.exec(`ALTER TABLE runs ADD COLUMN context_seq INTEGER`);
+}
+
+// Migration: structured follow-up context is stored with the visible user
+// message while the canonical model turn receives a context-enriched prompt.
+{
+  const messageCols = (db.prepare(`PRAGMA table_info(messages)`).all() as { name: string }[]).map(
+    (c) => c.name,
+  );
+  if (!messageCols.includes('attachments')) {
+    db.exec(`ALTER TABLE messages ADD COLUMN attachments TEXT`);
+  }
 }

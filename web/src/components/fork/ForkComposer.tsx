@@ -15,11 +15,12 @@ import {
   useState,
   type KeyboardEvent,
 } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
-import { useIsRunning, useStore } from '../../state/store'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import { useFollowUpAttachments, useIsRunning, useStore } from '../../state/store'
 import { cx } from '../../lib/utils'
 import { EASE } from '../../lib/motion'
 import { ModelPicker } from '../shell/ModelPicker'
+import ContextAttachmentTile from './ContextAttachmentTile'
 import './ForkComposer.css'
 
 export interface ForkComposerProps {
@@ -38,10 +39,13 @@ export function ForkComposer({
   className,
 }: ForkComposerProps) {
   const [value, setValue] = useState('')
+  const reduceMotion = useReducedMotion()
   const ref = useRef<HTMLTextAreaElement>(null)
   const running = useIsRunning('fork')
+  const attachments = useFollowUpAttachments()
   const sendMessage = useStore((s) => s.sendMessage)
   const stopRun = useStore((s) => s.stopRun)
+  const removeAttachment = useStore((s) => s.removeFollowUpAttachment)
 
   const canSend = value.trim().length > 0 && !running && !disabled
 
@@ -88,8 +92,8 @@ export function ForkComposer({
     if (!content) return
     setValue('')
     requestAnimationFrame(() => ref.current?.focus())
-    void sendMessage('fork', content)
-  }, [sendMessage, value])
+    void sendMessage('fork', content, attachments)
+  }, [attachments, sendMessage, value])
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key !== 'Enter') return
@@ -103,22 +107,58 @@ export function ForkComposer({
 
   return (
     <div className={cx('rml-forkcomposer', className)}>
-      <div className={cx('rml-forkcomposer__field', running && 'is-running')}>
-        <textarea
-          ref={ref}
-          className="rml-forkcomposer__input"
-          rows={1}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder={placeholder}
-          disabled={disabled}
-          spellCheck={false}
-          aria-label="Follow-up message"
-        />
+      <motion.div
+        layout={!reduceMotion}
+        className={cx('rml-forkcomposer__field', running && 'is-running')}
+        transition={{ duration: reduceMotion ? 0 : 0.28, ease: EASE }}
+      >
+        <motion.div
+          className={cx(
+            'rml-forkcomposer__attachments',
+            attachments.length > 0 && 'is-visible',
+          )}
+          initial={false}
+          animate={
+            attachments.length
+              ? { opacity: 1, height: 'auto', y: 0, filter: 'blur(0px)' }
+              : { opacity: 0, height: 0, y: 4, filter: 'blur(3px)' }
+          }
+          transition={{ duration: reduceMotion ? 0 : 0.28, ease: EASE }}
+          aria-label="Attached follow-up context"
+          aria-hidden={!attachments.length}
+        >
+          {attachments.map((attachment) => (
+            <motion.div
+              layout={!reduceMotion}
+              key={attachment.id}
+              initial={reduceMotion ? false : { opacity: 0, scale: 0.86, y: 7 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{ duration: reduceMotion ? 0 : 0.24, ease: EASE }}
+            >
+              <ContextAttachmentTile
+                attachment={attachment}
+                onRemove={() => removeAttachment(attachment.id)}
+              />
+            </motion.div>
+          ))}
+        </motion.div>
 
-        <AnimatePresence initial={false} mode="popLayout">
-          {running ? (
+        <div className="rml-forkcomposer__inputrow">
+          <textarea
+            ref={ref}
+            className="rml-forkcomposer__input"
+            rows={1}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder={attachments.length ? 'Ask about this selection…' : placeholder}
+            disabled={disabled}
+            spellCheck={false}
+            aria-label="Follow-up message"
+          />
+
+          <AnimatePresence initial={false} mode="popLayout">
+            {running ? (
             <motion.button
               key="stop"
               type="button"
@@ -160,9 +200,10 @@ export function ForkComposer({
                 <path d="m6 11.8 6-6 6 6" />
               </svg>
             </motion.button>
-          )}
-        </AnimatePresence>
-      </div>
+            )}
+          </AnimatePresence>
+        </div>
+      </motion.div>
 
       {/* The fork's own model + effort, as a quiet toggle under the field —
           inherits the main selection until changed here, and changing it here

@@ -21,7 +21,7 @@ import * as engine from '../agent/engine.js';
 import { DEFAULT_MODEL_ID, MODELS, resolveSelection } from '../agent/models.js';
 import * as repo from '../repo.js';
 import * as sse from '../sse.js';
-import type { Message, Thread } from '../types.js';
+import type { FollowUpAttachment, Message, Thread } from '../types.js';
 
 const router = Router();
 
@@ -42,6 +42,41 @@ function param(req: Request, name: string): string {
 
 function parseThread(value: unknown): Thread | null {
   return value === 'main' || value === 'fork' ? value : null;
+}
+
+function parseAttachments(value: unknown): FollowUpAttachment[] | string {
+  if (value == null) return [];
+  if (!Array.isArray(value)) return 'attachments must be an array';
+  if (value.length > 6) return 'attachments can contain at most 6 selections';
+
+  const attachments: FollowUpAttachment[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object') return 'each attachment must be an object';
+    const item = raw as Record<string, unknown>;
+    const kind = item.kind === 'text' || item.kind === 'diagram' ? item.kind : null;
+    const id = typeof item.id === 'string' ? item.id.trim().slice(0, 120) : '';
+    const label = typeof item.label === 'string' ? item.label.trim().slice(0, 40) : '';
+    const preview = typeof item.preview === 'string' ? item.preview.trim().slice(0, 240) : '';
+    const content = typeof item.content === 'string' ? item.content.trim().slice(0, 10_000) : '';
+    const assetId = typeof item.assetId === 'string' ? item.assetId.trim().slice(0, 120) : '';
+    const assetTitle =
+      typeof item.assetTitle === 'string' ? item.assetTitle.trim().slice(0, 160) : '';
+    const version = Number(item.version);
+    if (!kind || !id || !label || !content || !assetId || !Number.isInteger(version) || version < 1) {
+      return 'attachment fields are invalid';
+    }
+    attachments.push({
+      id,
+      kind,
+      label,
+      preview: preview || (kind === 'diagram' ? 'Selected diagram' : content.slice(0, 180)),
+      content,
+      assetId,
+      assetTitle: assetTitle || 'Untitled asset',
+      version,
+    });
+  }
+  return attachments;
 }
 
 /** Messages for both threads in one list; the client splits them by `thread`. */
@@ -139,6 +174,12 @@ router.post('/chats/:id/messages', async (req: Request, res: Response) => {
   const thread = parseThread(req.body?.thread);
   if (!thread) return fail(res, 400, "thread must be 'main' or 'fork'");
 
+  const attachments = parseAttachments(req.body?.attachments);
+  if (typeof attachments === 'string') return fail(res, 400, attachments);
+  if (thread !== 'fork' && attachments.length) {
+    return fail(res, 400, 'context attachments are only supported on the fork thread');
+  }
+
   const model = typeof req.body?.model === 'string' ? req.body.model : undefined;
   const effort = typeof req.body?.effort === 'string' ? req.body.effort : undefined;
   const elaboration =
@@ -154,7 +195,7 @@ router.post('/chats/:id/messages', async (req: Request, res: Response) => {
   }
 
   try {
-    const { runId } = await engine.startRun(chatId, thread, content, selection);
+    const { runId } = await engine.startRun(chatId, thread, content, selection, attachments);
     res.json({ runId });
   } catch (err) {
     console.error('[api] startRun failed', err);

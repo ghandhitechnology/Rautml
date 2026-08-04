@@ -5,10 +5,12 @@
  * `applyEvent` is the single reducer for every SSE event type in CONTRACT.md.
  */
 
+import { useMemo } from 'react'
 import { create } from 'zustand'
 import * as api from '../lib/api'
 import { connectChatEvents, type SseConnection, type SseStatus } from '../lib/sse'
 import { uid } from '../lib/utils'
+import { removeFrameContext, type QuestionedMark } from '../lib/frameContext'
 import type {
   Asset,
   AssetCreatedEvent,
@@ -19,6 +21,7 @@ import type {
   ChatSnapshot,
   ChatTitleEvent,
   FilesPresentedEvent,
+  FollowUpAttachment,
   InputRequest,
   InputRequestEvent,
   InputResolvedEvent,
@@ -117,6 +120,13 @@ export interface StoreState {
   /* ui */
   theme: ThemeName
   forkOpen: boolean
+  /**
+   * A clicked in-asset mark targeting its fork message. The nonce retriggers
+   * the scroll even when the same mark is clicked twice.
+   */
+  forkFocus: { messageId: string; nonce: number } | null
+  /** Asset fragments staged above the fork composer for the next follow-up. */
+  followUpAttachments: FollowUpAttachment[]
   connection: SseStatus
   error: string | null
 
@@ -135,12 +145,22 @@ export interface StoreState {
   openChat: (chatId: string) => Promise<void>
   closeChat: () => void
   retitleOnExit: (chatId?: string, keepalive?: boolean) => Promise<void>
-  sendMessage: (thread: Thread, content: string) => Promise<void>
+  sendMessage: (
+    thread: Thread,
+    content: string,
+    attachments?: FollowUpAttachment[],
+  ) => Promise<void>
   applyEvent: (event: ChatEvent) => void
   resolveInput: (pendingInputId: string, value: string) => Promise<void>
   stopRun: () => Promise<void>
   setForkOpen: (open: boolean) => void
   toggleFork: () => void
+  /** Open the fork panel on the message that carries this attachment. */
+  focusForkAttachment: (attachmentId: string) => void
+  clearForkFocus: () => void
+  addFollowUpAttachment: (attachment: Omit<FollowUpAttachment, 'label'>) => void
+  removeFollowUpAttachment: (id: string) => void
+  clearFollowUpAttachments: () => void
   setHistoryOpen: (open: boolean) => void
   toggleHistory: () => void
   /** Show an asset in the document (and get out of the history overlay's way). */
@@ -1030,6 +1050,8 @@ export const useStore = create<StoreState>()((set, get) => ({
     ? 'dark'
     : 'light',
   forkOpen: false,
+  forkFocus: null,
+  followUpAttachments: [],
   connection: 'closed',
   error: null,
 
@@ -1212,6 +1234,7 @@ export const useStore = create<StoreState>()((set, get) => ({
 
   removeChat: async (chatId) => {
     const wasActive = get().activeChatId === chatId
+    if (wasActive) get().clearFollowUpAttachments()
     if (get().draftChatId === chatId) set({ draftChatId: null })
     // optimistic — the row disappears the instant you click.
     const snapshot = get().chats
@@ -1239,6 +1262,7 @@ export const useStore = create<StoreState>()((set, get) => ({
     if (get().activeChatId === chatId && get().byChat[chatId]?.loaded) return
     const previousChatId = get().activeChatId
     if (previousChatId && previousChatId !== chatId) {
+      get().clearFollowUpAttachments()
       void get().retitleOnExit(previousChatId)
     }
     disconnect()
@@ -1298,17 +1322,19 @@ export const useStore = create<StoreState>()((set, get) => ({
   closeChat: () => {
     void get().retitleOnExit()
     get().discardDraft()
+    get().clearFollowUpAttachments()
     disconnect()
     set({ activeChatId: null, forkOpen: false, connection: 'closed' })
   },
 
-  sendMessage: async (thread, content) => {
+  sendMessage: async (thread, content, attachments = []) => {
     const trimmed = content.trim()
     const chatId = get().activeChatId
     if (!trimmed || !chatId) return
     const cs = get().byChat[chatId]
     if (!cs) return
     const hadInitialExchange = isAfterInitialExchange(cs)
+    const context = thread === 'fork' ? attachments.slice(0, 6) : []
 
     const localId = uid('local-')
     const optimistic: Message = {
@@ -1318,6 +1344,7 @@ export const useStore = create<StoreState>()((set, get) => ({
       role: 'user',
       content: trimmed,
       status: 'complete',
+      ...(context.length ? { attachments: context } : {}),
       createdAt: Date.now(),
     }
     set((s) => {
@@ -1351,20 +1378,26 @@ export const useStore = create<StoreState>()((set, get) => ({
         ...(model ? { model: model.id, effort: resolvedEffort(model.id, model.defaultEffort) } : {}),
         elaboration,
       }
-      const { runId } = await api.sendMessage(chatId, trimmed, thread, selection)
+      const { runId } = await api.sendMessage(chatId, trimmed, thread, selection, context)
       set((s) => {
         const current = s.byChat[chatId]
         if (!current) return {}
+        // A very fast run can fully stream over SSE before this response lands —
+        // its terminal run.status must not be clobbered back to 'running'.
+        const reduced = current.timelines[runId]?.status
+        const finished = !!reduced && reduced !== 'running' && reduced !== 'awaiting_input'
         return {
           byChat: {
             ...s.byChat,
             [chatId]: {
               ...current,
               currentRunId: { ...current.currentRunId, [thread]: runId },
-              activeRun: {
-                ...current.activeRun,
-                [thread]: { id: runId, chatId, thread, status: 'running' },
-              },
+              activeRun: finished
+                ? current.activeRun
+                : {
+                    ...current.activeRun,
+                    [thread]: { id: runId, chatId, thread, status: 'running' },
+                  },
               messages: {
                 ...current.messages,
                 [thread]: current.messages[thread].map((m) =>
@@ -1377,6 +1410,15 @@ export const useStore = create<StoreState>()((set, get) => ({
           titleDirty: hadInitialExchange ? { ...s.titleDirty, [chatId]: true } : s.titleDirty,
         }
       })
+      for (const attachment of context) removeFrameContext(attachment.id)
+      if (context.length) {
+        const sent = new Set(context.map((attachment) => attachment.id))
+        set((s) => ({
+          followUpAttachments: s.followUpAttachments.filter(
+            (attachment) => !sent.has(attachment.id),
+          ),
+        }))
+      }
     } catch (err) {
       set((s) => {
         const current = s.byChat[chatId]
@@ -1461,6 +1503,66 @@ export const useStore = create<StoreState>()((set, get) => ({
 
   setForkOpen: (open) => set({ forkOpen: open }),
   toggleFork: () => set((s) => ({ forkOpen: !s.forkOpen })),
+
+  focusForkAttachment: (attachmentId) =>
+    set((s) => {
+      const cs = activeChatState(s)
+      const message = cs?.messages.fork.find((m) =>
+        m.attachments?.some((attachment) => attachment.id === attachmentId),
+      )
+      // Even without a resolvable message the panel still opens on the thread.
+      if (!message) return { forkOpen: true }
+      return {
+        forkOpen: true,
+        forkFocus: { messageId: message.id, nonce: (s.forkFocus?.nonce ?? 0) + 1 },
+      }
+    }),
+
+  clearForkFocus: () => set((s) => (s.forkFocus ? { forkFocus: null } : {})),
+
+  addFollowUpAttachment: (attachment) => {
+    const current = get().followUpAttachments
+    if (current.some((item) => item.id === attachment.id)) {
+      set({ forkOpen: true })
+      return
+    }
+    if (current.length >= 6) {
+      removeFrameContext(attachment.id)
+      set({
+        forkOpen: true,
+        error: 'You can attach up to 6 selections to one follow-up.',
+      })
+      return
+    }
+    set((s) => {
+      const nextNumber =
+        s.followUpAttachments.reduce((max, item) => {
+          if (item.kind !== attachment.kind) return max
+          const value = Number.parseInt(item.label.split(' ').at(-1) ?? '', 10)
+          return Number.isFinite(value) ? Math.max(max, value) : max
+        }, 0) + 1
+      return {
+        forkOpen: true,
+        error: null,
+        followUpAttachments: [
+          ...s.followUpAttachments,
+          { ...attachment, label: `${attachment.kind} ${nextNumber}` },
+        ],
+      }
+    })
+  },
+
+  removeFollowUpAttachment: (id) => {
+    removeFrameContext(id)
+    set((s) => ({
+      followUpAttachments: s.followUpAttachments.filter((attachment) => attachment.id !== id),
+    }))
+  },
+
+  clearFollowUpAttachments: () => {
+    for (const attachment of get().followUpAttachments) removeFrameContext(attachment.id)
+    set({ followUpAttachments: [] })
+  },
 
   setHistoryOpen: (open) => set(patchActive((cs) => (cs.historyOpen === open ? cs : { ...cs, historyOpen: open }))),
 
@@ -1658,5 +1760,29 @@ export const useElaboration = () => useStore((s) => s.elaboration)
 
 export const useTheme = () => useStore((s) => s.theme)
 export const useForkOpen = () => useStore((s) => s.forkOpen)
+export const useForkFocus = () => useStore((s) => s.forkFocus)
+
+const EMPTY_MARKS: QuestionedMark[] = []
+
+/**
+ * Every selection of this asset that was already sent with a fork question,
+ * in thread order — what the asset frames render as underlines/note badges.
+ */
+export const useQuestionedMarks = (assetId: string | undefined): QuestionedMark[] => {
+  const messages = useMessages('fork')
+  return useMemo(() => {
+    if (!assetId) return EMPTY_MARKS
+    const marks: QuestionedMark[] = []
+    for (const message of messages) {
+      if (message.role !== 'user' || !message.attachments) continue
+      for (const attachment of message.attachments) {
+        if (attachment.assetId !== assetId) continue
+        marks.push({ id: attachment.id, kind: attachment.kind, content: attachment.content })
+      }
+    }
+    return marks.length ? marks : EMPTY_MARKS
+  }, [messages, assetId])
+}
+export const useFollowUpAttachments = () => useStore((s) => s.followUpAttachments)
 export const useConnection = () => useStore((s) => s.connection)
 export const useStoreError = () => useStore((s) => s.error)
