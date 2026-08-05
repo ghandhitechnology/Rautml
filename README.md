@@ -18,7 +18,23 @@ npm run desktop      # production renderer in Electron
 npm run dist:mac     # arm64 DMG + ZIP in release/
 ```
 
-The distributable must be signed and notarized with an Apple Developer ID before public release.
+### Personal releases
+
+Pushing a version tag builds an arm64 DMG and ZIP on a GitHub-hosted macOS runner and attaches them
+to a private GitHub Release. The tag must match the version in `package.json`.
+
+```bash
+# Example: package.json contains "version": "0.2.0"
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+Use **Rautml → Check for Updates…** to open the latest private release, then download and replace
+the app in `/Applications`. GitHub login is required because the repository is private. This manual
+installation path does not require an Apple Developer account or a continuously running server.
+
+Automatic in-place updates can be added later, but macOS requires those builds to be signed and
+notarized with an Apple Developer ID.
 
 ## Web development
 

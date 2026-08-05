@@ -86,17 +86,8 @@ export function DocumentView({ className }: DocumentViewProps) {
     [asset],
   )
 
-  /* ----------------------------------------------------------- download html */
-
-  const htmlRef = useRef<{ key: string; html: string } | null>(null)
-  const onHtmlChange = useCallback((html: string, assetId: string, v: number) => {
-    htmlRef.current = { key: `${assetId}:${v}`, html }
-  }, [])
-
   const getHtml = useCallback(async () => {
     if (!asset) return ''
-    const key = `${asset.id}:${version}`
-    if (htmlRef.current?.key === key) return htmlRef.current.html
     return fetchAssetHtml(asset.id, version)
   }, [asset, version])
 
@@ -141,7 +132,6 @@ export function DocumentView({ className }: DocumentViewProps) {
               assetId={asset.id}
               version={version}
               title={asset.title}
-              onHtmlChange={onHtmlChange}
             />
           </motion.div>
         </AnimatePresence>

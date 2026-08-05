@@ -66,8 +66,7 @@ const HEIGHT_SCRIPT = `
   document.addEventListener('transitionend', schedule, true);
   document.addEventListener('animationend', schedule, true);
   try { if (document.fonts && document.fonts.ready) document.fonts.ready.then(schedule); } catch (e) {}
-  [0, 60, 200, 500, 1000, 2000, 3500].forEach(function (t) { setTimeout(schedule, t); });
-  setInterval(schedule, 1500);
+  [0, 80, 300, 900, 2200].forEach(function (t) { setTimeout(schedule, t); });
 })();</script>
 `
 
@@ -86,8 +85,6 @@ export interface AssetFrameProps {
   title?: string
   /** Collapse floor, defaults to 200px. */
   minHeight?: number
-  /** Raw (un-injected) HTML of the version currently on screen — handy for copy-to-clipboard. */
-  onHtmlChange?: (html: string, version: number) => void
   /** True once the visible version has reported its first height (skeleton gone). */
   onReadyChange?: (ready: boolean) => void
   className?: string
@@ -96,8 +93,6 @@ export interface AssetFrameProps {
 interface Layer {
   key: string
   version: number
-  /** As served by the API. */
-  raw: string
   /** With the height reporter injected — what actually goes into srcDoc. */
   doc: string
 }
@@ -117,7 +112,6 @@ export function AssetFrame({
   version,
   title,
   minHeight = MIN_FRAME_HEIGHT,
-  onHtmlChange,
   onReadyChange,
   className,
 }: AssetFrameProps) {
@@ -156,7 +150,6 @@ export function AssetFrame({
         const layer: Layer = {
           key: `${requestKey}#${seq.current}`,
           version,
-          raw,
           // Theme attr goes in before first paint so a house-styled asset never flashes
           // the wrong scheme; live toggles are stamped into the open document below.
           doc: withThemeAttr(
@@ -297,12 +290,6 @@ export function AssetFrame({
       return next
     })
   }, [layers])
-
-  const notifyHtml = useRef(onHtmlChange)
-  notifyHtml.current = onHtmlChange
-  useEffect(() => {
-    if (visible) notifyHtml.current?.(visible.raw, visible.version)
-  }, [visible])
 
   const notifyReady = useRef(onReadyChange)
   notifyReady.current = onReadyChange

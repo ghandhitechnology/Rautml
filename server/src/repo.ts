@@ -304,6 +304,15 @@ export function getActiveRun(chatId: string, thread: Thread): Run | undefined {
   return row ? rowToRun(row) : undefined;
 }
 
+/** Work that must survive after the last desktop window closes. */
+export function hasActiveWork(): boolean {
+  const activeRuns = db
+    .prepare(`SELECT 1 FROM runs WHERE status IN ('running', 'awaiting_input') LIMIT 1`)
+    .get();
+  if (activeRuns) return true;
+  return !!db.prepare(`SELECT 1 FROM sources WHERE status = 'processing' LIMIT 1`).get();
+}
+
 export function getRun(runId: string): Run | undefined {
   const row = db.prepare(`SELECT * FROM runs WHERE id = ?`).get(runId) as any;
   return row ? rowToRun(row) : undefined;

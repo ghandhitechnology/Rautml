@@ -107,7 +107,6 @@
     background-color var(--dur-fast) var(--ease),
     color var(--dur-fast) var(--ease),
     opacity var(--dur-fast) var(--ease);
-  will-change: transform;
 }
 
 .rml-forkcomposer__btn svg {

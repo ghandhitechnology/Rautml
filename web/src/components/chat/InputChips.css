@@ -78,7 +78,6 @@
   line-height: 1.4;
   color: var(--text);
   box-shadow: var(--shadow-sm);
-  will-change: transform;
   transition:
     background-color var(--dur-fast) var(--ease),
     border-color var(--dur-fast) var(--ease),

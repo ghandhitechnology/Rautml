@@ -181,6 +181,7 @@ export interface StoreState {
     attachments?: FollowUpAttachment[],
   ) => Promise<void>
   applyEvent: (event: ChatEvent) => void
+  applyEvents: (events: ChatEvent[]) => void
   resolveInput: (pendingInputId: string, value: string) => Promise<void>
   stopRun: () => Promise<void>
   setForkOpen: (open: boolean) => void
@@ -1116,11 +1117,89 @@ function patchActive(patch: (cs: ChatState) => ChatState) {
 /* ------------------------------------------------------------ sse plumbing */
 
 let connection: SseConnection | null = null
+let eventFlushTimer: number | null = null
+let queuedEvents: ChatEvent[] = []
+
+const MAX_CACHED_CHATS = 3
+const recentChatIds: string[] = []
 
 /** Guards against a double-click racing two POST /api/chats before either lands. */
 let creatingChat = false
 
+function rememberChat(chatId: string) {
+  const previous = recentChatIds.indexOf(chatId)
+  if (previous !== -1) recentChatIds.splice(previous, 1)
+  recentChatIds.push(chatId)
+  if (recentChatIds.length > MAX_CACHED_CHATS * 4) {
+    recentChatIds.splice(0, recentChatIds.length - MAX_CACHED_CHATS * 4)
+  }
+}
+
+function pruneChatCache(byChat: Record<string, ChatState>): Record<string, ChatState> {
+  if (Object.keys(byChat).length <= MAX_CACHED_CHATS) return byChat
+  const keep = new Set(recentChatIds.slice(-MAX_CACHED_CHATS))
+  const next: Record<string, ChatState> = {}
+  for (const [id, state] of Object.entries(byChat)) if (keep.has(id)) next[id] = state
+  return next
+}
+
+function deltaKey(event: ChatEvent): string | null {
+  if (!event.data || typeof event.data !== 'object') return null
+  const data = event.data as Record<string, unknown>
+  if (event.type === 'message.delta' && typeof data.messageId === 'string') {
+    return `${event.chatId}:${event.thread}:message:${data.messageId}`
+  }
+  if (event.type === 'thinking.delta' && typeof data.thinkingId === 'string') {
+    return `${event.chatId}:${event.thread}:thinking:${data.thinkingId}`
+  }
+  if (event.type === 'subagent.delta' && typeof data.subagentId === 'string') {
+    return `${event.chatId}:${event.thread}:subagent:${data.subagentId}`
+  }
+  return null
+}
+
+function coalesceQueuedEvents(events: ChatEvent[]): ChatEvent[] {
+  const out: ChatEvent[] = []
+  for (const event of events) {
+    const key = deltaKey(event)
+    const previous = out[out.length - 1]
+    if (key && previous && deltaKey(previous) === key) {
+      const previousData = previous.data as Record<string, unknown>
+      const data = event.data as Record<string, unknown>
+      out[out.length - 1] = {
+        ...event,
+        data: { ...data, text: String(previousData.text ?? '') + String(data.text ?? '') },
+      }
+    } else {
+      out.push(event)
+    }
+  }
+  return out
+}
+
+function flushQueuedEvents() {
+  if (eventFlushTimer !== null) window.clearTimeout(eventFlushTimer)
+  eventFlushTimer = null
+  if (!queuedEvents.length) return
+  const batch = coalesceQueuedEvents(queuedEvents)
+  queuedEvents = []
+  useStore.getState().applyEvents(batch)
+}
+
+function enqueueEvent(event: ChatEvent) {
+  queuedEvents.push(event)
+  if (eventFlushTimer === null) eventFlushTimer = window.setTimeout(flushQueuedEvents, 16)
+}
+
+function clearQueuedEvents() {
+  if (eventFlushTimer !== null) window.clearTimeout(eventFlushTimer)
+  eventFlushTimer = null
+  queuedEvents = []
+}
+
 function disconnect() {
+  if (queuedEvents.length) flushQueuedEvents()
+  else clearQueuedEvents()
   connection?.close()
   connection = null
 }
@@ -1446,13 +1525,14 @@ export const useStore = create<StoreState>()((set, get) => ({
       void get().retitleOnExit(previousChatId)
     }
     disconnect()
+    rememberChat(chatId)
 
     const known = get().chats.find((c) => c.id === chatId)
     set((s) => ({
       activeChatId: chatId,
       forkOpen: false,
       connection: 'connecting',
-      byChat: {
+      byChat: pruneChatCache({
         ...s.byChat,
         [chatId]: {
           ...(s.byChat[chatId] ??
@@ -1462,7 +1542,7 @@ export const useStore = create<StoreState>()((set, get) => ({
           loading: true,
           error: null,
         },
-      },
+      }),
     }))
 
     let snapshot: ChatSnapshot
@@ -1484,7 +1564,7 @@ export const useStore = create<StoreState>()((set, get) => ({
 
     const cs = hydrate(snapshot)
     set((s) => ({
-      byChat: { ...s.byChat, [chatId]: cs },
+      byChat: pruneChatCache({ ...s.byChat, [chatId]: cs }),
       chats: s.chats.map((c) => (c.id === chatId ? { ...c, ...snapshot.chat } : c)),
     }))
 
@@ -1492,7 +1572,7 @@ export const useStore = create<StoreState>()((set, get) => ({
     connection = connectChatEvents({
       chatId,
       after: cs.lastSeq,
-      onEvent: (event) => get().applyEvent(event),
+      onEvent: enqueueEvent,
       onStatus: (status) => {
         if (get().activeChatId === chatId) set({ connection: status })
       },
@@ -1642,26 +1722,43 @@ export const useStore = create<StoreState>()((set, get) => ({
     }
   },
 
-  applyEvent: (event) => {
-    const chatId = event.chatId || get().activeChatId
-    if (!chatId) return
+  applyEvent: (event) => get().applyEvents([event]),
+
+  applyEvents: (events) => {
+    if (!events.length) return
     const ctx: ReduceCtx = { hydrating: false, resetDuringHydration: new Set() }
     set((s) => {
-      if (event.type === 'provider.error') {
-        const detail = event.data as ProviderErrorEvent
-        return { providerAlert: { providerId: detail.providerId, message: detail.message } }
+      let byChat = s.byChat
+      let chats = s.chats
+      let providerAlert = s.providerAlert
+      let changed = false
+
+      for (const event of events) {
+        if (event.type === 'provider.error') {
+          const detail = event.data as ProviderErrorEvent
+          providerAlert = { providerId: detail.providerId, message: detail.message }
+          changed = true
+          continue
+        }
+        const chatId = event.chatId || s.activeChatId
+        if (!chatId) continue
+        const cs = byChat[chatId]
+        if (!cs) continue
+        const nextCs = reduceEvent(cs, event, ctx)
+        if (nextCs === cs) continue
+        if (byChat === s.byChat) byChat = { ...s.byChat }
+        byChat[chatId] = nextCs
+        changed = true
+        if (nextCs.chat.title !== cs.chat.title) {
+          chats = chats.map((chat) =>
+            chat.id === chatId
+              ? { ...chat, title: nextCs.chat.title, updatedAt: Date.now() }
+              : chat,
+          )
+        }
       }
-      const cs = s.byChat[chatId]
-      if (!cs) return {}
-      const nextCs = reduceEvent(cs, event, ctx)
-      if (nextCs === cs) return {}
-      const patch: Partial<StoreState> = { byChat: { ...s.byChat, [chatId]: nextCs } }
-      if (nextCs.chat.title !== cs.chat.title) {
-        patch.chats = s.chats.map((c) =>
-          c.id === chatId ? { ...c, title: nextCs.chat.title, updatedAt: Date.now() } : c,
-        )
-      }
-      return patch
+
+      return changed ? { byChat, chats, providerAlert } : {}
     })
   },
 

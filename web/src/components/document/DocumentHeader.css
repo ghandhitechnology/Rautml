@@ -168,7 +168,6 @@ html[data-desktop='electron'] .rml-shell.is-sidebar-animating .rml-dochead__bar 
   position: absolute;
   display: grid;
   place-items: center;
-  will-change: transform, opacity;
 }
 
 .rml-dochead__history.is-on {
@@ -241,7 +240,6 @@ html[data-desktop='electron'] .rml-shell.is-sidebar-animating .rml-dochead__bar 
   -webkit-backdrop-filter: var(--glass-blur);
   box-shadow: var(--shadow-lg);
   transform-origin: top left;
-  will-change: transform, opacity;
 }
 
 .rml-dochead__menu-item {

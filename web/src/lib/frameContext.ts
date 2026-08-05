@@ -265,7 +265,27 @@ const CONTEXT_BRIDGE = String.raw`
 
   var lastMarks = [];
   var badgeCleanups = [];
+  var badgeRepositions = [];
+  var badgeTick = 0;
   var retryTimers = [];
+
+  function addBadgeReposition(reposition) {
+    badgeRepositions.push(reposition);
+    if (!badgeTick) {
+      badgeTick = window.setInterval(function () {
+        if (document.hidden) return;
+        for (var i = 0; i < badgeRepositions.length; i += 1) badgeRepositions[i]();
+      }, 1400);
+    }
+    return function () {
+      var index = badgeRepositions.indexOf(reposition);
+      if (index !== -1) badgeRepositions.splice(index, 1);
+      if (!badgeRepositions.length && badgeTick) {
+        window.clearInterval(badgeTick);
+        badgeTick = 0;
+      }
+    };
+  }
 
   function sendOpen(id) {
     if (!id) return;
@@ -436,11 +456,11 @@ const CONTEXT_BRIDGE = String.raw`
       if (document.body) observer.observe(document.body);
     }
     window.addEventListener('resize', reposition);
-    var tick = window.setInterval(reposition, 1400);
+    var removeReposition = addBadgeReposition(reposition);
     badgeCleanups.push(function () {
       if (observer) observer.disconnect();
       window.removeEventListener('resize', reposition);
-      window.clearInterval(tick);
+      removeReposition();
     });
   }
 

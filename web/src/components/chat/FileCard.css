@@ -18,7 +18,6 @@
   color: var(--text);
   text-decoration: none;
   box-shadow: var(--shadow-sm);
-  will-change: transform;
   transition:
     border-color var(--dur-fast) var(--ease),
     box-shadow var(--dur-fast) var(--ease),

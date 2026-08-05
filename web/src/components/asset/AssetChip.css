@@ -11,7 +11,6 @@
   border-radius: var(--r-md);
   background: color-mix(in srgb, var(--surface) 72%, transparent);
   text-align: left;
-  will-change: transform, opacity;
   transition:
     background-color var(--dur-fast) var(--ease),
     border-color var(--dur-fast) var(--ease),

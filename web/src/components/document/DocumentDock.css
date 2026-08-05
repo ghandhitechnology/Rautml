@@ -19,7 +19,6 @@
 /* Height clip wrapper — chrome styles live on the inner sheet/activity. */
 .rml-dock__slab {
   overflow: hidden;
-  will-change: transform, opacity, height;
 }
 
 /* ------------------------------------------------------------ response sheet */

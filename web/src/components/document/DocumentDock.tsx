@@ -52,11 +52,24 @@ function useMeasuredHeight<T extends HTMLElement>() {
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
-    const read = () => setHeight(el.getBoundingClientRect().height)
-    read()
-    const ro = new ResizeObserver(read)
+    let frame = 0
+    const commit = (next: number) => {
+      window.cancelAnimationFrame(frame)
+      frame = window.requestAnimationFrame(() => {
+        setHeight((previous) => (Math.abs(previous - next) < 1 ? previous : next))
+      })
+    }
+    setHeight(el.getBoundingClientRect().height)
+    const ro = new ResizeObserver(([entry]) => {
+      if (!entry) return
+      const box = Array.isArray(entry.borderBoxSize) ? entry.borderBoxSize[0] : entry.borderBoxSize
+      commit(box?.blockSize ?? entry.contentRect.height)
+    })
     ro.observe(el)
-    return () => ro.disconnect()
+    return () => {
+      window.cancelAnimationFrame(frame)
+      ro.disconnect()
+    }
   }, [])
 
   return [ref, height] as const
@@ -216,18 +229,17 @@ export function DocumentDock({ className }: DocumentDockProps) {
   const activityOpen = running && !!timeline
 
   /* Hold while content is relevant; Slab drops itself after a real close. */
-  const [sheetHeld, setSheetHeld] = useState<{ id: string; text: string; streaming: boolean } | null>(
-    null,
-  )
+  const [sheetHeldId, setSheetHeldId] = useState<string | null>(null)
   useLayoutEffect(() => {
-    if (sheetOpen && sheetMessage) {
-      setSheetHeld({
-        id: sheetMessage.id,
-        text: sheetMessage.content,
-        streaming: sheetMessage.status === 'streaming',
-      })
+    if (sheetOpen && sheetMessage && sheetHeldId !== sheetMessage.id) {
+      setSheetHeldId(sheetMessage.id)
     }
-  }, [sheetOpen, sheetMessage])
+  }, [sheetHeldId, sheetMessage?.id, sheetOpen])
+
+  const sheetHeld = useMemo(() => {
+    if (!state || !sheetHeldId) return null
+    return state.messages.main.find((message) => message.id === sheetHeldId) ?? null
+  }, [sheetHeldId, state])
 
   const [activityHeld, setActivityHeld] = useState<string | null>(null)
   useLayoutEffect(() => {
@@ -236,7 +248,7 @@ export function DocumentDock({ className }: DocumentDockProps) {
 
   const heldTimeline = activityHeld ? (state?.timelines[activityHeld] ?? null) : null
 
-  const dropSheet = useCallback(() => setSheetHeld(null), [])
+  const dropSheet = useCallback(() => setSheetHeldId(null), [])
   const dropActivity = useCallback(() => setActivityHeld(null), [])
 
   /* keep the sheet pinned to its newest line while text streams in */
@@ -246,7 +258,7 @@ export function DocumentDock({ className }: DocumentDockProps) {
     const el = proseRef.current
     if (!el || !proseAtBottom.current) return
     el.scrollTop = el.scrollHeight
-  }, [sheetHeld?.text])
+  }, [sheetHeld?.content])
 
   return (
     <div className={cx('rml-dock', className)}>
@@ -262,7 +274,7 @@ export function DocumentDock({ className }: DocumentDockProps) {
           <header className="rml-dock__sheet-bar">
             <span className={cx('rml-dock__pip', running && 'is-live')} aria-hidden="true" />
             <span className="rml-dock__sheet-title">
-              {sheetHeld.streaming ? '답변 중 · Responding' : '답변 · Response'}
+              {sheetHeld.status === 'streaming' ? '답변 중 · Responding' : '답변 · Response'}
             </span>
             <button
               type="button"
@@ -285,7 +297,7 @@ export function DocumentDock({ className }: DocumentDockProps) {
               proseAtBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24
             }}
           >
-            <Markdown>{sheetHeld.text}</Markdown>
+            <Markdown>{sheetHeld.content}</Markdown>
           </div>
         </Slab>
       ) : null}

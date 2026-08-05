@@ -25,10 +25,6 @@
 
 /* --------------------------------------------------------------- messages */
 
-.rml-forkmsg {
-  will-change: transform;
-}
-
 .rml-forkmsg--user {
   display: flex;
   justify-content: flex-end;
@@ -302,7 +298,6 @@
   transition:
     color var(--dur-fast) var(--ease),
     border-color var(--dur-fast) var(--ease);
-  will-change: transform;
 }
 
 .rml-forkthread__jump:hover {

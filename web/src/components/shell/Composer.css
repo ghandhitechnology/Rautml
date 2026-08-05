@@ -188,7 +188,6 @@
   width: 32px;
   height: 32px;
   border-radius: var(--r-pill);
-  will-change: transform, opacity;
   transition:
     background-color var(--dur-fast) var(--ease),
     color var(--dur-fast) var(--ease),

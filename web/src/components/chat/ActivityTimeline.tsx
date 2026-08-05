@@ -27,11 +27,24 @@ function useMeasuredHeight<T extends HTMLElement>() {
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
-    const read = () => setHeight(el.getBoundingClientRect().height)
-    read()
-    const ro = new ResizeObserver(read)
+    let frame = 0
+    const commit = (next: number) => {
+      window.cancelAnimationFrame(frame)
+      frame = window.requestAnimationFrame(() => {
+        setHeight((previous) => (Math.abs(previous - next) < 1 ? previous : next))
+      })
+    }
+    setHeight(el.getBoundingClientRect().height)
+    const ro = new ResizeObserver(([entry]) => {
+      if (!entry) return
+      const box = Array.isArray(entry.borderBoxSize) ? entry.borderBoxSize[0] : entry.borderBoxSize
+      commit(box?.blockSize ?? entry.contentRect.height)
+    })
     ro.observe(el)
-    return () => ro.disconnect()
+    return () => {
+      window.cancelAnimationFrame(frame)
+      ro.disconnect()
+    }
   }, [])
 
   return [ref, height] as const

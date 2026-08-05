@@ -17,10 +17,10 @@ const SIDEBAR_TRANSITION_MS = 420
 const SIDEBAR_TRANSITION_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
 
 /* Collapsing commits the grid in a single layout pass and lets the rendered
- * surfaces carry the motion (FLIP). Everything listed here is either centred in
- * the main column or pinned to its right edge, so a translate alone lands it
- * exactly — no scaling, which is what stretched the glass chrome and
- * rubber-banded the document page while they moved. */
+ * surfaces carry the motion (FLIP). Most surfaces only need translation. The
+ * document frame is the exception: its responsive iframe must interpolate its
+ * viewport width as it moves so the window-pinned right edge never flashes to
+ * its final layout in a single frame. */
 const SIDEBAR_FLIP_SURFACES = {
   document: ['.rml-docframe', '.rml-dock', '.rml-slot--ball'],
   chat: [
@@ -34,6 +34,8 @@ const SIDEBAR_FLIP_SURFACES = {
     '.rml-slot--ball',
   ],
 }
+
+const SIDEBAR_RESIZE_SURFACES = new Set(['.rml-docframe'])
 
 /* The document header pill spans the column: its right edge is pinned to the
  * window and only its left edge travels. Translating it would swing the right
@@ -166,15 +168,18 @@ export function Layout({
       if (!first || !last) continue
       const deltaX = Math.round(first.left - last.left)
       const deltaY = Math.round(first.top - last.top)
-      if (deltaX === 0 && deltaY === 0) continue
+      const resizes = [...SIDEBAR_RESIZE_SURFACES].some((selector) => element.matches(selector))
+      const widthChanged = Math.round(first.width) !== Math.round(last.width)
+      if (deltaX === 0 && deltaY === 0 && (!resizes || !widthChanged)) continue
+
+      const from: Keyframe = { transform: `translate3d(${deltaX}px, ${deltaY}px, 0)` }
+      const to: Keyframe = { transform: 'translate3d(0, 0, 0)' }
+      if (resizes && widthChanged) {
+        from.width = `${first.width}px`
+        to.width = `${last.width}px`
+      }
       animations.push(
-        element.animate(
-          [
-            { transform: `translate3d(${deltaX}px, ${deltaY}px, 0)` },
-            { transform: 'translate3d(0, 0, 0)' },
-          ],
-          timing,
-        ),
+        element.animate([from, to], timing),
       )
     }
 

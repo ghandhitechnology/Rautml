@@ -13,8 +13,6 @@
 .rml-docframe__layer {
   position: absolute;
   inset: 0;
-  will-change: opacity;
-  backface-visibility: hidden;
 }
 
 .rml-docframe__iframe {

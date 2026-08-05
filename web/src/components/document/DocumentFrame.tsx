@@ -33,8 +33,6 @@ export interface DocumentFrameProps {
   /** Version to display. Changing it (or the asset) cross-fades to the new document. */
   version: number
   title?: string
-  /** Raw HTML of whatever is on screen — the header uses it for downloading. */
-  onHtmlChange?: (html: string, assetId: string, version: number) => void
   className?: string
 }
 
@@ -42,7 +40,6 @@ interface Layer {
   key: string
   assetId: string
   version: number
-  raw: string
   doc: string
 }
 
@@ -74,7 +71,6 @@ export function DocumentFrame({
   assetId,
   version,
   title,
-  onHtmlChange,
   className,
 }: DocumentFrameProps) {
   const reduceMotion = useReducedMotion()
@@ -112,7 +108,6 @@ export function DocumentFrame({
           key: `${requestKey}#${seq.current}`,
           assetId,
           version,
-          raw: html,
           // Theme + contextual selection affordances go in before first paint.
           doc: withThemeAttr(
             injectFollowUpContext(withFrameGuards(html)),
@@ -246,13 +241,6 @@ export function DocumentFrame({
 
   const visible = layers[0] ?? null
   const painted = !!visible && !!ready[visible.key]
-
-  const notify = useRef(onHtmlChange)
-  notify.current = onHtmlChange
-  useEffect(() => {
-    if (!visible) return
-    notify.current?.(visible.raw, visible.assetId, visible.version)
-  }, [visible])
 
   const retry = () => setReloadNonce((n) => n + 1)
 

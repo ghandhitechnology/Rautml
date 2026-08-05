@@ -14,8 +14,6 @@
   position: absolute;
   inset: 0 0 auto 0;
   width: 100%;
-  will-change: opacity;
-  backface-visibility: hidden;
 }
 
 .rml-frame__iframe {

@@ -13,14 +13,11 @@
   overflow: hidden;
   background: var(--surface);
   transform-origin: 50% 62%; /* roughly where the timeline sat in the chat */
-  will-change: transform, opacity;
-  backface-visibility: hidden;
 }
 
 .rml-doc__sheetwrap {
   position: absolute;
   inset: 0;
-  will-change: opacity;
 }
 
 /* the coral breath of the takeover — purely decorative, gone in 0.7s */
@@ -39,7 +36,6 @@
   );
   pointer-events: none;
   z-index: 10;
-  will-change: transform, opacity;
 }
 
 .rml-doc__chrome {
@@ -47,7 +43,6 @@
   inset: 0 0 auto 0;
   z-index: 14;
   pointer-events: none;
-  will-change: transform, opacity;
 }
 
 .rml-doc__chrome > * {

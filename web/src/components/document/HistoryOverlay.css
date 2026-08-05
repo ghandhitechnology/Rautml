@@ -8,12 +8,9 @@
   overflow-x: hidden;
   overscroll-behavior: contain;
   scroll-behavior: smooth;
-  /* heavier than the floating chrome: prose has to win over whatever the page
-   * underneath is doing, while a whisper of it still shows through */
-  background: color-mix(in srgb, var(--bg) 94%, transparent);
-  backdrop-filter: saturate(150%) blur(26px);
-  -webkit-backdrop-filter: saturate(150%) blur(26px);
-  will-change: opacity;
+  /* Nearly opaque by design; a full-window 26px backdrop blur spent GPU memory
+   * on detail users could not perceive and made scrolling stutter in Electron. */
+  background: color-mix(in srgb, var(--bg) 97%, transparent);
 }
 
 /* clears the floating header above and the composer dock below */

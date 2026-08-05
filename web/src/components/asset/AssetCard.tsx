@@ -31,7 +31,6 @@ export function AssetCard({ asset, autoExpandAnimation = true, className }: Asse
   const [version, setVersion] = useState(latest)
   const [copied, setCopied] = useState(false)
   const [copyFailed, setCopyFailed] = useState(false)
-  const htmlRef = useRef<string | null>(null)
   const copyTimer = useRef<number | undefined>(undefined)
 
   // A version arriving live pulls the view forward to it (CONTRACT § AssetCard).
@@ -41,15 +40,11 @@ export function AssetCard({ asset, autoExpandAnimation = true, className }: Asse
 
   useEffect(() => () => window.clearTimeout(copyTimer.current), [])
 
-  const handleHtml = useCallback((html: string) => {
-    htmlRef.current = html
-  }, [])
-
   const copyHtml = useCallback(async () => {
     window.clearTimeout(copyTimer.current)
     setCopyFailed(false)
     try {
-      const html = htmlRef.current ?? (await fetchAssetHtml(asset.id, version))
+      const html = await fetchAssetHtml(asset.id, version)
       await navigator.clipboard.writeText(html)
       setCopied(true)
     } catch {
@@ -157,7 +152,6 @@ export function AssetCard({ asset, autoExpandAnimation = true, className }: Asse
         assetId={asset.id}
         version={version}
         title={asset.title}
-        onHtmlChange={handleHtml}
         className="rml-asset__frame"
       />
     </motion.section>

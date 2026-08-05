@@ -125,7 +125,7 @@ function allMessages(chatId: string): Message[] {
 // ---------------------------------------------------------------------------
 
 router.get('/health', (_req: Request, res: Response) => {
-  res.json({ ok: true });
+  res.json({ ok: true, busy: repo.hasActiveWork() });
 });
 
 // ---------------------------------------------------------------------------

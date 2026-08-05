@@ -20,6 +20,11 @@ let mainWindow = null
 let engine = null
 let engineOrigin = ''
 let quitting = false
+const expectedEngineStops = new WeakSet()
+let engineIdleTimer = null
+
+const ENGINE_IDLE_CHECK_MS = 30_000
+const RELEASES_URL = 'https://github.com/ghandhitechnology/Rautml/releases/latest'
 
 app.setName('Rautml')
 
@@ -100,7 +105,7 @@ async function startEngine() {
   }
   const serverEntry = path.join(appRoot, 'server', 'dist', 'index.js')
   const webDist = path.join(appRoot, 'web', 'dist')
-  engine = utilityProcess.fork(serverEntry, [], {
+  const child = utilityProcess.fork(serverEntry, [], {
     cwd: userData,
     serviceName: 'Rautml Engine',
     stdio: 'pipe',
@@ -114,13 +119,16 @@ async function startEngine() {
       RAUTML_WEB_DIST: webDist,
     },
   })
+  engine = child
 
-  engine.stdout?.on('data', (chunk) => process.stdout.write(`[engine] ${chunk}`))
-  engine.stderr?.on('data', (chunk) => process.stderr.write(`[engine] ${chunk}`))
-  engine.on('exit', (code) => {
-    engine = null
-    engineOrigin = ''
-    if (quitting || code === 0) return
+  child.stdout?.on('data', (chunk) => process.stdout.write(`[engine] ${chunk}`))
+  child.stderr?.on('data', (chunk) => process.stderr.write(`[engine] ${chunk}`))
+  child.on('exit', (code) => {
+    if (engine === child) {
+      engine = null
+      engineOrigin = ''
+    }
+    if (quitting || expectedEngineStops.has(child) || code === 0) return
     void dialog.showMessageBox({
       type: 'error',
       title: 'Rautml engine stopped',
@@ -135,6 +143,51 @@ async function startEngine() {
   return origin
 }
 
+function stopEngine() {
+  if (engineIdleTimer) clearTimeout(engineIdleTimer)
+  engineIdleTimer = null
+  const child = engine
+  if (!child) return
+  expectedEngineStops.add(child)
+  child.kill()
+  engine = null
+  engineOrigin = ''
+}
+
+function scheduleIdleEngineStop() {
+  if (engineIdleTimer) clearTimeout(engineIdleTimer)
+  if (!engine || !engineOrigin || BrowserWindow.getAllWindows().length > 0) return
+  engineIdleTimer = setTimeout(async () => {
+    engineIdleTimer = null
+    if (!engine || !engineOrigin || BrowserWindow.getAllWindows().length > 0) return
+    try {
+      const response = await fetch(`${engineOrigin}/api/health`)
+      const health = response.ok ? await response.json() : { busy: true }
+      if (health?.busy) {
+        scheduleIdleEngineStop()
+        return
+      }
+      stopEngine()
+    } catch {
+      // A failed health check is not proof that a generation is safe to stop.
+      scheduleIdleEngineStop()
+    }
+  }, ENGINE_IDLE_CHECK_MS)
+  engineIdleTimer.unref?.()
+}
+
+async function showOrCreateWindow() {
+  if (engineIdleTimer) clearTimeout(engineIdleTimer)
+  engineIdleTimer = null
+  if (!mainWindow) {
+    await createWindow()
+    return
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+
 function installApplicationMenu() {
   const template = [
     {
@@ -145,6 +198,10 @@ function installApplicationMenu() {
         {
           label: 'Open Configuration Folder',
           click: () => void shell.openPath(app.getPath('userData')),
+        },
+        {
+          label: 'Check for Updates…',
+          click: () => void shell.openExternal(RELEASES_URL),
         },
         { type: 'separator' },
         { role: 'services' },
@@ -174,6 +231,8 @@ function installApplicationMenu() {
 }
 
 async function createWindow() {
+  if (engineIdleTimer) clearTimeout(engineIdleTimer)
+  engineIdleTimer = null
   const origin = devUrl || (await startEngine())
   const preload = path.join(__dirname, 'preload.cjs')
   const backgroundColor = nativeTheme.shouldUseDarkColors ? '#262624' : '#faf9f5'
@@ -221,10 +280,12 @@ if (!gotLock) {
   app.quit()
 } else {
   app.on('second-instance', () => {
-    if (!mainWindow) return
-    if (mainWindow.isMinimized()) mainWindow.restore()
-    mainWindow.show()
-    mainWindow.focus()
+    void showOrCreateWindow().catch((error) => {
+      void dialog.showErrorBox(
+        'Rautml could not open',
+        error instanceof Error ? error.message : String(error),
+      )
+    })
   })
   app.whenReady().then(async () => {
     installApplicationMenu()
@@ -242,18 +303,20 @@ if (!gotLock) {
     }
 
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) void createWindow()
+      if (BrowserWindow.getAllWindows().length === 0) void showOrCreateWindow()
     })
   })
 }
 
 app.on('before-quit', () => {
   quitting = true
-  engine?.kill()
-  engine = null
-  engineOrigin = ''
+  stopEngine()
 })
 
 app.on('window-all-closed', () => {
+  // Preserve active generations/indexing, but reclaim the local engine once it
+  // reports idle. This keeps durable background work intact without retaining
+  // Node/ONNX for the rest of a windowless macOS session.
+  scheduleIdleEngineStop()
   if (process.platform !== 'darwin') app.quit()
 })

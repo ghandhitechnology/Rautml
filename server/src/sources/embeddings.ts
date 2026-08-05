@@ -15,18 +15,47 @@ const MODEL_ID = process.env.RAUTML_EMBED_MODEL || 'Xenova/multilingual-e5-small
 const EMBED_INPUT_CHAR_CAP = 2000;
 
 const BATCH_SIZE = 8;
+const PIPE_IDLE_MS = 90_000;
 
 let pipePromise: Promise<FeatureExtractionPipeline | null> | null = null;
+let pipe: FeatureExtractionPipeline | null = null;
+let pipeIdleTimer: ReturnType<typeof setTimeout> | null = null;
+let activeUses = 0;
+
+function clearPipeIdleTimer(): void {
+  if (!pipeIdleTimer) return;
+  clearTimeout(pipeIdleTimer);
+  pipeIdleTimer = null;
+}
+
+function schedulePipeDisposal(): void {
+  clearPipeIdleTimer();
+  if (!pipe || activeUses > 0) return;
+  pipeIdleTimer = setTimeout(() => {
+    pipeIdleTimer = null;
+    if (!pipe || activeUses > 0) return;
+    const stale = pipe;
+    pipe = null;
+    pipePromise = null;
+    void stale.dispose().catch((err: unknown) => {
+      console.warn(`[sources] embedding model disposal failed: ${(err as Error)?.message ?? err}`);
+    });
+  }, PIPE_IDLE_MS);
+  pipeIdleTimer.unref?.();
+}
 
 function getPipe(): Promise<FeatureExtractionPipeline | null> {
+  clearPipeIdleTimer();
   if (!pipePromise) {
     pipePromise = (async () => {
       try {
         const { pipeline, env } = await import('@huggingface/transformers');
         if (process.env.RAUTML_CACHE_DIR) env.cacheDir = process.env.RAUTML_CACHE_DIR;
-        const pipe = await pipeline('feature-extraction', MODEL_ID, { dtype: 'q8' });
+        pipe = (await pipeline('feature-extraction', MODEL_ID, {
+          dtype: 'q8',
+        })) as FeatureExtractionPipeline;
         console.log(`[sources] embedding model ready: ${MODEL_ID}`);
-        return pipe as FeatureExtractionPipeline;
+        return pipe;
       } catch (err) {
         console.error(
           `[sources] embedding model unavailable (${(err as Error)?.message}); semantic search falls back to keyword scoring`,
@@ -38,28 +67,30 @@ function getPipe(): Promise<FeatureExtractionPipeline | null> {
   return pipePromise;
 }
 
-/** Warm the model in the background so the first upload doesn't pay for it. */
-export function preloadEmbeddings(): void {
-  void getPipe();
-}
-
 async function embed(texts: string[], prefix: string): Promise<Float32Array[] | null> {
-  const pipe = await getPipe();
-  if (!pipe || texts.length === 0) return pipe ? [] : null;
+  const current = await getPipe();
+  if (!current || texts.length === 0) return current ? [] : null;
 
+  activeUses += 1;
   const out: Float32Array[] = [];
-  for (let i = 0; i < texts.length; i += BATCH_SIZE) {
-    const batch = texts
-      .slice(i, i + BATCH_SIZE)
-      .map((text) => prefix + text.slice(0, EMBED_INPUT_CHAR_CAP));
-    const tensor = await pipe(batch, { pooling: 'mean', normalize: true });
-    const [rows, dim] = tensor.dims as [number, number];
-    const data = tensor.data as Float32Array;
-    for (let row = 0; row < rows; row++) {
-      out.push(data.slice(row * dim, (row + 1) * dim));
+  try {
+    for (let i = 0; i < texts.length; i += BATCH_SIZE) {
+      const batch = texts
+        .slice(i, i + BATCH_SIZE)
+        .map((text) => prefix + text.slice(0, EMBED_INPUT_CHAR_CAP));
+      const tensor = await current(batch, { pooling: 'mean', normalize: true });
+      const [rows, dim] = tensor.dims as [number, number];
+      const data = tensor.data as Float32Array;
+      for (let row = 0; row < rows; row++) {
+        out.push(data.slice(row * dim, (row + 1) * dim));
+      }
+      tensor.dispose();
     }
+    return out;
+  } finally {
+    activeUses -= 1;
+    schedulePipeDisposal();
   }
-  return out;
 }
 
 export function embedPassages(texts: string[]): Promise<Float32Array[] | null> {

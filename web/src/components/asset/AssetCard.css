@@ -9,7 +9,6 @@
   box-shadow: var(--shadow-sm);
   overflow: hidden;
   transform-origin: top center;
-  will-change: transform, opacity;
   transition:
     box-shadow var(--dur) var(--ease),
     border-color var(--dur) var(--ease);
@@ -121,7 +120,6 @@
   place-items: center;
   width: 16px;
   height: 16px;
-  will-change: transform, opacity;
 }
 
 .rml-asset__icon svg {

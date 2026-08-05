@@ -72,9 +72,9 @@ html[data-desktop='electron'] .rml-shell.is-sidebar-animating .rml-shell__sideba
   will-change: transform;
 }
 
-/* The FLIP'd surfaces are already at their final width, so the ones that grew
-   overhang the column while they travel. Clip them to it — otherwise the
-   document page bleeds over the fork panel on its way in. */
+/* FLIP surfaces can overhang the committed column while they travel. Clip them
+   to it so the document never bleeds over the fork panel. The document frame
+   animates its own width in Layout.tsx to keep its right edge pinned. */
 html[data-desktop='electron'] .rml-shell.is-sidebar-animating .rml-shell__main {
   overflow: hidden;
 }

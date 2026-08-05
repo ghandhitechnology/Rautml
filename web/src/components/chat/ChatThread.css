@@ -24,7 +24,6 @@
 .rml-thread__turn {
   width: 100%;
   min-width: 0;
-  will-change: transform, opacity;
 }
 
 /* a user turn followed by its answer belongs closer together than two topics */
@@ -65,7 +64,6 @@
   letter-spacing: -0.002em;
   box-shadow: var(--shadow-md);
   pointer-events: auto;
-  will-change: transform;
   transition:
     background-color var(--dur-fast) var(--ease),
     border-color var(--dur-fast) var(--ease),
@@ -148,7 +146,6 @@
   line-height: 1.5;
   color: var(--text-muted);
   text-align: left;
-  will-change: transform;
   transition:
     background-color var(--dur-fast) var(--ease),
     border-color var(--dur-fast) var(--ease),

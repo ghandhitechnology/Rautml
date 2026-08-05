@@ -18,12 +18,11 @@ const { default: express } = await import('express');
 await import('./db.js');
 const { default: apiRouter } = await import('./routes/api.js');
 const { resumePendingIndexing } = await import('./sources/indexer.js');
-const { preloadEmbeddings } = await import('./sources/embeddings.js');
 
-// Sources stuck in 'processing' by a restart pick up where they left off, and
-// the embedding model warms in the background so the first upload is instant.
+// Sources stuck in 'processing' by a restart pick up where they left off.
+// The embedding model stays lazy: loading it at every desktop launch retained
+// a large ONNX session even when the user never opened local sources.
 resumePendingIndexing();
-preloadEmbeddings();
 
 const app = express();
 app.use(express.json({ limit: '20mb' }));
