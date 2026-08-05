@@ -23,6 +23,7 @@ import type {
   ToolDef,
 } from '../types.js';
 import { resolveSelection } from './models.js';
+import { ProviderUnavailableError } from './providers.js';
 import {
   nonStreaming,
   streamChat,
@@ -469,7 +470,7 @@ export async function startRun(
   sourceIds: string[] = [],
 ): Promise<{ runId: string }> {
   // Routes validate first; this re-resolve is the safety net for other callers.
-  const resolved = resolveSelection(selection.model, selection.effort, selection.elaboration);
+  const resolved = await resolveSelection(selection.model, selection.effort, selection.elaboration);
   if (typeof resolved === 'string') throw new Error(resolved);
 
   // Captured before this run appends its own turns. Main: the pre-run state
@@ -525,6 +526,7 @@ export async function startRun(
   const run = repo.createRun(
     chatId,
     thread,
+    resolved.providerId,
     resolved.model,
     resolved.effort,
     resolved.elaboration,
@@ -543,6 +545,7 @@ export async function startRun(
     controller,
     toolCallCount: 0,
     model: resolved.model,
+    providerId: resolved.providerId,
     effort: resolved.effort,
     elaboration: resolved.elaboration,
     contextSeq,
@@ -600,6 +603,7 @@ export async function resumeRun(
     // The run resumes on the same model + effort + elaboration + context
     // watermark it was started with.
     model: run.model,
+    providerId: run.providerId,
     effort: run.effort,
     elaboration: run.elaboration,
     contextSeq: run.contextSeq,
@@ -649,6 +653,7 @@ interface LoopCtx {
   toolCallCount: number;
   /** Undefined on legacy runs — streamChat falls back to the default model. */
   model?: string;
+  providerId?: string;
   effort?: string;
   /** Undefined on legacy runs — no elaboration layer is appended. */
   elaboration?: ElaborationLevel;
@@ -768,6 +773,7 @@ async function runLoop(ctx: LoopCtx): Promise<void> {
           // After the wrap-up nudge, deny tools so the model must answer.
           toolChoice: nudged ? 'none' : 'auto',
           model: ctx.model,
+          providerId: ctx.providerId,
           reasoningEffort: ctx.effort,
           signal: controller.signal,
           onStreamOpen: () => emitPhase('thinking', 'Thinking…'),
@@ -1003,6 +1009,13 @@ async function runLoop(ctx: LoopCtx): Promise<void> {
       if (!liveMessageId) openMessage();
       closeMessage(body, 'error');
       repo.setRunStatus(runId, 'error', detail);
+      if (err instanceof ProviderUnavailableError || ctx.providerId) {
+        emit(chatId, thread, 'provider.error', {
+          runId,
+          providerId: err instanceof ProviderUnavailableError ? err.providerId : ctx.providerId,
+          message: clip(detail, 300),
+        });
+      }
       emit(chatId, thread, 'run.status', { runId, status: 'error', error: clip(detail, 300) });
     }
     repo.touchChat(chatId);

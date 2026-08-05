@@ -4,6 +4,7 @@ import { useActiveChatId, useChats, useOnBlankChat, useStore } from '../../state
 import { absoluteTime, cx, relativeTime } from '../../lib/utils'
 import { EASE } from '../../lib/motion'
 import TypewriterText from './TypewriterText'
+import ProviderBar from './ProviderBar'
 import rautmlMark from '../../assets/rautml-mark.png'
 import './ChatListSidebar.css'
 
@@ -192,7 +193,7 @@ export function ChatListSidebar({
           </AnimatePresence>
         </ul>
       </nav>
-
+      <ProviderBar />
     </div>
   )
 }

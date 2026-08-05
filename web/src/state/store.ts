@@ -30,6 +30,8 @@ import type {
   MessageDeltaEvent,
   MessageStartEvent,
   ModelInfo,
+  ProviderInfo,
+  ProviderErrorEvent,
   PendingInput,
   PresentedFile,
   Run,
@@ -126,6 +128,9 @@ export interface StoreState {
 
   /* model selection */
   models: ModelInfo[]
+  providers: ProviderInfo[]
+  /** User-curated subset shown in every composer model picker. */
+  enabledModelIds: string[]
   selectedModelId: string | null
   /** Chosen effort per model id, so switching models remembers each one's dial. */
   effortByModel: Record<string, string>
@@ -150,9 +155,13 @@ export interface StoreState {
   stagedUploads: StagedUpload[]
   connection: SseStatus
   error: string | null
+  providerAlert: { providerId: string; message: string } | null
 
   /* actions */
   loadModels: () => Promise<void>
+  refreshProviders: () => Promise<void>
+  reconnectProvider: (providerId: string) => Promise<void>
+  toggleModelEnabled: (modelId: string) => void
   setModel: (modelId: string) => void
   setEffort: (effort: string) => void
   setForkModel: (modelId: string) => void
@@ -200,6 +209,7 @@ export interface StoreState {
   setTheme: (theme: ThemeName) => void
   toggleTheme: () => void
   dismissError: () => void
+  dismissProviderAlert: () => void
 }
 
 /* ------------------------------------------------------------------- theme */
@@ -239,6 +249,7 @@ const MODEL_KEY = 'rautml.model'
 const EFFORT_KEY = 'rautml.efforts'
 const FORK_MODEL_KEY = 'rautml.forkModel'
 const FORK_EFFORT_KEY = 'rautml.forkEfforts'
+const ENABLED_MODELS_KEY = 'rautml.enabledModels'
 const ELABORATION_KEY = 'rautml.elaboration'
 
 export const ELABORATION_LEVELS: ElaborationLevel[] = ['undergraduate', 'bachelors', 'doctor']
@@ -275,6 +286,36 @@ function readStoredEfforts(key: string = EFFORT_KEY): Record<string, string> {
   } catch {
     return {}
   }
+}
+
+function readEnabledModels(): string[] {
+  try {
+    const raw = localStorage.getItem(ENABLED_MODELS_KEY)
+    const parsed = raw ? JSON.parse(raw) : null
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function persistEnabledModels(ids: string[]) {
+  try {
+    localStorage.setItem(ENABLED_MODELS_KEY, JSON.stringify(ids))
+  } catch {
+    /* private mode — the library stays available for this session */
+  }
+}
+
+/** OpenRouter is configured outside the CLI flow; every other catalog requires a live CLI auth. */
+function selectableModelIds(models: ModelInfo[], providers: ProviderInfo[]): Set<string> {
+  const selectableProviders = new Set(
+    providers
+      .filter((provider) => provider.id === 'openrouter' || provider.authStatus === 'connected')
+      .map((provider) => provider.id),
+  )
+  return new Set(
+    models.filter((model) => selectableProviders.has(model.providerId)).map((model) => model.id),
+  )
 }
 
 function persistSelection(modelId: string | null, efforts: Record<string, string>) {
@@ -1095,6 +1136,8 @@ export const useStore = create<StoreState>()((set, get) => ({
   draftChatId: null,
 
   models: [],
+  providers: [],
+  enabledModelIds: readEnabledModels(),
   selectedModelId: readStoredModel(),
   effortByModel: readStoredEfforts(),
   forkModelId: readStoredModel(FORK_MODEL_KEY),
@@ -1110,15 +1153,22 @@ export const useStore = create<StoreState>()((set, get) => ({
   stagedUploads: [],
   connection: 'closed',
   error: null,
+  providerAlert: null,
 
   loadModels: async () => {
     try {
-      const { models, defaultModelId } = await api.listModels()
+      const { models, providers, defaultModelId } = await api.listModels()
       set((s) => {
+        const validIds = selectableModelIds(models, providers)
+        let enabledModelIds = s.enabledModelIds.filter((id) => validIds.has(id))
+        if (!enabledModelIds.length) {
+          enabledModelIds = models.filter((model) => validIds.has(model.id)).map((model) => model.id)
+        }
+        const enabled = new Set(enabledModelIds)
         // Stale localStorage (a model removed from the catalog) falls back to the default.
         const stored = s.selectedModelId
         const selectedModelId =
-          stored && models.some((m) => m.id === stored) ? stored : defaultModelId
+          stored && enabled.has(stored) ? stored : enabledModelIds[0] ?? defaultModelId
         // Drop remembered efforts that the provider no longer offers.
         const effortByModel: Record<string, string> = {}
         for (const m of models) {
@@ -1126,8 +1176,7 @@ export const useStore = create<StoreState>()((set, get) => ({
           if (remembered && m.efforts.includes(remembered)) effortByModel[m.id] = remembered
         }
         // Same hygiene for the fork override; a stale model falls back to inherit.
-        const forkModelId =
-          s.forkModelId && models.some((m) => m.id === s.forkModelId) ? s.forkModelId : null
+        const forkModelId = s.forkModelId && enabled.has(s.forkModelId) ? s.forkModelId : null
         const forkEffortByModel: Record<string, string> = {}
         for (const m of models) {
           const remembered = s.forkEffortByModel[m.id]
@@ -1135,7 +1184,8 @@ export const useStore = create<StoreState>()((set, get) => ({
         }
         persistSelection(selectedModelId, effortByModel)
         persistForkSelection(forkModelId, forkEffortByModel)
-        return { models, selectedModelId, effortByModel, forkModelId, forkEffortByModel }
+        persistEnabledModels(enabledModelIds)
+        return { models, providers, enabledModelIds, selectedModelId, effortByModel, forkModelId, forkEffortByModel }
       })
     } catch (err) {
       // The composer falls back to the server-side default model; not fatal.
@@ -1143,9 +1193,71 @@ export const useStore = create<StoreState>()((set, get) => ({
     }
   },
 
+  refreshProviders: async () => {
+    try {
+      const { models, providers, defaultModelId } = await api.listModels(true)
+      set((s) => {
+        const previousSelectableIds = selectableModelIds(s.models, s.providers)
+        const previouslyAllEnabled =
+          previousSelectableIds.size > 0 &&
+          s.enabledModelIds.filter((id) => previousSelectableIds.has(id)).length === previousSelectableIds.size
+        const validIds = selectableModelIds(models, providers)
+        let enabledModelIds = previouslyAllEnabled
+          ? models.filter((model) => validIds.has(model.id)).map((model) => model.id)
+          : s.enabledModelIds.filter((id) => validIds.has(id))
+        if (!enabledModelIds.length) {
+          enabledModelIds = models.filter((model) => validIds.has(model.id)).map((model) => model.id)
+        }
+        const selectedModelId = enabledModelIds.includes(s.selectedModelId ?? '')
+          ? s.selectedModelId
+          : enabledModelIds[0] ?? defaultModelId
+        const forkModelId = s.forkModelId && enabledModelIds.includes(s.forkModelId)
+          ? s.forkModelId
+          : null
+        persistSelection(selectedModelId, s.effortByModel)
+        persistForkSelection(forkModelId, s.forkEffortByModel)
+        persistEnabledModels(enabledModelIds)
+        return { models, providers, enabledModelIds, selectedModelId, forkModelId }
+      })
+    } catch (err) {
+      set({ error: errorMessage(err) })
+    }
+  },
+
+  reconnectProvider: async (providerId) => {
+    try {
+      const result = await api.reconnectProvider(providerId)
+      if (!result.launched) set({ error: result.command })
+      else set({ providerAlert: { providerId, message: 'Finish signing in in Terminal, then refresh providers.' } })
+    } catch (err) {
+      set({ error: errorMessage(err) })
+    }
+  },
+
+  toggleModelEnabled: (modelId) =>
+    set((s) => {
+      if (!selectableModelIds(s.models, s.providers).has(modelId)) return {}
+      const currentlyEnabled = s.enabledModelIds.includes(modelId)
+      if (currentlyEnabled && s.enabledModelIds.length === 1) return {}
+      const nextSet = new Set(s.enabledModelIds)
+      if (currentlyEnabled) nextSet.delete(modelId)
+      else nextSet.add(modelId)
+      const enabledModelIds = s.models.filter((model) => nextSet.has(model.id)).map((model) => model.id)
+      const selectedModelId = enabledModelIds.includes(s.selectedModelId ?? '')
+        ? s.selectedModelId
+        : enabledModelIds[0] ?? null
+      const forkModelId = s.forkModelId && enabledModelIds.includes(s.forkModelId)
+        ? s.forkModelId
+        : null
+      persistEnabledModels(enabledModelIds)
+      persistSelection(selectedModelId, s.effortByModel)
+      persistForkSelection(forkModelId, s.forkEffortByModel)
+      return { enabledModelIds, selectedModelId, forkModelId }
+    }),
+
   setModel: (modelId) =>
     set((s) => {
-      if (!s.models.some((m) => m.id === modelId)) return {}
+      if (!s.enabledModelIds.includes(modelId) || !selectableModelIds(s.models, s.providers).has(modelId)) return {}
       persistSelection(modelId, s.effortByModel)
       return { selectedModelId: modelId }
     }),
@@ -1161,7 +1273,7 @@ export const useStore = create<StoreState>()((set, get) => ({
 
   setForkModel: (modelId) =>
     set((s) => {
-      if (!s.models.some((m) => m.id === modelId)) return {}
+      if (!s.enabledModelIds.includes(modelId) || !selectableModelIds(s.models, s.providers).has(modelId)) return {}
       persistForkSelection(modelId, s.forkEffortByModel)
       return { forkModelId: modelId }
     }),
@@ -1527,6 +1639,10 @@ export const useStore = create<StoreState>()((set, get) => ({
     if (!chatId) return
     const ctx: ReduceCtx = { hydrating: false, resetDuringHydration: new Set() }
     set((s) => {
+      if (event.type === 'provider.error') {
+        const detail = event.data as ProviderErrorEvent
+        return { providerAlert: { providerId: detail.providerId, message: detail.message } }
+      }
       const cs = s.byChat[chatId]
       if (!cs) return {}
       const nextCs = reduceEvent(cs, event, ctx)
@@ -1745,6 +1861,7 @@ export const useStore = create<StoreState>()((set, get) => ({
   toggleTheme: () => get().setTheme(get().theme === 'dark' ? 'light' : 'dark'),
 
   dismissError: () => set({ error: null }),
+  dismissProviderAlert: () => set({ providerAlert: null }),
 }))
 
 export const useRautmlStore = useStore
@@ -1877,6 +1994,17 @@ export const useSheetDismissed = (messageId: string | null | undefined) =>
 /* ------------------------------------------------------- model selection */
 
 export const useModels = () => useStore((s) => s.models)
+export const useEnabledModels = () => {
+  const models = useStore((s) => s.models)
+  const providers = useStore((s) => s.providers)
+  const enabledModelIds = useStore((s) => s.enabledModelIds)
+  return useMemo(() => {
+    const enabled = new Set(enabledModelIds)
+    const selectable = selectableModelIds(models, providers)
+    return models.filter((model) => enabled.has(model.id) && selectable.has(model.id))
+  }, [models, providers, enabledModelIds])
+}
+export const useProviders = () => useStore((s) => s.providers)
 
 export const useSelectedModel = () =>
   useStore((s) => s.models.find((m) => m.id === s.selectedModelId) ?? s.models[0] ?? null)
@@ -1937,3 +2065,4 @@ export const useQuestionedMarks = (assetId: string | undefined): QuestionedMark[
 export const useFollowUpAttachments = () => useStore((s) => s.followUpAttachments)
 export const useConnection = () => useStore((s) => s.connection)
 export const useStoreError = () => useStore((s) => s.error)
+export const useProviderAlert = () => useStore((s) => s.providerAlert)

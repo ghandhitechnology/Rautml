@@ -89,20 +89,33 @@ export interface StreamChatOptions {
    */
   onRetry?: () => void;
   model?: string;
+  providerId?: string;
   /** Provider reasoning effort, sent as OpenRouter's `reasoning: { effort }`. */
   reasoningEffort?: string;
   temperature?: number;
   maxRetries?: number;
+  /** Internal transport selected by llm.ts; never accepted from HTTP clients. */
+  transport?: CompatibleTransport;
 }
 
 export interface NonStreamingOptions {
   model?: string;
+  providerId?: string;
   /** Provider reasoning effort, sent as OpenRouter's `reasoning: { effort }`. */
   reasoningEffort?: string;
   temperature?: number;
   maxTokens?: number;
   signal?: AbortSignal;
   maxRetries?: number;
+  transport?: CompatibleTransport;
+}
+
+export interface CompatibleTransport {
+  endpoint: string;
+  headers: Record<string, string>;
+  name: string;
+  /** Optional provider-specific additions or rewrites. */
+  prepareBody?: (body: Record<string, unknown>) => Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------
@@ -181,13 +194,19 @@ function headers(): Record<string, string> {
   };
 }
 
-async function postChat(body: unknown, signal?: AbortSignal): Promise<Response> {
+async function postChat(
+  body: Record<string, unknown>,
+  signal?: AbortSignal,
+  transport?: CompatibleTransport,
+): Promise<Response> {
+  const target = transport?.endpoint ?? ENDPOINT;
+  const label = transport?.name ?? 'OpenRouter';
   let res: Response;
   try {
-    res = await fetch(ENDPOINT, {
+    res = await fetch(target, {
       method: 'POST',
-      headers: headers(),
-      body: JSON.stringify(body),
+      headers: transport?.headers ?? headers(),
+      body: JSON.stringify(transport?.prepareBody?.(body) ?? body),
       signal,
     });
   } catch (err) {
@@ -199,7 +218,7 @@ async function postChat(body: unknown, signal?: AbortSignal): Promise<Response> 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new OpenRouterError(
-      `OpenRouter ${res.status}: ${text.slice(0, 500) || res.statusText}`,
+      `${label} ${res.status}: ${text.slice(0, 500) || res.statusText}`,
       { status: res.status, retryable: isRetryableStatus(res.status) },
     );
   }
@@ -328,6 +347,7 @@ export async function streamChat(options: StreamChatOptions): Promise<StreamResu
     reasoningEffort,
     temperature,
     maxRetries = DEFAULT_MAX_RETRIES,
+    transport,
   } = options;
 
   let lastError: unknown;
@@ -354,7 +374,7 @@ export async function streamChat(options: StreamChatOptions): Promise<StreamResu
       if (reasoningEffort) body.reasoning = { effort: reasoningEffort };
       if (typeof temperature === 'number') body.temperature = temperature;
 
-      const res = await postChat(body, signal);
+      const res = await postChat(body, signal, transport);
       onStreamOpen?.();
 
       await readSse(res, (chunk) => {
@@ -461,6 +481,7 @@ export async function nonStreaming(
     maxTokens,
     signal,
     maxRetries = DEFAULT_MAX_RETRIES,
+    transport,
   } = options;
 
   let lastError: unknown;
@@ -473,7 +494,7 @@ export async function nonStreaming(
       if (typeof temperature === 'number') body.temperature = temperature;
       if (typeof maxTokens === 'number') body.max_tokens = maxTokens;
 
-      const res = await postChat(body, signal);
+      const res = await postChat(body, signal, transport);
       const json: any = await res.json();
       const content = json?.choices?.[0]?.message?.content;
       return typeof content === 'string' ? content : '';
