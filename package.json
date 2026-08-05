@@ -20,7 +20,7 @@
     "build:web": "npm run build -w web",
     "desktop": "npm run build && electron .",
     "pack:mac": "npm run build && electron-builder --mac dir --arm64",
-    "dist:mac": "npm run build && electron-builder --mac dmg zip --arm64",
+    "dist:mac": "npm run build && electron-builder --mac dmg zip --arm64 --publish never",
     "postinstall": "electron-builder install-app-deps",
     "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
     "test:server": "npm test -w server"
