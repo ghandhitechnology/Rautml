@@ -125,7 +125,8 @@ function readAuthFile(): CodexAuthFile | null {
 
 /** True when Codex CLI credentials exist on this machine (`codex login`). */
 export function codexAvailable(): boolean {
-  if (cachedAuth === undefined) cachedAuth = readAuthFile();
+  // Re-read so a completed `codex login` becomes visible without restarting Rautml.
+  cachedAuth = readAuthFile();
   return !!cachedAuth;
 }
 

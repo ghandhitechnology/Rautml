@@ -1,19 +1,10 @@
-// Provider dispatch: one streamChat/nonStreaming for the whole app.
-//
-// OpenAI models (openai/gpt-5.6-*) run on the user's ChatGPT subscription via
-// the Codex CLI's OAuth credentials when those exist (~/.codex/auth.json);
-// everything else — and every model when Codex auth is absent or
-// RAUTML_CODEX=0 — goes through OpenRouter. Callers keep the exact
-// openrouter.ts contract and cannot tell the providers apart.
+// Provider dispatch for Rautml's own agent engine. CLIs only discover catalogs
+// and manage local sign-in; model turns always use these in-process adapters.
 
 import * as openrouter from './openrouter.js';
 import { codexAvailable, codexNonStreaming, codexStreamChat } from './codex.js';
-import type {
-  ChatMessage,
-  NonStreamingOptions,
-  StreamChatOptions,
-  StreamResult,
-} from './openrouter.js';
+import { compatibleTransport, ProviderUnavailableError } from './providers.js';
+import type { ChatMessage, NonStreamingOptions, StreamChatOptions, StreamResult } from './openrouter.js';
 
 export type {
   ChatMessage,
@@ -26,32 +17,46 @@ export type {
   ToolChoice,
 } from './openrouter.js';
 
-const CODEX_DISABLED = process.env.RAUTML_CODEX === '0';
-
-function viaCodex(model?: string): boolean {
-  return (
-    !CODEX_DISABLED && (model ?? openrouter.MODEL).startsWith('openai/') && codexAvailable()
-  );
+function inferredProvider(model?: string): string {
+  const id = model ?? openrouter.MODEL;
+  if (id.startsWith('openai/')) return 'codex';
+  if (id.startsWith('x-ai/')) return 'grok-build';
+  if (id.startsWith('opencode-go/')) return 'opencode-go';
+  if (id.startsWith('opencode/')) return 'opencode-zen';
+  if (id.startsWith('kimi-code/')) return 'kimi-code';
+  return 'openrouter';
 }
 
-// One boot-time line so it's obvious which wallet the OpenAI models bill to.
-if (!CODEX_DISABLED && codexAvailable()) {
-  console.log('[llm] openai/* models → ChatGPT Codex OAuth (~/.codex/auth.json); others → OpenRouter');
-} else {
-  console.log('[llm] all models → OpenRouter' + (CODEX_DISABLED ? ' (RAUTML_CODEX=0)' : ''));
+function providerFor(options: { providerId?: string; model?: string }): string {
+  return options.providerId || inferredProvider(options.model);
 }
 
-export function streamChat(options: StreamChatOptions): Promise<StreamResult> {
-  return viaCodex(options.model)
-    ? codexStreamChat({ ...options, model: options.model ?? openrouter.MODEL })
-    : openrouter.streamChat(options);
+export async function streamChat(options: StreamChatOptions): Promise<StreamResult> {
+  const providerId = providerFor(options);
+  if (providerId === 'codex') {
+    if (!codexAvailable()) {
+      return Promise.reject(new ProviderUnavailableError('codex', 'Codex is not connected. Run `codex login`.'));
+    }
+    return codexStreamChat({ ...options, model: options.model ?? openrouter.MODEL });
+  }
+  return openrouter.streamChat({
+    ...options,
+    model: options.model ?? openrouter.MODEL,
+    transport: await compatibleTransport(providerId, options.model ?? openrouter.MODEL),
+  });
 }
 
-export function nonStreaming(
-  messages: ChatMessage[],
-  options: NonStreamingOptions = {},
-): Promise<string> {
-  return viaCodex(options.model)
-    ? codexNonStreaming(messages, { ...options, model: options.model ?? openrouter.MODEL })
-    : openrouter.nonStreaming(messages, options);
+export async function nonStreaming(messages: ChatMessage[], options: NonStreamingOptions = {}): Promise<string> {
+  const providerId = providerFor(options);
+  if (providerId === 'codex') {
+    if (!codexAvailable()) {
+      return Promise.reject(new ProviderUnavailableError('codex', 'Codex is not connected. Run `codex login`.'));
+    }
+    return codexNonStreaming(messages, { ...options, model: options.model ?? openrouter.MODEL });
+  }
+  return openrouter.nonStreaming(messages, {
+    ...options,
+    model: options.model ?? openrouter.MODEL,
+    transport: await compatibleTransport(providerId, options.model ?? openrouter.MODEL),
+  });
 }

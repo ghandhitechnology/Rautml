@@ -73,6 +73,7 @@ export interface Run {
   status: RunStatus
   /** OpenRouter model id the run was started with (absent on legacy rows). */
   model?: string
+  providerId?: string
   /** Provider reasoning effort the run was started with. */
   effort?: string
   /** Elaboration level the run was started with (how much terms get explained). */
@@ -84,8 +85,10 @@ export type ElaborationLevel = 'undergraduate' | 'bachelors' | 'doctor'
 
 /** One selectable model in the composer (GET /api/models). */
 export interface ModelInfo {
-  /** OpenRouter model id, e.g. 'openai/gpt-5.6-sol'. */
+  /** Stable UI selection id (`providerId:modelId`). */
   id: string
+  modelId: string
+  providerId: string
   name: string
   /** Compact label for the composer chip, e.g. 'Sol'. */
   shortName: string
@@ -94,6 +97,20 @@ export interface ModelInfo {
   /** Provider reasoning-effort wire values, in ascending order. */
   efforts: string[]
   defaultEffort: string
+}
+
+export type ProviderAuthStatus = 'connected' | 'disconnected' | 'unavailable' | 'unknown'
+
+export interface ProviderInfo {
+  id: string
+  name: string
+  description: string
+  cli: string
+  installed: boolean
+  authStatus: ProviderAuthStatus
+  authHint?: string
+  modelCount: number
+  models: ModelInfo[]
 }
 
 export interface Asset {
@@ -150,6 +167,11 @@ export interface PresentedFile {
 export interface RunStatusEvent {
   runId: string
   status: RunStatus
+}
+export interface ProviderErrorEvent {
+  runId: string
+  providerId: string
+  message: string
 }
 /**
  * What the run is doing between visible events. Emitted from the moment the
@@ -269,6 +291,7 @@ export interface ThinkingEndEvent {
 export const CHAT_EVENT_TYPES = [
   'run.status',
   'run.phase',
+  'provider.error',
   'message.start',
   'message.delta',
   'message.complete',

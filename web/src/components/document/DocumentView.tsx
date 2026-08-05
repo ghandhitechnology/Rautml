@@ -5,9 +5,9 @@
  *   2. the history overlay — the conversation slid over the page (mounted on demand)
  *   3. the header — glass chrome that stays above both, so the way back is never hidden
  *
- * The first asset of a chat arrives with `bloom` set: the stage springs up out of the place
- * the timeline occupied and its corners flatten into the column. Reopening a chat that
- * already has assets skips all of it and simply *is* the document.
+ * The first asset of a chat arrives with `bloom` set: the stage fades cleanly into the
+ * column with a restrained scale transition. Reopening a chat that already has assets
+ * skips all of it and simply *is* the document.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -30,16 +30,11 @@ import DocumentHeader from './DocumentHeader'
 import HistoryOverlay from './HistoryOverlay'
 import './DocumentView.css'
 
-const BLOOM = { type: 'spring' as const, stiffness: 220, damping: 28, mass: 0.9 }
+const BLOOM = { duration: 0.36, ease: EASE }
 const SETTLE = { duration: 0.34, ease: EASE }
 
-/* Coming back from the conversation: the page snaps forward past its resting size and
- * settles. Transform and opacity only — the stage never changes position or footprint. */
+/* Conversation history gently recedes the document without overshooting on return. */
 const RECEDED = 0.978
-const POP_KEYFRAMES = [RECEDED, 1.008, 1]
-/* Delayed just enough to land after the conversation has faded, so the pop is seen. */
-const POP = { duration: 0.42, times: [0, 0.52, 1], ease: EASE, delay: 0.07 }
-const POP_OPACITY = { duration: 0.18, ease: EASE }
 
 export interface DocumentViewProps {
   className?: string
@@ -64,14 +59,6 @@ export function DocumentView({ className }: DocumentViewProps) {
   useEffect(() => {
     if (bloom) clearBloom()
   }, [bloom, clearBloom])
-
-  /* One-shot pop on the way back to the document — armed only by a real close. */
-  const [popping, setPopping] = useState(false)
-  const wasHistoryOpen = useRef(historyOpen)
-  useEffect(() => {
-    if (wasHistoryOpen.current && !historyOpen && !reduceMotion) setPopping(true)
-    wasHistoryOpen.current = historyOpen
-  }, [historyOpen, reduceMotion])
 
   const ordered = useMemo(() => assetsNewestFirst(assets), [assets])
   const latest = Math.max(1, asset?.latestVersion || 1)
@@ -99,7 +86,7 @@ export function DocumentView({ className }: DocumentViewProps) {
     [asset],
   )
 
-  /* --------------------------------------------------------------- copy html */
+  /* ----------------------------------------------------------- download html */
 
   const htmlRef = useRef<{ key: string; html: string } | null>(null)
   const onHtmlChange = useCallback((html: string, assetId: string, v: number) => {
@@ -132,23 +119,13 @@ export function DocumentView({ className }: DocumentViewProps) {
     <div className={cx('rml-doc', className)}>
       <motion.div
         className="rml-doc__stage"
-        initial={
-          shouldBloom.current ? { opacity: 0, scale: 0.94, y: 26, borderRadius: 22 } : false
-        }
+        initial={shouldBloom.current ? { opacity: 0, scale: 0.985, borderRadius: 12 } : false}
         animate={{
           opacity: historyOpen ? 0.55 : 1,
-          scale: reduceMotion ? 1 : historyOpen ? RECEDED : popping ? POP_KEYFRAMES : 1,
-          y: 0,
+          scale: reduceMotion ? 1 : historyOpen ? RECEDED : 1,
           borderRadius: 0,
         }}
-        transition={
-          popping && !historyOpen
-            ? { ...SETTLE, scale: POP, opacity: POP_OPACITY }
-            : shouldBloom.current
-              ? BLOOM
-              : SETTLE
-        }
-        onAnimationComplete={() => setPopping(false)}
+        transition={shouldBloom.current ? BLOOM : SETTLE}
       >
         {/* one asset in, one asset out — the page itself never blinks */}
         <AnimatePresence initial={false} mode="popLayout">

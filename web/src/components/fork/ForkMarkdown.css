@@ -203,13 +203,27 @@
 
 .rml-forkmd .katex {
   font-size: 1.02em;
+  color: var(--text);
 }
 
 .rml-forkmd .katex-display {
   margin: 0.7em 0;
-  padding: 2px 0;
+  max-width: 100%;
+  padding: 4px 0;
   overflow-x: auto;
   overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.rml-forkmd .katex-display > .katex {
+  min-width: max-content;
+  white-space: nowrap;
+}
+
+.rml-forkmd .katex-error {
+  color: var(--accent-hover);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
 }
 
 .rml-forkmd img {

@@ -73,6 +73,8 @@ export interface Run {
   status: 'running' | 'awaiting_input' | 'done' | 'error' | 'stopped';
   /** OpenRouter model id the run was started with (absent on legacy rows). */
   model?: string;
+  /** Exact inference provider selected for this run. Never silently changed. */
+  providerId?: string;
   /** Provider reasoning effort the run was started with. */
   effort?: string;
   /** Elaboration level the run was started with (how much terms get explained). */
@@ -90,8 +92,12 @@ export type ElaborationLevel = 'undergraduate' | 'bachelors' | 'doctor';
 
 /** One selectable model in the composer (GET /api/models). */
 export interface ModelInfo {
-  /** OpenRouter model id, e.g. 'openai/gpt-5.6-sol'. */
+  /** Stable UI selection id (`providerId:modelId`). */
   id: string;
+  /** Model id sent to the provider. */
+  modelId: string;
+  /** Stable provider registry id. */
+  providerId: string;
   name: string;
   /** Compact label for the composer chip, e.g. 'Sol'. */
   shortName: string;
@@ -100,6 +106,20 @@ export interface ModelInfo {
   /** Provider reasoning-effort wire values, in ascending order. */
   efforts: string[];
   defaultEffort: string;
+}
+
+export type ProviderAuthStatus = 'connected' | 'disconnected' | 'unavailable' | 'unknown';
+
+export interface ProviderInfo {
+  id: string;
+  name: string;
+  description: string;
+  cli: string;
+  installed: boolean;
+  authStatus: ProviderAuthStatus;
+  authHint?: string;
+  modelCount: number;
+  models: ModelInfo[];
 }
 
 export interface Asset {

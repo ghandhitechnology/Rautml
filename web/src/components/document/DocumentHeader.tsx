@@ -2,13 +2,14 @@
  *
  * A slim glass bar hovering over the top of the page: history toggle, the asset's name in
  * Lora (doubling as the asset switcher when the chat has more than one), the version picker,
- * copy-HTML / open-in-new-tab, and the theme toggle (document mode hides the shell topbar,
+ * download-HTML / open-in-new-tab, and the theme toggle (document mode hides the shell topbar,
  * so this bar carries it). Quiet by default, legible on any document underneath it.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import type { Asset } from '../../lib/types'
+import { downloadHtmlFile, htmlDownloadFilename } from '../../lib/downloads'
 import { cx, relativeTime } from '../../lib/utils'
 import { EASE } from '../../lib/motion'
 import { Icon } from '../chat/icons'
@@ -34,7 +35,7 @@ export interface DocumentHeaderProps {
   className?: string
 }
 
-const COPIED_MS = 1600
+const DOWNLOAD_STATE_MS = 1600
 
 /* ---------------------------------------------------------------- switcher */
 
@@ -142,28 +143,28 @@ export function DocumentHeader({
   reconnecting = false,
   className,
 }: DocumentHeaderProps) {
-  const [copied, setCopied] = useState(false)
-  const [copyFailed, setCopyFailed] = useState(false)
+  const [downloaded, setDownloaded] = useState(false)
+  const [downloadFailed, setDownloadFailed] = useState(false)
   const timer = useRef<number | undefined>(undefined)
 
   useEffect(() => () => window.clearTimeout(timer.current), [])
 
-  const copyHtml = useCallback(async () => {
+  const downloadHtml = useCallback(async () => {
     window.clearTimeout(timer.current)
-    setCopyFailed(false)
+    setDownloadFailed(false)
     try {
       const html = await getHtml()
-      await navigator.clipboard.writeText(html)
-      setCopied(true)
+      downloadHtmlFile(html, htmlDownloadFilename(asset.title, version))
+      setDownloaded(true)
     } catch {
-      setCopyFailed(true)
-      setCopied(true) // the button still resolves, just in the failed voice
+      setDownloadFailed(true)
+      setDownloaded(true) // the button still resolves, just in the failed voice
     }
     timer.current = window.setTimeout(() => {
-      setCopied(false)
-      setCopyFailed(false)
-    }, COPIED_MS)
-  }, [getHtml])
+      setDownloaded(false)
+      setDownloadFailed(false)
+    }, DOWNLOAD_STATE_MS)
+  }, [asset.title, getHtml, version])
 
   const latest = Math.max(1, asset.latestVersion || 1)
 
@@ -212,26 +213,40 @@ export function DocumentHeader({
 
           <span className="rml-dochead__divider" aria-hidden="true" />
 
-          {/* Local sources sits immediately left of the copy icon, per spec. */}
+          {/* Local sources sits immediately left of the download icon. */}
           <LocalSources className="rml-dochead__sources" />
 
           <button
             type="button"
-            className={cx('rml-dochead__btn', copied && (copyFailed ? 'is-failed' : 'is-copied'))}
-            onClick={copyHtml}
-            aria-label={copyFailed ? 'Copy failed' : copied ? 'HTML copied' : 'Copy HTML'}
-            title={copyFailed ? '복사 실패 · Copy failed' : copied ? '복사됨 · Copied' : 'HTML 복사 · Copy HTML'}
+            className={cx(
+              'rml-dochead__btn',
+              downloaded && (downloadFailed ? 'is-failed' : 'is-downloaded'),
+            )}
+            onClick={downloadHtml}
+            aria-label={
+              downloadFailed ? 'Download failed' : downloaded ? 'HTML downloaded' : 'Download HTML'
+            }
+            title={
+              downloadFailed
+                ? '다운로드 실패 · Download failed'
+                : downloaded
+                  ? '다운로드됨 · Downloaded'
+                  : 'HTML 다운로드 · Download HTML'
+            }
           >
             <AnimatePresence initial={false} mode="popLayout">
               <motion.span
-                key={copied ? 'done' : 'copy'}
+                key={downloaded ? 'done' : 'download'}
                 className="rml-dochead__glyph"
                 initial={{ opacity: 0, scale: 0.6 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.6 }}
                 transition={{ duration: 0.2, ease: EASE }}
               >
-                <Icon name={copied ? (copyFailed ? 'cross' : 'check') : 'copy'} size={15} />
+                <Icon
+                  name={downloaded ? (downloadFailed ? 'cross' : 'check') : 'download'}
+                  size={15}
+                />
               </motion.span>
             </AnimatePresence>
           </button>

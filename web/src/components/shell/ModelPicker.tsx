@@ -13,6 +13,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
@@ -21,7 +22,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import {
   useForkSelectedEffort,
   useForkSelectedModel,
-  useModels,
+  useEnabledModels,
   useSelectedEffort,
   useSelectedModel,
   useStore,
@@ -66,7 +67,7 @@ export function ModelPicker({
   className,
 }: ModelPickerProps) {
   const isFork = thread === 'fork'
-  const models = useModels()
+  const models = useEnabledModels()
   const mainModel = useSelectedModel()
   const mainEffort = useSelectedEffort()
   const forkModel = useForkSelectedModel()
@@ -77,6 +78,24 @@ export function ModelPicker({
   const setEffort = useStore((s) => (isFork ? s.setForkEffort : s.setEffort))
 
   const [open, setOpen] = useState(false)
+  const providerGroups = useMemo(() => {
+    const groups = new Map<string, { id: string; name: string; models: typeof models }>()
+    for (const item of models) {
+      const group = groups.get(item.providerId)
+      if (group) group.models.push(item)
+      else groups.set(item.providerId, { id: item.providerId, name: item.provider, models: [item] })
+    }
+    return [...groups.values()]
+  }, [models])
+  const [activeProviderId, setActiveProviderId] = useState(model?.providerId ?? '')
+  const activeProvider =
+    providerGroups.find((group) => group.id === activeProviderId) ?? providerGroups[0]
+  const inlineListHeight = Math.min(Math.max(activeProvider?.models.length ?? 1, 1) * 40, 200)
+  const fullListHeight = Math.min(Math.max(activeProvider?.models.length ?? 1, 1) * 57, 240)
+
+  useEffect(() => {
+    if (open && model?.providerId) setActiveProviderId(model.providerId)
+  }, [open, model?.providerId])
 
   const rootRef = useRef<HTMLDivElement>(null)
   const chipRef = useRef<HTMLButtonElement>(null)
@@ -99,11 +118,17 @@ export function ModelPicker({
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') close(true)
     }
-    document.addEventListener('pointerdown', onPointerDown)
+    const onWindowBlur = () => close()
+    // Capture the press itself, even when the eventual target cancels the interaction.
+    document.addEventListener('pointerdown', onPointerDown, true)
     document.addEventListener('keydown', onKeyDown)
+    // The HTML preview lives in an iframe; entering it blurs this window rather
+    // than dispatching a pointer event to the parent document.
+    window.addEventListener('blur', onWindowBlur)
     return () => {
-      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('pointerdown', onPointerDown, true)
       document.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('blur', onWindowBlur)
     }
   }, [open, close])
 
@@ -181,8 +206,37 @@ export function ModelPicker({
               exit={{ opacity: 0, scale: 0.97, y: 5 }}
               transition={{ duration: 0.2, ease: EASE }}
             >
-              <ul className="rml-model__menu-list" role="listbox" aria-label="Model">
-                {models.map((m) => {
+              <div className="rml-model__providers" role="tablist" aria-label="Provider">
+                {providerGroups.map((provider) => (
+                  <button
+                    key={provider.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={provider.id === activeProvider?.id}
+                    className={cx('rml-model__provider-tab', provider.id === activeProvider?.id && 'is-active')}
+                    onClick={() => setActiveProviderId(provider.id)}
+                  >
+                    {provider.name}
+                  </button>
+                ))}
+              </div>
+              <motion.div
+                className="rml-model__menu-viewport"
+                animate={{ height: inlineListHeight }}
+                transition={{ duration: 0.32, ease: EASE }}
+              >
+                <AnimatePresence mode="popLayout" initial={false}>
+                  <motion.ul
+                    key={activeProvider?.id}
+                    className="rml-model__menu-list"
+                    role="listbox"
+                    aria-label={`${activeProvider?.name ?? ''} models`}
+                    initial={{ opacity: 0, x: 10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -10 }}
+                    transition={{ duration: 0.2, ease: EASE }}
+                  >
+                {activeProvider?.models.map((m) => {
                   const selected = m.id === model.id
                   return (
                     <li key={m.id} role="option" aria-selected={selected}>
@@ -203,7 +257,9 @@ export function ModelPicker({
                     </li>
                   )
                 })}
-              </ul>
+                  </motion.ul>
+                </AnimatePresence>
+              </motion.div>
 
               <div className="rml-model__divider" />
 
@@ -259,8 +315,38 @@ export function ModelPicker({
             exit={{ opacity: 0, scale: 0.97, y: 6 }}
             transition={{ duration: 0.22, ease: EASE }}
           >
-            <ul className="rml-model__list" role="listbox" aria-label="Model">
-              {models.map((m) => {
+            <div className="rml-model__providers" role="tablist" aria-label="Provider">
+              {providerGroups.map((provider) => (
+                <button
+                  key={provider.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={provider.id === activeProvider?.id}
+                  className={cx('rml-model__provider-tab', provider.id === activeProvider?.id && 'is-active')}
+                  onClick={() => setActiveProviderId(provider.id)}
+                >
+                  {provider.name}
+                </button>
+              ))}
+            </div>
+
+            <motion.div
+              className="rml-model__list-viewport"
+              animate={{ height: fullListHeight }}
+              transition={{ duration: 0.32, ease: EASE }}
+            >
+              <AnimatePresence mode="popLayout" initial={false}>
+                <motion.ul
+                  key={activeProvider?.id}
+                  className="rml-model__list"
+                  role="listbox"
+                  aria-label={`${activeProvider?.name ?? ''} models`}
+                  initial={{ opacity: 0, x: 12 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -12 }}
+                  transition={{ duration: 0.22, ease: EASE }}
+                >
+              {activeProvider?.models.map((m) => {
                 const selected = m.id === model.id
                 return (
                   <li key={m.id} role="option" aria-selected={selected}>
@@ -274,7 +360,6 @@ export function ModelPicker({
                         <span className="rml-model__option-desc">{m.description}</span>
                       </span>
                       <span className="rml-model__option-side">
-                        <span className="rml-model__option-provider">{m.provider}</span>
                         {selected && (
                           <svg className="rml-model__check" viewBox="0 0 14 14" aria-hidden="true">
                             <path d="M2.5 7.5l3 3 6-7" />
@@ -285,7 +370,9 @@ export function ModelPicker({
                   </li>
                 )
               })}
-            </ul>
+                </motion.ul>
+              </AnimatePresence>
+            </motion.div>
 
             <div className="rml-model__divider" />
 

@@ -10,12 +10,15 @@
 // passes them through to each provider.
 
 import type { ElaborationLevel, ModelInfo } from '../types.js';
+import { resolveProviderSelection } from './providers.js';
 
 const GPT56_EFFORTS = ['none', 'low', 'medium', 'high', 'xhigh', 'max'];
 
 export const MODELS: ModelInfo[] = [
   {
     id: 'openai/gpt-5.6-sol',
+    modelId: 'openai/gpt-5.6-sol',
+    providerId: 'codex',
     name: 'GPT-5.6 Sol',
     shortName: 'Sol',
     provider: 'OpenAI',
@@ -25,6 +28,8 @@ export const MODELS: ModelInfo[] = [
   },
   {
     id: 'openai/gpt-5.6-terra',
+    modelId: 'openai/gpt-5.6-terra',
+    providerId: 'codex',
     name: 'GPT-5.6 Terra',
     shortName: 'Terra',
     provider: 'OpenAI',
@@ -34,6 +39,8 @@ export const MODELS: ModelInfo[] = [
   },
   {
     id: 'openai/gpt-5.6-luna',
+    modelId: 'openai/gpt-5.6-luna',
+    providerId: 'codex',
     name: 'GPT-5.6 Luna',
     shortName: 'Luna',
     provider: 'OpenAI',
@@ -43,6 +50,8 @@ export const MODELS: ModelInfo[] = [
   },
   {
     id: 'x-ai/grok-4.5',
+    modelId: 'x-ai/grok-4.5',
+    providerId: 'grok-build',
     name: 'Grok 4.5',
     shortName: 'Grok 4.5',
     provider: 'xAI',
@@ -52,6 +61,8 @@ export const MODELS: ModelInfo[] = [
   },
   {
     id: 'deepseek/deepseek-v4-flash-0731',
+    modelId: 'deepseek/deepseek-v4-flash-0731',
+    providerId: 'openrouter',
     name: 'DeepSeek V4 Flash 0731',
     shortName: 'V4 Flash',
     provider: 'DeepSeek',
@@ -77,12 +88,12 @@ export function getModel(id: string): ModelInfo | undefined {
  * Validates a client-supplied selection. Returns the resolved pair, or a
  * string describing what was wrong (routes turn that into a 400).
  */
-export function resolveSelection(
+export async function resolveSelection(
   model?: string,
   effort?: string,
   elaboration?: string,
-): { model: string; effort: string; elaboration: ElaborationLevel } | string {
-  const def = getModel(model || DEFAULT_MODEL_ID);
+): Promise<{ providerId: string; model: string; selectionId: string; effort: string; elaboration: ElaborationLevel } | string> {
+  const def = await resolveProviderSelection(model);
   if (!def) return `Unknown model: ${model}`;
   if (effort !== undefined && !def.efforts.includes(effort)) {
     return `${def.name} supports reasoning effort ${def.efforts.join(' | ')}, got: ${effort}`;
@@ -91,7 +102,9 @@ export function resolveSelection(
     return `elaboration must be ${ELABORATIONS.join(' | ')}, got: ${elaboration}`;
   }
   return {
-    model: def.id,
+    providerId: def.providerId,
+    model: def.modelId,
+    selectionId: def.id,
     effort: effort ?? def.defaultEffort,
     elaboration: (elaboration as ElaborationLevel) ?? DEFAULT_ELABORATION,
   };

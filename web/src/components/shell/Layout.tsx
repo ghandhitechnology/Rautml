@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { useChatMeta, useConnection, useForkOpen, useStore, useStoreError } from '../../state/store'
+import { useChatMeta, useConnection, useForkOpen, useProviderAlert, useStore, useStoreError } from '../../state/store'
 import { cx } from '../../lib/utils'
 import { EASE } from '../../lib/motion'
 import { Icon } from '../chat/icons'
@@ -59,6 +59,9 @@ export function Layout({
   const connection = useConnection()
   const error = useStoreError()
   const dismissError = useStore((s) => s.dismissError)
+  const providerAlert = useProviderAlert()
+  const dismissProviderAlert = useStore((s) => s.dismissProviderAlert)
+  const reconnectProvider = useStore((s) => s.reconnectProvider)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed)
 
   const setDesktopSidebarCollapsed = (collapsed: boolean) => {
@@ -175,6 +178,33 @@ export function Layout({
       <aside className="rml-shell__fork" aria-hidden={!forkOpen}>
         <div className="rml-shell__fork-inner">{fork}</div>
       </aside>
+
+      <AnimatePresence>
+        {providerAlert ? (
+          <motion.div
+            className="rml-provider-warning"
+            role="alert"
+            initial={{ opacity: 0, x: '-50%', y: -18, scale: 0.98 }}
+            animate={{ opacity: 1, x: '-50%', y: 0, scale: 1 }}
+            exit={{ opacity: 0, x: '-50%', y: -12, scale: 0.98 }}
+            transition={{ duration: 0.3, ease: EASE }}
+          >
+            <span className="rml-provider-warning__icon" aria-hidden="true">!</span>
+            <span className="rml-provider-warning__copy">
+              <strong>Provider connection stopped the run</strong>
+              <small>{providerAlert.message}</small>
+            </span>
+            <button type="button" onClick={() => void reconnectProvider(providerAlert.providerId)}>Reconnect</button>
+            <button type="button" onClick={() => {
+              setDesktopSidebarCollapsed(false)
+              setNavOpen(true)
+              window.dispatchEvent(new Event('rautml:open-providers'))
+              dismissProviderAlert()
+            }}>Change provider</button>
+            <button className="rml-provider-warning__close" type="button" aria-label="Dismiss" onClick={dismissProviderAlert}>×</button>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       <AnimatePresence>
         {error ? (

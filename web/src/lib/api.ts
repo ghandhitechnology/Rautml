@@ -1,7 +1,7 @@
 /* Typed fetch wrappers for every route in CONTRACT.md § HTTP API.
  * Dev server proxies /api → http://localhost:5175 (see vite.config.ts). */
 
-import type { Chat, ChatSnapshot, FollowUpAttachment, ModelInfo, Source, Thread } from './types'
+import type { Chat, ChatSnapshot, FollowUpAttachment, ModelInfo, ProviderInfo, Source, Thread } from './types'
 
 export const API_BASE = '/api'
 
@@ -86,8 +86,12 @@ export function retitleChat(
 }
 
 /** GET /api/models → the selectable model catalog */
-export function listModels(): Promise<{ models: ModelInfo[]; defaultModelId: string }> {
-  return request<{ models: ModelInfo[]; defaultModelId: string }>('/models')
+export function listModels(refresh = false): Promise<{ models: ModelInfo[]; providers: ProviderInfo[]; defaultModelId: string }> {
+  return request<{ models: ModelInfo[]; providers: ProviderInfo[]; defaultModelId: string }>(`/models${refresh ? '?refresh=1' : ''}`)
+}
+
+export function reconnectProvider(providerId: string): Promise<{ launched: boolean; command: string }> {
+  return request(`/providers/${encodeURIComponent(providerId)}/reconnect`, { method: 'POST', body: JSON.stringify({}) })
 }
 
 /** POST /api/chats/:id/messages → { runId } (throws ApiError 409 if a run is active) */
@@ -193,7 +197,7 @@ export function eventsUrl(chatId: string, afterSeq = 0): string {
   return `${API_BASE}/chats/${encodeURIComponent(chatId)}/events?after=${afterSeq}`
 }
 
-/** Convenience: fetch an asset version's raw HTML (for copy-html / srcdoc). */
+/** Convenience: fetch an asset version's raw HTML (for download / srcdoc). */
 export async function fetchAssetHtml(
   assetId: string,
   version: number | 'latest' = 'latest',

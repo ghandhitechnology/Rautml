@@ -80,6 +80,7 @@ function rowToRun(row: any): Run {
     thread: row.thread,
     status: row.status,
     model: row.model ?? undefined,
+    providerId: row.provider ?? undefined,
     effort: row.effort ?? undefined,
     elaboration: row.elaboration ?? undefined,
     contextSeq: typeof row.context_seq === 'number' ? row.context_seq : undefined,
@@ -268,6 +269,7 @@ export function maxModelTurnSeq(chatId: string, thread: Thread): number {
 export function createRun(
   chatId: string,
   thread: Thread,
+  providerId?: string,
   model?: string,
   effort?: string,
   elaboration?: ElaborationLevel,
@@ -276,10 +278,10 @@ export function createRun(
   const id = randomUUID();
   const now = Date.now();
   db.prepare(
-    `INSERT INTO runs (id, chat_id, thread, status, error, created_at, finished_at, model, effort, elaboration, context_seq)
-     VALUES (?, ?, ?, 'running', NULL, ?, NULL, ?, ?, ?, ?)`,
-  ).run(id, chatId, thread, now, model ?? null, effort ?? null, elaboration ?? null, contextSeq ?? null);
-  return { id, chatId, thread, status: 'running', model, effort, elaboration, contextSeq };
+    `INSERT INTO runs (id, chat_id, thread, status, error, created_at, finished_at, provider, model, effort, elaboration, context_seq)
+     VALUES (?, ?, ?, 'running', NULL, ?, NULL, ?, ?, ?, ?, ?)`,
+  ).run(id, chatId, thread, now, providerId ?? null, model ?? null, effort ?? null, elaboration ?? null, contextSeq ?? null);
+  return { id, chatId, thread, status: 'running', providerId, model, effort, elaboration, contextSeq };
 }
 
 export function setRunStatus(runId: string, status: Run['status'], error?: string): void {

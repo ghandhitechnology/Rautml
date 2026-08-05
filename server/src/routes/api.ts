@@ -20,7 +20,8 @@ import { Router, type Request, type Response } from 'express';
 import multer from 'multer';
 import { SOURCES_DIR, WORKSPACES_DIR } from '../db.js';
 import * as engine from '../agent/engine.js';
-import { DEFAULT_MODEL_ID, MODELS, resolveSelection } from '../agent/models.js';
+import { resolveSelection } from '../agent/models.js';
+import { defaultModelId, discoverProviders, launchReconnect } from '../agent/providers.js';
 import * as repo from '../repo.js';
 import * as sse from '../sse.js';
 import { extForName, SUPPORTED_EXTS } from '../sources/extract.js';
@@ -131,8 +132,22 @@ router.get('/health', (_req: Request, res: Response) => {
 // models — the selectable catalog (ids, labels, per-provider effort levels)
 // ---------------------------------------------------------------------------
 
-router.get('/models', (_req: Request, res: Response) => {
-  res.json({ models: MODELS, defaultModelId: DEFAULT_MODEL_ID });
+router.get('/models', async (req: Request, res: Response) => {
+  try {
+    const refresh = req.query.refresh === '1';
+    const providers = await discoverProviders(refresh);
+    res.json({ models: providers.flatMap((p) => p.models), providers, defaultModelId: await defaultModelId() });
+  } catch (err) {
+    fail(res, 500, (err as Error)?.message ?? 'Provider discovery failed');
+  }
+});
+
+router.post('/providers/:id/reconnect', (req: Request, res: Response) => {
+  const address = req.socket.remoteAddress ?? '';
+  if (!(address === '::1' || address === '127.0.0.1' || address.startsWith('::ffff:127.'))) {
+    return fail(res, 403, 'Provider login can only be launched from this computer');
+  }
+  res.json(launchReconnect(param(req, 'id')));
 });
 
 // ---------------------------------------------------------------------------
@@ -301,7 +316,7 @@ router.post('/chats/:id/messages', async (req: Request, res: Response) => {
   const effort = typeof req.body?.effort === 'string' ? req.body.effort : undefined;
   const elaboration =
     typeof req.body?.elaboration === 'string' ? req.body.elaboration : undefined;
-  const selection = resolveSelection(model, effort, elaboration);
+  const selection = await resolveSelection(model, effort, elaboration);
   if (typeof selection === 'string') return fail(res, 400, selection);
 
   const active = repo.getActiveRun(chatId, thread);
@@ -316,7 +331,7 @@ router.post('/chats/:id/messages', async (req: Request, res: Response) => {
       chatId,
       thread,
       content,
-      selection,
+      { model: selection.selectionId, effort: selection.effort, elaboration: selection.elaboration },
       attachments,
       sourceIds,
     );

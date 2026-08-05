@@ -146,6 +146,7 @@ CREATE INDEX IF NOT EXISTS idx_source_chunks_chat ON source_chunks (chat_id);
     (c) => c.name,
   );
   if (!runCols.includes('model')) db.exec(`ALTER TABLE runs ADD COLUMN model TEXT`);
+  if (!runCols.includes('provider')) db.exec(`ALTER TABLE runs ADD COLUMN provider TEXT`);
   if (!runCols.includes('effort')) db.exec(`ALTER TABLE runs ADD COLUMN effort TEXT`);
   if (!runCols.includes('elaboration')) db.exec(`ALTER TABLE runs ADD COLUMN elaboration TEXT`);
   // Main-thread turn watermark: for a main run, the last main turn seq that
