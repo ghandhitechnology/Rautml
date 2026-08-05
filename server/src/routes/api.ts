@@ -142,12 +142,12 @@ router.get('/models', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/providers/:id/reconnect', (req: Request, res: Response) => {
+router.post('/providers/:id/reconnect', async (req: Request, res: Response) => {
   const address = req.socket.remoteAddress ?? '';
   if (!(address === '::1' || address === '127.0.0.1' || address.startsWith('::ffff:127.'))) {
     return fail(res, 403, 'Provider login can only be launched from this computer');
   }
-  res.json(launchReconnect(param(req, 'id')));
+  res.json(await launchReconnect(param(req, 'id')));
 });
 
 // ---------------------------------------------------------------------------

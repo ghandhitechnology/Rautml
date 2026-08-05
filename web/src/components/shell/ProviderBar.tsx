@@ -47,6 +47,16 @@ export function ProviderBar() {
     return () => window.removeEventListener('rautml:open-providers', show)
   }, [])
 
+  useEffect(() => {
+    // OAuth commonly leaves the app for Terminal and a browser. Refresh once on
+    // mount and whenever the user returns so a completed login is reflected
+    // without requiring a separate click on Refresh.
+    const syncAfterLogin = () => void refresh()
+    syncAfterLogin()
+    window.addEventListener('focus', syncAfterLogin)
+    return () => window.removeEventListener('focus', syncAfterLogin)
+  }, [refresh])
+
   if (!providers.length) return null
 
   const enabled = new Set(enabledModelIds)
