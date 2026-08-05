@@ -180,3 +180,32 @@
   gap: var(--sp-2);
   margin-top: var(--sp-3);
 }
+
+/* ------------------------------------------------- uploaded-file chips */
+
+.rml-msg__sources {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.rml-msg__source {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 220px;
+  padding: 3px 9px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+}
+
+.rml-msg__source span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

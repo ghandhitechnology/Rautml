@@ -36,6 +36,10 @@ import type {
   RunPhaseEvent,
   RunStatusEvent,
   RunTimeline,
+  Source,
+  SourceAddedEvent,
+  SourceRemovedEvent,
+  SourceUpdatedEvent,
   SubagentDeltaEvent,
   SubagentEndEvent,
   SubagentRun,
@@ -72,6 +76,8 @@ export interface ChatState {
   widgets: Record<string, string[]>
   /** present_files cards, per messageId. */
   files: Record<string, PresentedFile[]>
+  /** Local sources: every file uploaded into this chat, oldest first. */
+  sources: Source[]
   inputRequests: Record<Thread, InputRequest[]>
   pendingInput: PendingInput | null
   lastSeq: number
@@ -88,6 +94,19 @@ export interface ChatState {
   bloom: boolean
   /** Streaming response sheets the reader waved away, by messageId. */
   dismissedSheets: Record<string, true>
+}
+
+/** One file going (or gone) through upload, staged above the composer until sent. */
+export interface StagedUpload {
+  localId: string
+  name: string
+  size: number
+  status: 'uploading' | 'ready' | 'error'
+  /** 0–1 transport progress; server-side indexing continues after 1. */
+  progress: number
+  /** Set once the server accepted the file into local sources. */
+  sourceId?: string
+  error?: string
 }
 
 export interface StoreState {
@@ -127,6 +146,8 @@ export interface StoreState {
   forkFocus: { messageId: string; nonce: number } | null
   /** Asset fragments staged above the fork composer for the next follow-up. */
   followUpAttachments: FollowUpAttachment[]
+  /** Files uploading/uploaded for the next main-thread message. */
+  stagedUploads: StagedUpload[]
   connection: SseStatus
   error: string | null
 
@@ -161,6 +182,14 @@ export interface StoreState {
   addFollowUpAttachment: (attachment: Omit<FollowUpAttachment, 'label'>) => void
   removeFollowUpAttachment: (id: string) => void
   clearFollowUpAttachments: () => void
+  /** Upload files into the active chat's local sources and stage them on the composer. */
+  attachFiles: (files: File[]) => Promise<void>
+  /** Unstage a file; if it already reached local sources, it is deleted there too. */
+  removeStagedUpload: (localId: string) => void
+  /** Drop the staged list (uploaded files stay in local sources). */
+  clearStagedUploads: () => void
+  /** Delete a file from the chat's local sources. */
+  removeSource: (sourceId: string) => Promise<void>
   setHistoryOpen: (open: boolean) => void
   toggleHistory: () => void
   /** Show an asset in the document (and get out of the history overlay's way). */
@@ -281,6 +310,7 @@ function emptyChatState(chat: Chat): ChatState {
     assetsByMessage: {},
     widgets: {},
     files: {},
+    sources: [],
     inputRequests: { main: [], fork: [] },
     pendingInput: null,
     lastSeq: 0,
@@ -841,6 +871,27 @@ function reduceEvent(cs: ChatState, ev: ChatEvent, ctx: ReduceCtx): ChatState {
       break
     }
 
+    case 'source.added':
+    case 'source.updated': {
+      const d = ev.data as SourceAddedEvent | SourceUpdatedEvent
+      if (!d?.source?.id) break
+      const exists = next.sources.some((s) => s.id === d.source.id)
+      next = {
+        ...next,
+        sources: exists
+          ? next.sources.map((s) => (s.id === d.source.id ? { ...s, ...d.source } : s))
+          : [...next.sources, d.source],
+      }
+      break
+    }
+
+    case 'source.removed': {
+      const d = ev.data as SourceRemovedEvent
+      if (!d?.sourceId) break
+      next = { ...next, sources: next.sources.filter((s) => s.id !== d.sourceId) }
+      break
+    }
+
     case 'subagent.start': {
       const d = ev.data as SubagentStartEvent
       const runId = next.currentRunId[thread]
@@ -978,6 +1029,10 @@ function hydrate(snapshot: ChatSnapshot): ChatState {
     }
   }
 
+  // Snapshot rows are authoritative; the event replay below only merges newer
+  // states on top (a source.updated arriving mid-hydration must not be lost).
+  cs = { ...cs, sources: snapshot.sources ?? [] }
+
   const ctx: ReduceCtx = { hydrating: true, resetDuringHydration: new Set() }
   for (const ev of snapshot.events ?? []) cs = reduceEvent(cs, ev, ctx)
 
@@ -1052,6 +1107,7 @@ export const useStore = create<StoreState>()((set, get) => ({
   forkOpen: false,
   forkFocus: null,
   followUpAttachments: [],
+  stagedUploads: [],
   connection: 'closed',
   error: null,
 
@@ -1234,7 +1290,10 @@ export const useStore = create<StoreState>()((set, get) => ({
 
   removeChat: async (chatId) => {
     const wasActive = get().activeChatId === chatId
-    if (wasActive) get().clearFollowUpAttachments()
+    if (wasActive) {
+      get().clearFollowUpAttachments()
+      get().clearStagedUploads()
+    }
     if (get().draftChatId === chatId) set({ draftChatId: null })
     // optimistic — the row disappears the instant you click.
     const snapshot = get().chats
@@ -1263,6 +1322,7 @@ export const useStore = create<StoreState>()((set, get) => ({
     const previousChatId = get().activeChatId
     if (previousChatId && previousChatId !== chatId) {
       get().clearFollowUpAttachments()
+      get().clearStagedUploads()
       void get().retitleOnExit(previousChatId)
     }
     disconnect()
@@ -1323,6 +1383,7 @@ export const useStore = create<StoreState>()((set, get) => ({
     void get().retitleOnExit()
     get().discardDraft()
     get().clearFollowUpAttachments()
+    get().clearStagedUploads()
     disconnect()
     set({ activeChatId: null, forkOpen: false, connection: 'closed' })
   },
@@ -1335,6 +1396,13 @@ export const useStore = create<StoreState>()((set, get) => ({
     if (!cs) return
     const hadInitialExchange = isAfterInitialExchange(cs)
     const context = thread === 'fork' ? attachments.slice(0, 6) : []
+    // Uploaded files staged on the composer ride along with the next main send.
+    const stagedSourceIds =
+      thread === 'main'
+        ? get()
+            .stagedUploads.filter((u) => u.status === 'ready' && u.sourceId)
+            .map((u) => u.sourceId!)
+        : []
 
     const localId = uid('local-')
     const optimistic: Message = {
@@ -1345,6 +1413,7 @@ export const useStore = create<StoreState>()((set, get) => ({
       content: trimmed,
       status: 'complete',
       ...(context.length ? { attachments: context } : {}),
+      ...(stagedSourceIds.length ? { sourceIds: stagedSourceIds } : {}),
       createdAt: Date.now(),
     }
     set((s) => {
@@ -1378,7 +1447,20 @@ export const useStore = create<StoreState>()((set, get) => ({
         ...(model ? { model: model.id, effort: resolvedEffort(model.id, model.defaultEffort) } : {}),
         elaboration,
       }
-      const { runId } = await api.sendMessage(chatId, trimmed, thread, selection, context)
+      const { runId } = await api.sendMessage(
+        chatId,
+        trimmed,
+        thread,
+        selection,
+        context,
+        stagedSourceIds,
+      )
+      if (stagedSourceIds.length) {
+        const sent = new Set(stagedSourceIds)
+        set((s) => ({
+          stagedUploads: s.stagedUploads.filter((u) => !u.sourceId || !sent.has(u.sourceId)),
+        }))
+      }
       set((s) => {
         const current = s.byChat[chatId]
         if (!current) return {}
@@ -1564,6 +1646,68 @@ export const useStore = create<StoreState>()((set, get) => ({
     set({ followUpAttachments: [] })
   },
 
+  attachFiles: async (files) => {
+    const chatId = get().activeChatId
+    if (!chatId || !files.length) return
+
+    const patchStaged = (localId: string, patch: Partial<StagedUpload>) =>
+      set((s) => ({
+        stagedUploads: s.stagedUploads.map((u) => (u.localId === localId ? { ...u, ...patch } : u)),
+      }))
+
+    // One request per file: per-file progress, and one bad file can't sink the rest.
+    await Promise.all(
+      files.map(async (file) => {
+        const localId = uid('upload-')
+        set((s) => ({
+          stagedUploads: [
+            ...s.stagedUploads,
+            { localId, name: file.name, size: file.size, status: 'uploading', progress: 0 },
+          ],
+        }))
+        try {
+          const result = await api.uploadSources(chatId, [file], (progress) =>
+            patchStaged(localId, { progress }),
+          )
+          const source = result.sources[0]
+          if (source) {
+            patchStaged(localId, { status: 'ready', progress: 1, sourceId: source.id })
+          } else {
+            patchStaged(localId, {
+              status: 'error',
+              error: result.rejected[0]?.error ?? 'Upload rejected',
+            })
+          }
+        } catch (err) {
+          patchStaged(localId, { status: 'error', error: errorMessage(err) })
+        }
+      }),
+    )
+  },
+
+  removeStagedUpload: (localId) => {
+    const staged = get().stagedUploads.find((u) => u.localId === localId)
+    if (staged?.sourceId) {
+      // Unstaging before sending withdraws the file from local sources too.
+      void api.deleteSource(staged.sourceId).catch(() => {})
+    }
+    set((s) => ({ stagedUploads: s.stagedUploads.filter((u) => u.localId !== localId) }))
+  },
+
+  clearStagedUploads: () => set({ stagedUploads: [] }),
+
+  removeSource: async (sourceId) => {
+    // The optimistic path: source.removed comes back over SSE, but pulling it
+    // out immediately keeps the panel snappy.
+    set(patchActive((cs) => ({ ...cs, sources: cs.sources.filter((s) => s.id !== sourceId) })))
+    set((s) => ({ stagedUploads: s.stagedUploads.filter((u) => u.sourceId !== sourceId) }))
+    try {
+      await api.deleteSource(sourceId)
+    } catch (err) {
+      set({ error: errorMessage(err) })
+    }
+  },
+
   setHistoryOpen: (open) => set(patchActive((cs) => (cs.historyOpen === open ? cs : { ...cs, historyOpen: open }))),
 
   toggleHistory: () => set(patchActive((cs) => ({ ...cs, historyOpen: !cs.historyOpen }))),
@@ -1659,6 +1803,13 @@ export const useWidgets = (messageId: string) =>
 
 export const usePresentedFiles = (messageId: string) =>
   useStore((s) => activeChatState(s)?.files[messageId] ?? EMPTY_FILES)
+
+const EMPTY_SOURCES: Source[] = []
+
+/** Every file in the active chat's local sources, oldest first. */
+export const useSources = () => useStore((s) => activeChatState(s)?.sources ?? EMPTY_SOURCES)
+
+export const useStagedUploads = () => useStore((s) => s.stagedUploads)
 
 export const useInputRequests = (thread: Thread = 'main') =>
   useStore((s) => activeChatState(s)?.inputRequests[thread] ?? EMPTY_INPUTS)

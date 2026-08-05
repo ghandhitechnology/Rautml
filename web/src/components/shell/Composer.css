@@ -67,6 +67,107 @@
   outline: none;
 }
 
+.rml-composer__field.is-dragover {
+  border-color: var(--accent);
+  box-shadow:
+    var(--shadow-md),
+    0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  background: color-mix(in srgb, var(--accent-soft) 40%, var(--surface));
+}
+
+.rml-composer__attach {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-bottom: 2px;
+  border-radius: var(--r-pill);
+  color: var(--text-muted);
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.rml-composer__attach:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+/* --------------------------------------------------------- staged uploads */
+
+.rml-composer__uploads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  padding-inline: var(--sp-2);
+}
+
+.rml-composer__upload {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 260px;
+  padding: 4px 6px 4px 10px;
+  font-size: var(--fs-xs);
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  box-shadow: var(--shadow-sm);
+}
+
+.rml-composer__upload.is-error {
+  border-color: color-mix(in srgb, #c0392b 45%, var(--border));
+  color: color-mix(in srgb, #c0392b 70%, var(--text));
+}
+
+.rml-composer__upload-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.rml-composer__upload-meta {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rml-composer__upload-remove {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-pill);
+  color: var(--text-muted);
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.rml-composer__upload-remove:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+/* conic progress ring while the bytes travel */
+.rml-composer__upload-ring {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background:
+    conic-gradient(var(--accent) calc(var(--progress, 0) * 360deg), var(--surface-2) 0);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+}
+
 .rml-composer__model {
   /* optically centers the 28px chip against the 32px send button */
   margin-bottom: 2px;

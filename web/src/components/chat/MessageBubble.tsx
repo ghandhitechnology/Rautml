@@ -7,6 +7,7 @@
 import type { ReactNode } from 'react'
 import { cx } from '../../lib/utils'
 import type { Message } from '../../lib/types'
+import { useSources } from '../../state/store'
 import Markdown from './Markdown'
 import { Icon } from './icons'
 import './MessageBubble.css'
@@ -20,6 +21,24 @@ export interface MessageBubbleProps {
   /** Show the three-dot thinking indicator when an assistant turn has no text yet. */
   thinking?: boolean
   className?: string
+}
+
+/** File chips under a user bubble — the sources uploaded with that message. */
+function SourceChips({ sourceIds }: { sourceIds: string[] }) {
+  const sources = useSources()
+  return (
+    <ul className="rml-msg__sources">
+      {sourceIds.map((id) => {
+        const source = sources.find((s) => s.id === id)
+        return (
+          <li key={id} className="rml-msg__source" title={source?.name}>
+            <Icon name="paperclip" size={11} />
+            <span>{source?.name ?? 'Uploaded file'}</span>
+          </li>
+        )
+      })}
+    </ul>
+  )
 }
 
 function ThinkingDots() {
@@ -60,6 +79,7 @@ export function MessageBubble({
       {isUser ? (
         <div className="rml-msg__bubble">
           <p className="rml-msg__text">{message.content}</p>
+          {message.sourceIds?.length ? <SourceChips sourceIds={message.sourceIds} /> : null}
         </div>
       ) : (
         <div className="rml-msg__body">

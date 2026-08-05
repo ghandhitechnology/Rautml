@@ -4,17 +4,23 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type ChangeEvent,
+  type DragEvent,
   type KeyboardEvent,
   type ReactNode,
 } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { useActiveChatId, useIsRunning, useStore } from '../../state/store'
+import { useActiveChatId, useIsRunning, useStagedUploads, useStore } from '../../state/store'
 import type { Thread } from '../../lib/types'
-import { cx } from '../../lib/utils'
+import { cx, formatBytes } from '../../lib/utils'
 import { EASE } from '../../lib/motion'
+import { Icon } from '../chat/icons'
 import { ElaborationPicker } from './ElaborationPicker'
 import { ModelPicker } from './ModelPicker'
 import './Composer.css'
+
+/** The upload types local sources can extract text from. */
+const ACCEPT_EXTS = '.pdf,.csv,.docx,.pptx,.md,.markdown,.tex,.hwp,.hwpx'
 
 export interface ComposerProps {
   /** Which thread this composer writes to. Defaults to the main chat. */
@@ -51,15 +57,48 @@ export function Composer({
   className,
 }: ComposerProps) {
   const [value, setValue] = useState('')
+  const [dragOver, setDragOver] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
   const activeChatId = useActiveChatId()
   const storeRunning = useIsRunning(thread)
   const sendMessage = useStore((s) => s.sendMessage)
   const stopRun = useStore((s) => s.stopRun)
+  const attachFiles = useStore((s) => s.attachFiles)
+  const removeStagedUpload = useStore((s) => s.removeStagedUpload)
+  const stagedUploads = useStagedUploads()
+
+  // File attach lives on the main composer only; the fork panel asks about
+  // the chat, it doesn't feed it.
+  const canAttach = thread === 'main' && !compact && !!activeChatId && !disabled
+  const staged = canAttach ? stagedUploads : []
+  const uploading = staged.some((u) => u.status === 'uploading')
 
   const isRunning = running ?? storeRunning
   const isDisabled = disabled || (!activeChatId && !onSend)
-  const canSend = value.trim().length > 0 && !isRunning && !isDisabled
+  const canSend = value.trim().length > 0 && !isRunning && !isDisabled && !uploading
+
+  const pickFiles = () => fileRef.current?.click()
+
+  const handleFileInput = (e: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    e.target.value = '' // picking the same file twice must re-fire onChange
+    if (files.length) void attachFiles(files)
+  }
+
+  const handleDragOver = (e: DragEvent) => {
+    if (!canAttach || !e.dataTransfer.types.includes('Files')) return
+    e.preventDefault()
+    setDragOver(true)
+  }
+
+  const handleDrop = (e: DragEvent) => {
+    if (!canAttach) return
+    e.preventDefault()
+    setDragOver(false)
+    const files = Array.from(e.dataTransfer.files ?? [])
+    if (files.length) void attachFiles(files)
+  }
 
   // autosize: collapse then grow to content, capped.
   useLayoutEffect(() => {
@@ -102,7 +141,54 @@ export function Composer({
 
   return (
     <div className={cx('rml-composer', compact && 'rml-composer--compact', className)}>
-      <div className={cx('rml-composer__field', isRunning && 'is-running')}>
+      <AnimatePresence>
+        {staged.length > 0 ? (
+          <motion.ul
+            className="rml-composer__uploads"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 4 }}
+            transition={{ duration: 0.2, ease: EASE }}
+          >
+            {staged.map((u) => (
+              <li
+                key={u.localId}
+                className={cx('rml-composer__upload', `is-${u.status}`)}
+                title={u.status === 'error' ? u.error : `${u.name} · ${formatBytes(u.size)}`}
+              >
+                {u.status === 'uploading' ? (
+                  <span
+                    className="rml-composer__upload-ring"
+                    style={{ ['--progress' as string]: u.progress }}
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <Icon name={u.status === 'error' ? 'alert' : 'file'} size={13} />
+                )}
+                <span className="rml-composer__upload-name">{u.name}</span>
+                <span className="rml-composer__upload-meta">
+                  {u.status === 'error' ? (u.error ?? 'failed') : formatBytes(u.size)}
+                </span>
+                <button
+                  type="button"
+                  className="rml-composer__upload-remove"
+                  onClick={() => removeStagedUpload(u.localId)}
+                  aria-label={`Remove ${u.name}`}
+                >
+                  <Icon name="cross" size={11} />
+                </button>
+              </li>
+            ))}
+          </motion.ul>
+        ) : null}
+      </AnimatePresence>
+
+      <div
+        className={cx('rml-composer__field', isRunning && 'is-running', dragOver && 'is-dragover')}
+        onDragOver={handleDragOver}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={handleDrop}
+      >
         <textarea
           ref={ref}
           className="rml-composer__input"
@@ -118,6 +204,29 @@ export function Composer({
           spellCheck={false}
           aria-label={thread === 'fork' ? 'Fork message' : 'Message'}
         />
+
+        {/* Attach files into the chat's local sources; they ride the next send. */}
+        {canAttach && (
+          <>
+            <input
+              ref={fileRef}
+              type="file"
+              accept={ACCEPT_EXTS}
+              multiple
+              hidden
+              onChange={handleFileInput}
+            />
+            <button
+              type="button"
+              className="rml-composer__attach"
+              onClick={pickFiles}
+              aria-label="Attach files"
+              title="파일 첨부 · Attach files (pdf, csv, docx, pptx, md, tex, hwp, hwpx)"
+            >
+              <Icon name="paperclip" size={16} />
+            </button>
+          </>
+        )}
 
         {/* Elaboration + model + effort selection travels with the next message;
             fork inherits it. The audience pebble sits left of the model pebble. */}
@@ -166,11 +275,14 @@ export function Composer({
       </div>
 
       <div className="rml-composer__footnote">
-        {hint ?? (
-          <span className="rml-composer__hint">
-            <kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line
-          </span>
-        )}
+        {hint ??
+          (uploading ? (
+            <span className="rml-composer__hint">Uploading files…</span>
+          ) : (
+            <span className="rml-composer__hint">
+              <kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line
+            </span>
+          ))}
       </div>
     </div>
   )

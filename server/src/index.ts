@@ -17,6 +17,13 @@ const { default: express } = await import('express');
 // Ensures data dirs (server/data, server/data/workspaces) + schema exist.
 await import('./db.js');
 const { default: apiRouter } = await import('./routes/api.js');
+const { resumePendingIndexing } = await import('./sources/indexer.js');
+const { preloadEmbeddings } = await import('./sources/embeddings.js');
+
+// Sources stuck in 'processing' by a restart pick up where they left off, and
+// the embedding model warms in the background so the first upload is instant.
+resumePendingIndexing();
+preloadEmbeddings();
 
 const app = express();
 app.use(express.json({ limit: '20mb' }));

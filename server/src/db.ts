@@ -7,10 +7,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export const DATA_DIR = path.join(__dirname, '..', 'data');
 export const WORKSPACES_DIR = path.join(DATA_DIR, 'workspaces');
+export const SOURCES_DIR = path.join(DATA_DIR, 'sources');
 export const DB_PATH = path.join(DATA_DIR, 'rautml.db');
 
 mkdirSync(DATA_DIR, { recursive: true });
 mkdirSync(WORKSPACES_DIR, { recursive: true });
+mkdirSync(SOURCES_DIR, { recursive: true });
 
 export const db = new DatabaseSync(DB_PATH);
 
@@ -92,6 +94,36 @@ CREATE TABLE IF NOT EXISTS pending_inputs (
   resolved INTEGER DEFAULT 0
 );
 
+-- Local sources: files the user uploaded into the chat. The raw file and its
+-- extracted text live under data/sources/<chatId>/<sourceId>/; the DB holds
+-- metadata plus the semantic-search chunks.
+CREATE TABLE IF NOT EXISTS sources (
+  id TEXT PRIMARY KEY,
+  chat_id TEXT,
+  name TEXT,
+  ext TEXT,
+  mime TEXT,
+  size INTEGER,
+  status TEXT DEFAULT 'processing',  -- 'processing'|'ready'|'error'
+  error TEXT,
+  text_chars INTEGER DEFAULT 0,
+  chunk_count INTEGER DEFAULT 0,
+  created_at INTEGER
+);
+
+-- embedding: Float32Array bytes (normalized), NULL when the local embedding
+-- model was unavailable at index time (lexical fallback still works).
+CREATE TABLE IF NOT EXISTS source_chunks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_id TEXT,
+  chat_id TEXT,
+  seq INTEGER,
+  start_off INTEGER,
+  end_off INTEGER,
+  text TEXT,
+  embedding BLOB
+);
+
 -- Indices for the access patterns repo.ts needs. Additive only, no schema
 -- deviation (all columns above match CONTRACT.md verbatim).
 CREATE INDEX IF NOT EXISTS idx_messages_chat_thread ON messages (chat_id, thread, created_at);
@@ -101,6 +133,9 @@ CREATE INDEX IF NOT EXISTS idx_tool_events_chat_seq ON tool_events (chat_id, seq
 CREATE INDEX IF NOT EXISTS idx_assets_chat ON assets (chat_id);
 CREATE INDEX IF NOT EXISTS idx_asset_versions_asset_version ON asset_versions (asset_id, version);
 CREATE INDEX IF NOT EXISTS idx_pending_inputs_chat_resolved ON pending_inputs (chat_id, resolved);
+CREATE INDEX IF NOT EXISTS idx_sources_chat ON sources (chat_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_source_chunks_source ON source_chunks (source_id, seq);
+CREATE INDEX IF NOT EXISTS idx_source_chunks_chat ON source_chunks (chat_id);
 `);
 
 // Migration: runs remember which model + reasoning effort + elaboration level
@@ -128,5 +163,10 @@ CREATE INDEX IF NOT EXISTS idx_pending_inputs_chat_resolved ON pending_inputs (c
   );
   if (!messageCols.includes('attachments')) {
     db.exec(`ALTER TABLE messages ADD COLUMN attachments TEXT`);
+  }
+  // Uploaded files sent with a message — JSON array of source ids, so the
+  // thread can render file chips on the user bubble.
+  if (!messageCols.includes('source_ids')) {
+    db.exec(`ALTER TABLE messages ADD COLUMN source_ids TEXT`);
   }
 }

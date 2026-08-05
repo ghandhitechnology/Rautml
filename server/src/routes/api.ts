@@ -13,17 +13,50 @@
 //
 // All persistence goes through repo.ts; all agent work goes through engine.ts;
 // all fan-out goes through sse.ts. No SQL and no model calls live here.
-import { promises as fs } from 'node:fs';
+import { mkdirSync, promises as fs } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { Router, type Request, type Response } from 'express';
-import { WORKSPACES_DIR } from '../db.js';
+import multer from 'multer';
+import { SOURCES_DIR, WORKSPACES_DIR } from '../db.js';
 import * as engine from '../agent/engine.js';
 import { DEFAULT_MODEL_ID, MODELS, resolveSelection } from '../agent/models.js';
 import * as repo from '../repo.js';
 import * as sse from '../sse.js';
+import { extForName, SUPPORTED_EXTS } from '../sources/extract.js';
+import { enqueueIndex, rawFilePath, sourceDir } from '../sources/indexer.js';
 import type { FollowUpAttachment, Message, Thread } from '../types.js';
 
 const router = Router();
+
+// ---------------------------------------------------------------------------
+// uploads — multipart into a per-chat staging dir, then moved per source.
+// Per-file cap 400MB; no limit on the number of files per request or per chat.
+// ---------------------------------------------------------------------------
+
+export const SOURCE_FILE_SIZE_LIMIT = 400 * 1024 * 1024;
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (req, _file, cb) => {
+      const dir = path.join(SOURCES_DIR, param(req as Request, 'id'), '.incoming');
+      mkdirSync(dir, { recursive: true });
+      cb(null, dir);
+    },
+    filename: (_req, _file, cb) => cb(null, randomUUID()),
+  }),
+  limits: { fileSize: SOURCE_FILE_SIZE_LIMIT },
+});
+
+/** Multer decodes filenames as latin1; Korean names need the round-trip. */
+function decodeOriginalName(name: string): string {
+  try {
+    const decoded = Buffer.from(name, 'latin1').toString('utf8');
+    return decoded.includes('�') ? name : decoded;
+  } catch {
+    return name;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -142,7 +175,76 @@ router.get('/chats/:id', (req: Request, res: Response) => {
     events: repo.listEventsAfter(chatId, 0),
     pendingInput: repo.getUnresolvedInput(chatId) ?? null,
     activeRun,
+    sources: repo.listSources(chatId),
   });
+});
+
+// ---------------------------------------------------------------------------
+// sources — uploaded files persisted into the chat's local sources area
+// ---------------------------------------------------------------------------
+
+router.post('/chats/:id/sources', (req: Request, res: Response) => {
+  const chatId = param(req, 'id');
+  const chat = repo.getChat(chatId);
+  if (!chat) return fail(res, 404, 'Chat not found');
+
+  upload.array('files')(req, res, async (err: unknown) => {
+    if (err) {
+      const message =
+        (err as { code?: string })?.code === 'LIMIT_FILE_SIZE'
+          ? 'A file exceeds the 400MB upload limit'
+          : ((err as Error)?.message ?? 'Upload failed');
+      return fail(res, 400, message);
+    }
+
+    const files = (req.files as Express.Multer.File[] | undefined) ?? [];
+    if (!files.length) return fail(res, 400, 'No files in the request (field name: files)');
+
+    const sources = [];
+    const rejected: { name: string; error: string }[] = [];
+    for (const file of files) {
+      const name = decodeOriginalName(file.originalname);
+      const ext = extForName(name);
+      if (!ext) {
+        rejected.push({
+          name,
+          error: `Unsupported type — allowed: ${SUPPORTED_EXTS.map((e) => `.${e}`).join(', ')}`,
+        });
+        await fs.rm(file.path, { force: true });
+        continue;
+      }
+      const source = repo.createSource({ chatId, name, ext, mime: file.mimetype, size: file.size });
+      await fs.mkdir(sourceDir(chatId, source.id), { recursive: true });
+      await fs.rename(file.path, rawFilePath(source));
+      sse.publish(chatId, 'main', 'source.added', { source });
+      enqueueIndex(source.id);
+      sources.push(source);
+    }
+    repo.touchChat(chatId);
+    res.json({ sources, rejected });
+  });
+});
+
+router.get('/chats/:id/sources', (req: Request, res: Response) => {
+  const chatId = param(req, 'id');
+  if (!repo.getChat(chatId)) return fail(res, 404, 'Chat not found');
+  res.json(repo.listSources(chatId));
+});
+
+router.get('/sources/:sourceId/file', (req: Request, res: Response) => {
+  const source = repo.getSource(param(req, 'sourceId'));
+  if (!source) return fail(res, 404, 'Source not found');
+  res.setHeader('Cache-Control', 'no-store');
+  res.download(rawFilePath(source), source.name);
+});
+
+router.delete('/sources/:sourceId', async (req: Request, res: Response) => {
+  const source = repo.getSource(param(req, 'sourceId'));
+  if (!source) return fail(res, 404, 'Source not found');
+  repo.deleteSource(source.id);
+  await fs.rm(sourceDir(source.chatId, source.id), { recursive: true, force: true });
+  sse.publish(source.chatId, 'main', 'source.removed', { sourceId: source.id });
+  res.json({ ok: true });
 });
 
 router.post('/chats/:id/retitle', async (req: Request, res: Response) => {
@@ -180,6 +282,21 @@ router.post('/chats/:id/messages', async (req: Request, res: Response) => {
     return fail(res, 400, 'context attachments are only supported on the fork thread');
   }
 
+  // Local sources uploaded with this message — each must belong to this chat.
+  const rawSourceIds = req.body?.sourceIds;
+  if (rawSourceIds != null && !Array.isArray(rawSourceIds)) {
+    return fail(res, 400, 'sourceIds must be an array of strings');
+  }
+  const sourceIds: string[] = [];
+  for (const raw of (rawSourceIds as unknown[]) ?? []) {
+    if (typeof raw !== 'string') return fail(res, 400, 'sourceIds must be an array of strings');
+    const source = repo.getSource(raw);
+    if (!source || source.chatId !== chatId) {
+      return fail(res, 400, `Unknown source: ${raw}`);
+    }
+    sourceIds.push(raw);
+  }
+
   const model = typeof req.body?.model === 'string' ? req.body.model : undefined;
   const effort = typeof req.body?.effort === 'string' ? req.body.effort : undefined;
   const elaboration =
@@ -195,7 +312,14 @@ router.post('/chats/:id/messages', async (req: Request, res: Response) => {
   }
 
   try {
-    const { runId } = await engine.startRun(chatId, thread, content, selection, attachments);
+    const { runId } = await engine.startRun(
+      chatId,
+      thread,
+      content,
+      selection,
+      attachments,
+      sourceIds,
+    );
     res.json({ runId });
   } catch (err) {
     console.error('[api] startRun failed', err);

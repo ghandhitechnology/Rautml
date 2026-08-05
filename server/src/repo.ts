@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { db, WORKSPACES_DIR } from './db.js';
+import { db, SOURCES_DIR, WORKSPACES_DIR } from './db.js';
 import type {
   Asset,
   AssetWithVersions,
@@ -12,6 +12,7 @@ import type {
   Message,
   PendingInput,
   Run,
+  Source,
   Thread,
 } from './types.js';
 
@@ -33,6 +34,15 @@ function rowToMessage(row: any): Message {
       /* A corrupt optional payload must not make the conversation unreadable. */
     }
   }
+  let sourceIds: string[] | undefined;
+  if (typeof row.source_ids === 'string' && row.source_ids) {
+    try {
+      const parsed = JSON.parse(row.source_ids);
+      if (Array.isArray(parsed)) sourceIds = parsed.filter((v) => typeof v === 'string');
+    } catch {
+      /* A corrupt optional payload must not make the conversation unreadable. */
+    }
+  }
   return {
     id: row.id,
     chatId: row.chat_id,
@@ -42,6 +52,23 @@ function rowToMessage(row: any): Message {
     status: row.status,
     runId: row.run_id ?? undefined,
     ...(attachments?.length ? { attachments } : {}),
+    ...(sourceIds?.length ? { sourceIds } : {}),
+    createdAt: row.created_at,
+  };
+}
+
+function rowToSource(row: any): Source {
+  return {
+    id: row.id,
+    chatId: row.chat_id,
+    name: row.name,
+    ext: row.ext,
+    mime: row.mime,
+    size: row.size,
+    status: row.status,
+    error: row.error ?? undefined,
+    textChars: row.text_chars ?? 0,
+    chunkCount: row.chunk_count ?? 0,
     createdAt: row.created_at,
   };
 }
@@ -110,6 +137,8 @@ export function deleteChat(id: string): void {
     db.prepare(`DELETE FROM model_turns WHERE chat_id = ?`).run(id);
     db.prepare(`DELETE FROM messages WHERE chat_id = ?`).run(id);
     db.prepare(`DELETE FROM runs WHERE chat_id = ?`).run(id);
+    db.prepare(`DELETE FROM source_chunks WHERE chat_id = ?`).run(id);
+    db.prepare(`DELETE FROM sources WHERE chat_id = ?`).run(id);
     db.prepare(`DELETE FROM chats WHERE id = ?`).run(id);
     db.exec('COMMIT');
   } catch (err) {
@@ -117,6 +146,7 @@ export function deleteChat(id: string): void {
     throw err;
   }
   rmSync(path.join(WORKSPACES_DIR, id), { recursive: true, force: true });
+  rmSync(path.join(SOURCES_DIR, id), { recursive: true, force: true });
 }
 
 export function touchChat(id: string): void {
@@ -140,13 +170,14 @@ export function insertMessage(input: {
   runId?: string;
   id?: string;
   attachments?: Message['attachments'];
+  sourceIds?: string[];
 }): Message {
   const id = input.id ?? randomUUID();
   const now = Date.now();
   const status = input.status ?? 'complete';
   db.prepare(
-    `INSERT INTO messages (id, chat_id, thread, role, content, status, run_id, attachments, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO messages (id, chat_id, thread, role, content, status, run_id, attachments, source_ids, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     input.chatId,
@@ -156,6 +187,7 @@ export function insertMessage(input: {
     status,
     input.runId ?? null,
     input.attachments?.length ? JSON.stringify(input.attachments) : null,
+    input.sourceIds?.length ? JSON.stringify(input.sourceIds) : null,
     now,
   );
   return {
@@ -167,6 +199,7 @@ export function insertMessage(input: {
     status,
     runId: input.runId,
     ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+    ...(input.sourceIds?.length ? { sourceIds: input.sourceIds } : {}),
     createdAt: now,
   };
 }
@@ -387,6 +420,125 @@ export function listAssetsWithLatest(chatId: string): AssetWithVersions[] {
 export function findAssetByPath(chatId: string, relPath: string): Asset | undefined {
   const row = db.prepare(`${ASSET_SELECT} WHERE a.chat_id = ? AND a.rel_path = ?`).get(chatId, relPath) as any;
   return row ? rowToAsset(row) : undefined;
+}
+
+// ---------------------------------------------------------------------------
+// sources — uploaded files + their semantic-search chunks
+// ---------------------------------------------------------------------------
+
+export function createSource(input: {
+  chatId: string;
+  name: string;
+  ext: string;
+  mime: string;
+  size: number;
+  id?: string;
+}): Source {
+  const id = input.id ?? randomUUID();
+  const now = Date.now();
+  db.prepare(
+    `INSERT INTO sources (id, chat_id, name, ext, mime, size, status, error, text_chars, chunk_count, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, 'processing', NULL, 0, 0, ?)`,
+  ).run(id, input.chatId, input.name, input.ext, input.mime, input.size, now);
+  return {
+    id,
+    chatId: input.chatId,
+    name: input.name,
+    ext: input.ext,
+    mime: input.mime,
+    size: input.size,
+    status: 'processing',
+    textChars: 0,
+    chunkCount: 0,
+    createdAt: now,
+  };
+}
+
+export function getSource(id: string): Source | undefined {
+  const row = db.prepare(`SELECT * FROM sources WHERE id = ?`).get(id) as any;
+  return row ? rowToSource(row) : undefined;
+}
+
+export function listSources(chatId: string): Source[] {
+  const rows = db
+    .prepare(`SELECT * FROM sources WHERE chat_id = ? ORDER BY created_at ASC, rowid ASC`)
+    .all(chatId) as any[];
+  return rows.map(rowToSource);
+}
+
+/** Every source still mid-index — re-enqueued on boot so a restart can't strand them. */
+export function listProcessingSources(): Source[] {
+  const rows = db.prepare(`SELECT * FROM sources WHERE status = 'processing'`).all() as any[];
+  return rows.map(rowToSource);
+}
+
+export function setSourceError(id: string, error: string): void {
+  db.prepare(`UPDATE sources SET status = 'error', error = ? WHERE id = ?`).run(
+    error.slice(0, 500),
+    id,
+  );
+}
+
+export function setSourceReady(id: string, textChars: number, chunkCount: number): void {
+  db.prepare(
+    `UPDATE sources SET status = 'ready', error = NULL, text_chars = ?, chunk_count = ? WHERE id = ?`,
+  ).run(textChars, chunkCount, id);
+}
+
+export function deleteSource(id: string): void {
+  db.exec('BEGIN');
+  try {
+    db.prepare(`DELETE FROM source_chunks WHERE source_id = ?`).run(id);
+    db.prepare(`DELETE FROM sources WHERE id = ?`).run(id);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
+export interface SourceChunk {
+  sourceId: string;
+  seq: number;
+  startOff: number;
+  endOff: number;
+  text: string;
+  /** Normalized float32 vector bytes; null when indexed without embeddings. */
+  embedding: Uint8Array | null;
+}
+
+export function replaceSourceChunks(sourceId: string, chatId: string, chunks: SourceChunk[]): void {
+  db.exec('BEGIN');
+  try {
+    db.prepare(`DELETE FROM source_chunks WHERE source_id = ?`).run(sourceId);
+    const insert = db.prepare(
+      `INSERT INTO source_chunks (source_id, chat_id, seq, start_off, end_off, text, embedding)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    );
+    for (const chunk of chunks) {
+      insert.run(sourceId, chatId, chunk.seq, chunk.startOff, chunk.endOff, chunk.text, chunk.embedding);
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
+export function listChunksForChat(chatId: string): SourceChunk[] {
+  const rows = db
+    .prepare(
+      `SELECT source_id, seq, start_off, end_off, text, embedding FROM source_chunks WHERE chat_id = ? ORDER BY source_id, seq`,
+    )
+    .all(chatId) as any[];
+  return rows.map((row) => ({
+    sourceId: row.source_id,
+    seq: row.seq,
+    startOff: row.start_off,
+    endOff: row.end_off,
+    text: row.text,
+    embedding: row.embedding ?? null,
+  }));
 }
 
 // ---------------------------------------------------------------------------

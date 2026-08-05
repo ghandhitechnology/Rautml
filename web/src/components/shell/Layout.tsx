@@ -6,6 +6,7 @@ import { EASE } from '../../lib/motion'
 import { Icon } from '../chat/icons'
 import ChatListSidebar from './ChatListSidebar'
 import Composer from './Composer'
+import LocalSources from './LocalSources'
 import ThemeToggle from './ThemeToggle'
 import TypewriterText from './TypewriterText'
 import './Layout.css'
@@ -156,6 +157,7 @@ export function Layout({
             </AnimatePresence>
           </div>
           <div className="rml-topbar__actions">
+            <LocalSources />
             {header}
             <ThemeToggle />
           </div>

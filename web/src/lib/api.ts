@@ -1,7 +1,7 @@
 /* Typed fetch wrappers for every route in CONTRACT.md § HTTP API.
  * Dev server proxies /api → http://localhost:5175 (see vite.config.ts). */
 
-import type { Chat, ChatSnapshot, FollowUpAttachment, ModelInfo, Thread } from './types'
+import type { Chat, ChatSnapshot, FollowUpAttachment, ModelInfo, Source, Thread } from './types'
 
 export const API_BASE = '/api'
 
@@ -97,11 +97,73 @@ export function sendMessage(
   thread: Thread,
   selection?: { model?: string; effort?: string; elaboration?: string },
   attachments?: FollowUpAttachment[],
+  sourceIds?: string[],
 ): Promise<{ runId: string }> {
   return request<{ runId: string }>(`/chats/${encodeURIComponent(chatId)}/messages`, {
     method: 'POST',
-    body: JSON.stringify({ content, thread, ...selection, attachments }),
+    body: JSON.stringify({ content, thread, ...selection, attachments, sourceIds }),
   })
+}
+
+/* ------------------------------------------------------------ local sources */
+
+export interface UploadSourcesResult {
+  sources: Source[]
+  rejected: { name: string; error: string }[]
+}
+
+/**
+ * POST /api/chats/:id/sources — multipart upload into the chat's local
+ * sources. XHR instead of fetch so a 300MB file can report progress.
+ */
+export function uploadSources(
+  chatId: string,
+  files: File[],
+  onProgress?: (fraction: number) => void,
+): Promise<UploadSourcesResult> {
+  return new Promise((resolve, reject) => {
+    const form = new FormData()
+    for (const file of files) form.append('files', file, file.name)
+
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `${API_BASE}/chats/${encodeURIComponent(chatId)}/sources`)
+    xhr.responseType = 'json'
+    if (onProgress) {
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total)
+      }
+    }
+    xhr.onload = () => {
+      const body = xhr.response as unknown
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(body as UploadSourcesResult)
+      } else {
+        const message =
+          (body && typeof body === 'object' && typeof (body as any).error === 'string'
+            ? (body as any).error
+            : '') || `Upload failed (${xhr.status})`
+        reject(new ApiError(xhr.status, message, body))
+      }
+    }
+    xhr.onerror = () => reject(new ApiError(0, 'Cannot reach the server.'))
+    xhr.onabort = () => reject(new ApiError(0, 'Upload cancelled.'))
+    xhr.send(form)
+  })
+}
+
+/** GET /api/chats/:id/sources → Source[] */
+export function listSources(chatId: string): Promise<Source[]> {
+  return request<Source[]>(`/chats/${encodeURIComponent(chatId)}/sources`)
+}
+
+/** DELETE /api/sources/:sourceId */
+export function deleteSource(sourceId: string): Promise<void> {
+  return request<void>(`/sources/${encodeURIComponent(sourceId)}`, { method: 'DELETE' })
+}
+
+/** Download URL for a source's raw file. */
+export function sourceFileUrl(sourceId: string): string {
+  return `${API_BASE}/sources/${encodeURIComponent(sourceId)}/file`
 }
 
 /** POST /api/chats/:id/input → resumes a parked run */

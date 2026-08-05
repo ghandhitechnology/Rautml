@@ -23,8 +23,12 @@ Rautml/
     src/tools/research.ts # web_search, image_search, web_fetch (Firecrawl)
     src/tools/workspace.ts# bash_tool, create_file, str_replace, view, present_files
     src/tools/ux.ts       # visualize_read_me, visualize_show_widget, ask_user_input_v0
+    src/tools/sources.ts  # list_sources, search_sources, read_source (local sources)
+    src/sources/extract.ts   # per-type text extraction (pdf/csv/docx/pptx/md/tex/hwp/hwpx)
+    src/sources/embeddings.ts# local transformers.js embeddings (multilingual-e5-small, q8)
+    src/sources/indexer.ts   # chunking + background index queue + semantic search
     src/routes/api.ts     # all HTTP routes
-    data/                 # rautml.db, workspaces/<chatId>/ (gitignored)
+    data/                 # rautml.db, workspaces/<chatId>/, sources/<chatId>/<sourceId>/ (gitignored)
   web/                    # Vite + React 18 + TS (port 5174, proxies /api → 5175)
     src/main.tsx
     src/App.tsx           # layout: ChatListSidebar | ChatView | ForkPanel
@@ -84,6 +88,15 @@ tool_events(id INTEGER PK AUTOINCREMENT, chat_id TEXT, run_id TEXT, seq INTEGER,
 assets(id TEXT PK, chat_id TEXT, message_id TEXT, title TEXT, rel_path TEXT, created_at INTEGER);
 asset_versions(id TEXT PK, asset_id TEXT, version INTEGER, html TEXT, created_at INTEGER);
 pending_inputs(id TEXT PK, run_id TEXT, chat_id TEXT, thread TEXT, payload TEXT, resolved INTEGER DEFAULT 0);
+-- local sources: user uploads, stored permanently per chat. messages also
+-- carry source_ids TEXT (JSON array) for files sent with that message.
+sources(id TEXT PK, chat_id TEXT, name TEXT, ext TEXT, mime TEXT, size INTEGER,
+        status TEXT DEFAULT 'processing',  -- 'processing'|'ready'|'error'
+        error TEXT, text_chars INTEGER DEFAULT 0, chunk_count INTEGER DEFAULT 0, created_at INTEGER);
+-- semantic-search chunks; embedding = normalized Float32Array bytes,
+-- NULL when the embedding model was unavailable (lexical fallback applies)
+source_chunks(id INTEGER PK AUTOINCREMENT, source_id TEXT, chat_id TEXT, seq INTEGER,
+              start_off INTEGER, end_off INTEGER, text TEXT, embedding BLOB);
 ```
 
 ## HTTP API (all JSON under /api)
@@ -99,6 +112,17 @@ pending_inputs(id TEXT PK, run_id TEXT, chat_id TEXT, thread TEXT, payload TEXT,
 - `POST /api/chats/:id/stop` → stops active run(s)
 - `GET  /api/chats/:id/events?after=<seq>` → SSE stream (replays persisted events with seq > after, then live)
 - `GET  /api/assets/:assetId/:version` → `text/html` (the version's html; version 'latest' allowed)
+- `POST /api/chats/:id/sources` → multipart (`files` field) upload into the chat's local sources.
+  400MB per file, unlimited files per request/chat. Allowed: pdf csv docx pptx md markdown tex hwp hwpx.
+  Returns `{ sources: Source[], rejected: [{name, error}] }`; indexing runs in the background
+  (source.updated fires when a file turns ready/error). Restart-safe: 'processing' rows re-queue on boot.
+- `GET  /api/chats/:id/sources` → `Source[]`
+- `GET  /api/sources/:sourceId/file` → raw file download
+- `DELETE /api/sources/:sourceId` → removes the file, its chunks and its disk dir; emits source.removed
+
+`POST /api/chats/:id/messages` also accepts `sourceIds?: string[]` (must belong to the chat) — the
+files uploaded with that message. They are listed in the model turn as an `<attached_files>` block and
+stored on the message row; `GET /api/chats/:id` includes `sources: Source[]` in the snapshot.
 
 ## SSE events (ChatEvent)
 
@@ -124,6 +148,9 @@ Types (data shape):
 - `input.request` `{ pendingInputId, question, options: string[] }`
 - `input.resolved` `{ pendingInputId, value }`
 - `chat.title` `{ title }`
+- `source.added` `{ source: Source }` — a file landed in the chat's local sources (upload accepted)
+- `source.updated` `{ source: Source }` — indexing finished: status flipped to 'ready' or 'error'
+- `source.removed` `{ sourceId }`
 - `subagent.start` `{ subagentId, parentToolCallId, title, model }` — a research subagent spawned by `spawn_subagents`
 - `subagent.delta` `{ subagentId, text }` — the subagent's own streamed text
 - `subagent.tool.start` `{ subagentId, toolCallId, name, label }`
@@ -188,8 +215,27 @@ Types (data shape):
     truncated at 12k inside the subagent, reports capped at `max(4k, 22k/n)` each. The tool result is the combined
     reports (`N/M subagents reported.` first line + one `## [i] title` section each). Subagents cannot spawn
     subagents, write files, or ask the user; a failed subagent yields an error note, not a failed batch.
+13. `list_sources {}` → inventory of the chat's local sources (name, type, size, index state, id)
+14. `search_sources {query: string, top_k?: number}` → semantic top-k (default 8, max 20) passages across
+    every uploaded file, with file name + char offsets. Embeddings: local transformers.js
+    `Xenova/multilingual-e5-small` (q8, KO/EN-capable, lazy-downloaded, `RAUTML_EMBED_MODEL` overrides);
+    keyword fallback when the model is unavailable, so search always answers.
+15. `read_source {name: string, offset?: number, length?: number}` → a slice of a file's extracted text
+    (default 6k chars, max 20k; name accepts the id or a unique filename prefix)
 
 Workspace = `server/data/workspaces/<chatId>/`, created on chat creation.
+
+### Local sources (uploads)
+
+- Composer: paperclip + drag-drop, unlimited files, staged as chips; uploads land in local sources
+  immediately and ride the next main-thread send as `sourceIds`. Files persist for the life of the chat —
+  agents reach any upload, however old, through tools 13–15.
+- Storage: `server/data/sources/<chatId>/<sourceId>/<original name>` + `extracted.txt` (the parsed text).
+  Extraction caps: 8M chars per file (48MB read for plain-text types); indexing embeds the first 1.5M chars
+  (`RAUTML_INDEX_CHAR_CAP`), chunked at ~1200 chars with 150 overlap.
+- Top bar: a "Local sources" text button (count badge) in the shell topbar and in the document header
+  immediately left of the copy icon — panel lists every upload with status (Indexing…/searchable/failed),
+  download and delete.
 
 ### Asset protocol (the critical convention)
 
@@ -286,6 +332,8 @@ type ElaborationLevel = 'undergraduate'|'bachelors'|'doctor';
 interface ModelInfo { id:string; name:string; shortName:string; provider:string; description:string;
   efforts:string[]; defaultEffort:string }
 interface Asset { id:string; chatId:string; messageId:string; title:string; latestVersion:number; createdAt:number }
+interface Source { id:string; chatId:string; name:string; ext:string; mime:string; size:number;
+  status:'processing'|'ready'|'error'; error?:string; textChars:number; chunkCount:number; createdAt:number }
 interface ChatEvent { seq:number; chatId:string; thread:Thread; type:string; data:any }
 interface PendingInput { id:string; question:string; options:string[] }
 ```

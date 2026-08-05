@@ -37,6 +37,32 @@ export interface Message {
   status: 'streaming' | 'complete' | 'error';
   runId?: string;
   attachments?: FollowUpAttachment[];
+  /** Local sources uploaded with this message (user role only). */
+  sourceIds?: string[];
+  createdAt: number;
+}
+
+/**
+ * A file the user uploaded into the chat. It lives in the chat's local
+ * sources permanently: raw bytes + extracted text on disk, semantic-search
+ * chunks in the DB, reachable by agents via list/search/read_source tools.
+ */
+export interface Source {
+  id: string;
+  chatId: string;
+  /** Original filename, e.g. "보고서.hwp". */
+  name: string;
+  /** Lowercase extension without the dot: pdf|csv|docx|pptx|md|tex|hwp|hwpx. */
+  ext: string;
+  mime: string;
+  /** Raw file size in bytes. */
+  size: number;
+  /** processing → indexing in progress; ready → searchable; error → extraction failed. */
+  status: 'processing' | 'ready' | 'error';
+  error?: string;
+  /** Length of the extracted text (0 until indexed). */
+  textChars: number;
+  chunkCount: number;
   createdAt: number;
 }
 

@@ -8,11 +8,18 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
     "dotenv": "^16.4.7",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "hwp.js": "^0.0.3",
+    "jszip": "^3.10.1",
+    "mammoth": "^1.12.0",
+    "multer": "^2.2.0",
+    "unpdf": "^1.8.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
+    "@types/multer": "^2.2.0",
     "@types/node": "^22.10.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"

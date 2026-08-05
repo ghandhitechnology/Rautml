@@ -13,7 +13,7 @@ import { cx, relativeTime } from '../../lib/utils'
 import { EASE } from '../../lib/motion'
 import { Icon } from '../chat/icons'
 import { VersionPicker } from '../asset'
-import { ThemeToggle } from '../shell'
+import { LocalSources, ThemeToggle } from '../shell'
 import './DocumentHeader.css'
 
 export interface DocumentHeaderProps {
@@ -211,6 +211,9 @@ export function DocumentHeader({
           <VersionPicker latestVersion={latest} value={version} onChange={onVersionChange} />
 
           <span className="rml-dochead__divider" aria-hidden="true" />
+
+          {/* Local sources sits immediately left of the copy icon, per spec. */}
+          <LocalSources className="rml-dochead__sources" />
 
           <button
             type="button"

@@ -26,6 +26,7 @@ export type IconName =
   | 'stack'
   | 'thought'
   | 'menu'
+  | 'paperclip'
 
 const PATHS: Record<IconName, ReactNode> = {
   search: (
@@ -160,6 +161,9 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="M4.2 15.6h11.2" />
     </>
   ),
+  paperclip: (
+    <path d="m17.8 11.2-6 6a4.1 4.1 0 0 1-5.8-5.8l7-7a2.75 2.75 0 0 1 3.9 3.9l-6.9 6.9a1.4 1.4 0 0 1-2-2l6-6" />
+  ),
 }
 
 export interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'name'> {
@@ -213,6 +217,12 @@ export function toolIcon(name: string): IconName {
       return 'question'
     case 'spawn_subagents':
       return 'stack'
+    case 'list_sources':
+      return 'stack'
+    case 'search_sources':
+      return 'search'
+    case 'read_source':
+      return 'file'
     case 'thinking':
       return 'thought'
     default:
