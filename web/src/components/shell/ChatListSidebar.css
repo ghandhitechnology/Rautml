@@ -23,21 +23,14 @@
 .rml-brand {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--sp-2);
   user-select: none;
 }
 
 .rml-brand__mark {
-  width: 11px;
-  height: 11px;
-  border-radius: 3.5px;
-  background: var(--accent);
-  transform: rotate(45deg);
-  transition: transform var(--dur-slow) var(--ease);
-}
-
-.rml-sidebar:hover .rml-brand__mark {
-  transform: rotate(135deg);
+  width: 25px;
+  height: 25px;
+  object-fit: contain;
 }
 
 .rml-brand__word {
@@ -300,21 +293,6 @@
   word-break: keep-all;
 }
 
-/* ------------------------------------------------------------------ footer */
-
-.rml-sidebar__foot {
-  flex: 0 0 auto;
-  padding: var(--sp-3) var(--sp-4) var(--sp-2);
-  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-}
-
-.rml-sidebar__foot-text {
-  font-size: var(--fs-xs);
-  letter-spacing: 0.01em;
-  color: var(--text-muted);
-  opacity: 0.7;
-}
-
 /* ---------------------------------------------------------- compact rail */
 
 .rml-sidebar.is-collapsed {
@@ -327,8 +305,7 @@
 }
 
 .rml-sidebar.is-collapsed .rml-brand,
-.rml-sidebar.is-collapsed .rml-chatlist,
-.rml-sidebar.is-collapsed .rml-sidebar__foot {
+.rml-sidebar.is-collapsed .rml-chatlist {
   display: none;
 }
 
@@ -381,8 +358,7 @@
     display: initial;
   }
 
-  .rml-sidebar.is-collapsed .rml-chatlist,
-  .rml-sidebar.is-collapsed .rml-sidebar__foot {
+  .rml-sidebar.is-collapsed .rml-chatlist {
     display: block;
   }
 }

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useActiveChatId, useChats, useOnBlankChat, useStore } from '../../state/store'
 import { absoluteTime, cx, relativeTime } from '../../lib/utils'
 import { EASE } from '../../lib/motion'
 import TypewriterText from './TypewriterText'
+import rautmlMark from '../../assets/rautml-mark.png'
 import './ChatListSidebar.css'
 
 export interface ChatListSidebarProps {
@@ -19,6 +20,7 @@ export function ChatListSidebar({
   onCollapsedChange,
 }: ChatListSidebarProps) {
   const chats = useChats()
+  const reduceMotion = useReducedMotion()
   const activeChatId = useActiveChatId()
   const chatsLoading = useStore((s) => s.chatsLoading)
   const openChat = useStore((s) => s.openChat)
@@ -62,7 +64,7 @@ export function ChatListSidebar({
     <div className={cx('rml-sidebar', collapsed && 'is-collapsed', className)}>
       <div className="rml-sidebar__head">
         <div className="rml-brand">
-          <span className="rml-brand__mark" aria-hidden="true" />
+          <img className="rml-brand__mark" src={rautmlMark} alt="" />
           <span className="rml-brand__word">Rautml</span>
         </div>
         {onCollapsedChange ? (
@@ -108,17 +110,38 @@ export function ChatListSidebar({
         ) : null}
 
         <ul>
-          <AnimatePresence initial={false}>
+          <AnimatePresence initial={false} mode="popLayout">
             {chats.map((chat) => {
               const active = chat.id === activeChatId
               const armed = armedId === chat.id
               return (
                 <motion.li
                   key={chat.id}
+                  layout={reduceMotion ? false : 'position'}
                   initial={{ opacity: 0, y: -4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, x: -8 }}
-                  transition={{ duration: 0.24, ease: EASE }}
+                  animate={{ opacity: 1, y: 0, scale: 1, clipPath: 'inset(0% 0% 0% 0%)' }}
+                  exit={
+                    reduceMotion
+                      ? { opacity: 0 }
+                      : {
+                          opacity: 0,
+                          y: -14,
+                          scale: 0.98,
+                          clipPath: 'inset(0% 0% 100% 0%)',
+                        }
+                  }
+                  transition={
+                    reduceMotion
+                      ? { duration: 0.01 }
+                      : {
+                          layout: { duration: 0.32, ease: EASE },
+                          opacity: { duration: 0.18, ease: EASE },
+                          y: { duration: 0.24, ease: EASE },
+                          scale: { duration: 0.24, ease: EASE },
+                          clipPath: { duration: 0.24, ease: EASE },
+                        }
+                  }
+                  style={{ transformOrigin: 'top center' }}
                 >
                   <div
                     className={cx('rml-chatrow', active && 'is-active', armed && 'is-armed')}
@@ -170,9 +193,6 @@ export function ChatListSidebar({
         </ul>
       </nav>
 
-      <div className="rml-sidebar__foot">
-        <span className="rml-sidebar__foot-text">Researches. Builds. Shows you.</span>
-      </div>
     </div>
   )
 }
