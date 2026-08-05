@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { after, before, describe, it } from 'node:test';
 import { streamChat } from './openrouter.js';
-import { DEFAULT_MODEL_ID, discoverProviders, reconnectCommand, resolveProviderSelection } from './providers.js';
+import { discoverProviders, reconnectCommand, resolveProviderSelection } from './providers.js';
 import * as repo from '../repo.js';
 
 describe('local provider discovery', () => {
@@ -22,11 +22,11 @@ describe('local provider discovery', () => {
     }
   });
 
-  it('resolves the explicit default without rewriting its provider', async () => {
-    const selected = await resolveProviderSelection(DEFAULT_MODEL_ID);
+  it('resolves an explicit selection without rewriting its provider', async () => {
+    const selected = await resolveProviderSelection('openrouter:openai/gpt-5.6-sol');
     assert.ok(selected);
-    assert.equal(selected.id, DEFAULT_MODEL_ID);
-    assert.equal(selected.providerId, 'codex');
+    assert.equal(selected.id, 'openrouter:openai/gpt-5.6-sol');
+    assert.equal(selected.providerId, 'openrouter');
     assert.equal(selected.modelId, 'openai/gpt-5.6-sol');
   });
 
