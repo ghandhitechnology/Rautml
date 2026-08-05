@@ -1214,10 +1214,18 @@ export const useStore = create<StoreState>()((set, get) => ({
         const forkModelId = s.forkModelId && enabledModelIds.includes(s.forkModelId)
           ? s.forkModelId
           : null
+        const providerAlert =
+          s.providerAlert &&
+          providers.some(
+            (provider) =>
+              provider.id === s.providerAlert?.providerId && provider.authStatus === 'connected',
+          )
+            ? null
+            : s.providerAlert
         persistSelection(selectedModelId, s.effortByModel)
         persistForkSelection(forkModelId, s.forkEffortByModel)
         persistEnabledModels(enabledModelIds)
-        return { models, providers, enabledModelIds, selectedModelId, forkModelId }
+        return { models, providers, enabledModelIds, selectedModelId, forkModelId, providerAlert }
       })
     } catch (err) {
       set({ error: errorMessage(err) })

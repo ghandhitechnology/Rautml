@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { after, before, describe, it } from 'node:test';
 import { streamChat } from './openrouter.js';
-import { DEFAULT_MODEL_ID, discoverProviders, resolveProviderSelection } from './providers.js';
+import { DEFAULT_MODEL_ID, discoverProviders, reconnectCommand, resolveProviderSelection } from './providers.js';
 import * as repo from '../repo.js';
 
 describe('local provider discovery', () => {
@@ -32,6 +32,11 @@ describe('local provider discovery', () => {
 
   it('does not invent a fallback for an unknown selection', async () => {
     assert.equal(await resolveProviderSelection('not-a-provider:model'), null);
+  });
+
+  it('targets each OpenCode catalog during reconnect', () => {
+    assert.equal(reconnectCommand('opencode-go'), 'opencode auth login --provider opencode-go');
+    assert.equal(reconnectCommand('opencode-zen'), 'opencode auth login --provider opencode');
   });
 });
 

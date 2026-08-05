@@ -1,4 +1,4 @@
-import { execFile, spawn } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { accessSync, constants, readFileSync, writeFileSync } from 'node:fs';
 import { homedir, hostname, platform, release } from 'node:os';
 import path from 'node:path';
@@ -77,7 +77,7 @@ function authStatus(id: ProviderId): ProviderAuthStatus {
     return typeof auth?.[key]?.key === 'string' && auth[key].key ? 'connected' : 'disconnected';
   }
   if (id === 'kimi-code') {
-    const token = jsonFile(path.join(HOME, '.kimi/credentials/kimi-code.json'));
+    const token = jsonFile(path.join(HOME, '.kimi-code/credentials/kimi-code.json'));
     return token?.access_token ? 'connected' : 'disconnected';
   }
   return process.env.OPENROUTER_API_KEY ? 'connected' : 'disconnected';
@@ -182,23 +182,45 @@ export async function resolveProviderSelection(selectionId?: string): Promise<Mo
 export function reconnectCommand(providerId: string): string {
   if (providerId === 'codex') return 'codex login';
   if (providerId === 'grok-build') return 'grok login';
-  if (providerId === 'opencode-go' || providerId === 'opencode-zen') return 'opencode auth login';
+  if (providerId === 'opencode-go') return 'opencode auth login --provider opencode-go';
+  if (providerId === 'opencode-zen') return 'opencode auth login --provider opencode';
   if (providerId === 'kimi-code') return 'kimi login';
   return 'Set OPENROUTER_API_KEY and restart Rautml';
 }
 
+function reconnectInvocation(providerId: string): { bin: string | null; args: string[] } | null {
+  if (providerId === 'codex') return { bin: bins.codex, args: ['login'] };
+  if (providerId === 'grok-build') return { bin: bins.grok, args: ['login'] };
+  if (providerId === 'opencode-go') return { bin: bins.opencode, args: ['auth', 'login', '--provider', 'opencode-go'] };
+  if (providerId === 'opencode-zen') return { bin: bins.opencode, args: ['auth', 'login', '--provider', 'opencode'] };
+  if (providerId === 'kimi-code') return { bin: bins.kimi, args: ['login'] };
+  return null;
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
 /** Launches the installed CLI login in Terminal. Called only by an explicit user click. */
-export function launchReconnect(providerId: string): { launched: boolean; command: string } {
+export async function launchReconnect(providerId: string): Promise<{ launched: boolean; command: string }> {
   const command = reconnectCommand(providerId);
-  const terminalProviders = new Set(['codex', 'grok-build', 'opencode-go', 'opencode-zen', 'kimi-code']);
-  if (!terminalProviders.has(providerId)) return { launched: false, command };
-  if (process.platform === 'darwin') {
-    const escaped = command.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    spawn('osascript', ['-e', `tell application "Terminal" to do script "${escaped}"`], { detached: true, stdio: 'ignore' }).unref();
+  const invocation = reconnectInvocation(providerId);
+  if (!invocation?.bin || process.platform !== 'darwin') return { launched: false, command };
+
+  // GUI-launched apps frequently have a minimal PATH. Send Terminal the resolved
+  // executable path instead of relying on its shell to find `codex`, `grok`, etc.
+  const terminalCommand = [invocation.bin, ...invocation.args].map(shellQuote).join(' ');
+  const escaped = terminalCommand.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  try {
+    await exec('osascript', [
+      '-e', 'tell application "Terminal" to activate',
+      '-e', `tell application "Terminal" to do script "${escaped}"`,
+    ], { timeout: 5_000 });
     cached = null;
     return { launched: true, command };
+  } catch {
+    return { launched: false, command };
   }
-  return { launched: false, command };
 }
 
 function bearerFromOpenCode(key: string): string | null {
@@ -236,7 +258,7 @@ function kimiHeaders(): Record<string, string> {
 }
 
 async function freshKimiToken(): Promise<string | null> {
-  const file = path.join(HOME, '.kimi/credentials/kimi-code.json');
+  const file = path.join(HOME, '.kimi-code/credentials/kimi-code.json');
   const token = jsonFile(file);
   if (!token?.access_token) return null;
   if (Number(token.expires_at || 0) * 1000 - Date.now() > 5 * 60_000) return token.access_token;
