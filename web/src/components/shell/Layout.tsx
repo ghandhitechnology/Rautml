@@ -1,6 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { flushSync } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { useChatMeta, useConnection, useForkOpen, useProviderAlert, useStore, useStoreError } from '../../state/store'
+import { useChatMeta, useConnection, useForkOpen, useOnBlankChat, useProviderAlert, useStore, useStoreError } from '../../state/store'
 import { cx } from '../../lib/utils'
 import { EASE } from '../../lib/motion'
 import { Icon } from '../chat/icons'
@@ -12,6 +13,8 @@ import TypewriterText from './TypewriterText'
 import './Layout.css'
 
 const SIDEBAR_COLLAPSED_KEY = 'rautml.sidebarCollapsed'
+const SIDEBAR_TRANSITION_MS = 420
+const SIDEBAR_TRANSITION_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
 
 function readSidebarCollapsed(): boolean {
   try {
@@ -60,17 +63,115 @@ export function Layout({
   const error = useStoreError()
   const dismissError = useStore((s) => s.dismissError)
   const providerAlert = useProviderAlert()
+  const onBlankChat = useOnBlankChat()
+  const newChat = useStore((s) => s.newChat)
   const dismissProviderAlert = useStore((s) => s.dismissProviderAlert)
   const reconnectProvider = useStore((s) => s.reconnectProvider)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed)
+  const [sidebarAnimating, setSidebarAnimating] = useState(false)
+  const shellRef = useRef<HTMLDivElement>(null)
+  const sidebarRef = useRef<HTMLElement>(null)
+  const sidebarTransitionActive = useRef(false)
+  const sidebarAnimations = useRef<Animation[]>([])
 
   const setDesktopSidebarCollapsed = (collapsed: boolean) => {
-    setSidebarCollapsed(collapsed)
-    try {
-      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed))
-    } catch {
-      /* private mode — the choice lasts for this session */
+    if (collapsed === sidebarCollapsed || sidebarTransitionActive.current) return
+
+    const persist = () => {
+      try {
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed))
+      } catch {
+        /* private mode — the choice lasts for this session */
+      }
     }
+
+    const shell = shellRef.current
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const useFlip =
+      documentMode &&
+      document.documentElement.dataset.desktop === 'electron' &&
+      !reduceMotion &&
+      shell !== null &&
+      typeof Element.prototype.animate === 'function'
+
+    if (!useFlip) {
+      setSidebarCollapsed(collapsed)
+      persist()
+      return
+    }
+
+    /* The generated page lives in an iframe. Animating its actual grid width
+     * makes that independent document reflow on every frame, which produces a
+     * visible follow-then-snap when it crosses a responsive breakpoint. Instead
+     * we commit the final grid once, then FLIP the rendered surfaces from their
+     * previous bounds. The iframe reflows exactly once, before the next paint. */
+    const selectors = ['.rml-docframe', '.rml-dochead__bar', '.rml-dock', '.rml-slot--ball']
+    const surfaces = selectors
+      .map((selector) => shell.querySelector<HTMLElement>(selector))
+      .filter((element): element is HTMLElement => element !== null)
+    const before = new Map<HTMLElement, DOMRect>(
+      surfaces.map((element) => [element, element.getBoundingClientRect()] as const),
+    )
+
+    sidebarTransitionActive.current = true
+    flushSync(() => {
+      setSidebarAnimating(true)
+      setSidebarCollapsed(collapsed)
+    })
+    persist()
+
+    const animations = surfaces.flatMap((element) => {
+      const first = before.get(element)
+      if (!first) return []
+      const last = element.getBoundingClientRect()
+      if (first.width <= 0 || last.width <= 0 || first.height <= 0 || last.height <= 0) return []
+
+      const deltaX = first.left - last.left
+      const deltaY = first.top - last.top
+      const scaleX = first.width / last.width
+      const scaleY = first.height / last.height
+      return [
+        element.animate(
+          [
+            {
+              transform: `translate3d(${deltaX}px, ${deltaY}px, 0) scale(${scaleX}, ${scaleY})`,
+              transformOrigin: 'top left',
+            },
+            { transform: 'translate3d(0, 0, 0) scale(1, 1)', transformOrigin: 'top left' },
+          ],
+          {
+            duration: SIDEBAR_TRANSITION_MS,
+            easing: SIDEBAR_TRANSITION_EASE,
+            fill: 'both',
+          },
+        ),
+      ]
+    })
+
+    const sidebarElement = sidebarRef.current
+    if (sidebarElement) {
+      animations.push(
+        sidebarElement.animate(
+          collapsed
+            ? [{ transform: 'translate3d(0, 0, 0)' }, { transform: 'translate3d(-100%, 0, 0)' }]
+            : [{ transform: 'translate3d(-100%, 0, 0)' }, { transform: 'translate3d(0, 0, 0)' }],
+          {
+            duration: SIDEBAR_TRANSITION_MS,
+            easing: SIDEBAR_TRANSITION_EASE,
+            fill: 'both',
+          },
+        ),
+      )
+    }
+
+    sidebarAnimations.current = animations
+    void Promise.allSettled(animations.map((animation) => animation.finished)).then(() => {
+      if (sidebarAnimations.current !== animations) return
+      animations.forEach((animation) => animation.cancel())
+      sidebarAnimations.current = []
+      sidebarTransitionActive.current = false
+      setSidebarAnimating(false)
+    })
   }
 
   /* Small screens collapse the sidebar into an off-canvas drawer. The state is
@@ -88,23 +189,69 @@ export function Layout({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [navOpen])
-
+  useEffect(
+    () => () => {
+      sidebarAnimations.current.forEach((animation) => animation.cancel())
+      sidebarAnimations.current = []
+      sidebarTransitionActive.current = false
+    },
+    [],
+  )
   return (
     <div
+      ref={shellRef}
       className={cx(
         'rml-shell',
         forkOpen && 'is-fork-open',
         documentMode && 'is-document',
         navOpen && 'is-nav-open',
         sidebarCollapsed && 'is-sidebar-collapsed',
+        sidebarAnimating && 'is-sidebar-animating',
         className,
       )}
     >
       <div className="rml-desktop-drag" aria-hidden="true" />
-      <aside className="rml-shell__sidebar">
+      <AnimatePresence>
+        {sidebarCollapsed ? (
+          <motion.nav
+            className="rml-desktop-compact-controls"
+            aria-label="Conversation controls"
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.2, ease: EASE }}
+          >
+            <button
+              type="button"
+              aria-label="Expand sidebar"
+              title="Expand sidebar"
+              onClick={() => setDesktopSidebarCollapsed(false)}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="3.5" y="4" width="17" height="16" rx="3" />
+                <path d="M9 4v16" />
+                <path d="m14 9 3 3-3 3" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              aria-label="New chat"
+              title={onBlankChat ? "You're already in a new chat" : 'New chat'}
+              disabled={onBlankChat}
+              onClick={() => void newChat()}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M13.5 5H6.4A2.4 2.4 0 0 0 4 7.4v10.2A2.4 2.4 0 0 0 6.4 20h10.2a2.4 2.4 0 0 0 2.4-2.4v-7.1" />
+                <path d="m12 14 1-.2 6.4-6.4a2 2 0 0 0-2.8-2.8L10.2 11l-.2 3z" />
+              </svg>
+            </button>
+          </motion.nav>
+        ) : null}
+      </AnimatePresence>
+      <aside ref={sidebarRef} className="rml-shell__sidebar">
         {sidebar ?? (
           <ChatListSidebar
-            collapsed={sidebarCollapsed}
+            collapsed={sidebarCollapsed && !sidebarAnimating}
             onCollapsedChange={setDesktopSidebarCollapsed}
           />
         )}

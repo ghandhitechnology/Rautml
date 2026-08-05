@@ -16,6 +16,10 @@
   display: none;
 }
 
+.rml-desktop-compact-controls {
+  display: none;
+}
+
 html[data-desktop='electron'] .rml-desktop-drag {
   position: fixed;
   inset: 0 0 auto;
@@ -44,11 +48,91 @@ html[data-desktop='electron'] [role='button'] {
 }
 
 html[data-desktop='electron'] .rml-shell.is-sidebar-collapsed {
-  /* Native traffic lights need a stable home even when the rail compacts. */
-  --sidebar-track: 84px;
+  --sidebar-track: 0px;
+}
+
+/* Document resizing uses a FLIP transition in Layout.tsx. The grid commits its
+   final geometry in one layout pass; rendered surfaces carry the visual motion. */
+html[data-desktop='electron'] .rml-shell.is-document.is-sidebar-animating {
+  transition: none;
+}
+
+html[data-desktop='electron'] .rml-shell.is-document.is-sidebar-animating .rml-shell__sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 190;
+  width: var(--sidebar-w);
+  overflow: hidden;
+  pointer-events: none;
+  will-change: transform;
+}
+
+html[data-desktop='electron'] .rml-shell.is-document.is-sidebar-animating :is(
+  .rml-docframe,
+  .rml-dochead__bar,
+  .rml-dock,
+  .rml-slot--ball
+) {
+  will-change: transform;
+}
+
+html[data-desktop='electron'] .rml-shell.is-sidebar-collapsed .rml-desktop-compact-controls {
+  position: fixed;
+  top: var(--sp-2);
+  left: 92px;
+  z-index: 201;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  -webkit-app-region: no-drag;
+}
+
+.rml-desktop-compact-controls button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-sm);
+  color: #fff;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.rml-desktop-compact-controls button:hover:not(:disabled) {
+  background: rgb(128 128 128 / 0.16);
+}
+
+.rml-desktop-compact-controls button:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.rml-desktop-compact-controls button:disabled {
+  opacity: 0.35;
+}
+
+.rml-desktop-compact-controls svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.72;
+  mix-blend-mode: difference;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+
+.rml-desktop-compact-controls button:hover:not(:disabled) svg,
+.rml-desktop-compact-controls button:focus-visible svg {
+  opacity: 1;
 }
 
 .rml-shell__sidebar {
+  grid-column: 1;
+  grid-row: 1;
   min-width: 0;
   height: 100%;
   overflow: hidden;
@@ -57,6 +141,8 @@ html[data-desktop='electron'] .rml-shell.is-sidebar-collapsed {
 /* -------------------------------------------------------------- main column */
 
 .rml-shell__main {
+  grid-column: 2;
+  grid-row: 1;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -78,6 +164,10 @@ html[data-desktop='electron'] .rml-shell.is-sidebar-collapsed {
   backdrop-filter: saturate(140%) blur(12px);
   -webkit-backdrop-filter: saturate(140%) blur(12px);
   z-index: 3;
+}
+
+html[data-desktop='electron'] .rml-shell.is-sidebar-collapsed .rml-topbar {
+  padding-left: 172px;
 }
 
 .rml-topbar__lead {
@@ -206,6 +296,8 @@ html[data-desktop='electron'] .rml-shell.is-sidebar-collapsed {
 /* ---------------------------------------------------------------- fork slot */
 
 .rml-shell__fork {
+  grid-column: 3;
+  grid-row: 1;
   min-width: 0;
   height: 100%;
   /* clip (not hidden): autofocus inside the entering panel must not leave a
@@ -292,6 +384,10 @@ html[data-desktop='electron'] .rml-shell.is-sidebar-collapsed {
 /* Phone: the sidebar leaves the grid and becomes an off-canvas drawer; the fork
  * panel floats over the full screen instead of narrowing the thread to nothing. */
 @media (max-width: 640px) {
+  html[data-desktop='electron'] .rml-shell.is-sidebar-collapsed .rml-desktop-compact-controls {
+    display: none;
+  }
+
   .rml-shell,
   .rml-shell.is-fork-open {
     grid-template-columns: 0 minmax(0, 1fr) 0;
