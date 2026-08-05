@@ -15,9 +15,16 @@
   top: 0;
   left: 0;
   right: 0;
-  height: 84px;
-  background: linear-gradient(to bottom, var(--scrim), transparent);
-  opacity: 0.9;
+  height: 120px;
+  background: linear-gradient(
+    to bottom,
+    var(--scrim) 0%,
+    color-mix(in srgb, var(--scrim) 72%, transparent) 34%,
+    color-mix(in srgb, var(--scrim) 34%, transparent) 64%,
+    color-mix(in srgb, var(--scrim) 10%, transparent) 84%,
+    transparent 100%
+  );
+  opacity: 0.86;
 }
 
 .rml-dochead__bar {
@@ -35,9 +42,31 @@
   box-shadow: var(--shadow-md);
   pointer-events: auto;
   transition:
+    margin-left var(--dur-slow) var(--ease),
     background-color var(--dur) var(--ease),
     border-color var(--dur) var(--ease),
     box-shadow var(--dur) var(--ease);
+}
+
+/* A 42px bar placed 4px from the window edge shares the native traffic
+   lights' optical center. This keeps the app chrome on one calm macOS row. */
+html[data-desktop='electron'] .rml-dochead__bar {
+  margin-top: var(--sp-1);
+}
+
+html[data-desktop='electron'] .rml-shell.is-sidebar-collapsed .rml-dochead__bar {
+  margin-left: 172px;
+}
+
+html[data-desktop='electron'] .rml-shell.is-document:not(.is-sidebar-collapsed) .rml-dochead__bar {
+  margin-left: var(--sp-4);
+}
+
+/* The sidebar transition animates this margin itself, from the pill's previous
+   left edge. A concurrent CSS interpolation would be a second, conflicting
+   path for the same property. */
+html[data-desktop='electron'] .rml-shell.is-sidebar-animating .rml-dochead__bar {
+  transition: none;
 }
 
 .rml-dochead__bar:hover {

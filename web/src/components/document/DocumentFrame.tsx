@@ -3,7 +3,8 @@
  * Deliberately lean: this is NOT AssetFrame. There is no height reporter, no postMessage
  * handshake and no `scrolling="no"` — the iframe fills the column (100% × 100%) and the
  * generated page scrolls natively inside it, exactly as it would in a browser tab.
- * Still no `sandbox` attribute: assets are full documents that run their own JS.
+ * Assets keep script support but run in an opaque sandboxed origin, protecting
+ * the desktop shell while preserving charts and document interactions.
  *
  * Switching version or asset keeps the outgoing document on screen until the incoming one
  * has actually loaded, then cross-fades. Nothing ever blinks white.
@@ -63,7 +64,7 @@ const BONES: [width: string, height: number][] = [
  * Framer/layout ghosts that look like a duplicated left chat bar.
  */
 function withFrameGuards(html: string): string {
-  const guard = `<script data-rautml-guard>(function(){document.addEventListener('click',function(e){var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;if(!a)return;var href=a.getAttribute('href')||'';if(href.charAt(0)==='#'){e.preventDefault();var id=decodeURIComponent(href.slice(1));if(!id){document.documentElement.scrollTop=0;document.body&&(document.body.scrollTop=0);return;}var el=document.getElementById(id)||document.getElementsByName(id)[0];if(el&&el.scrollIntoView)el.scrollIntoView({behavior:'smooth',block:'start'});}},true);})();</script>`
+  const guard = `<style data-rautml-frame-style>html{scroll-padding-top:64px}</style><script data-rautml-guard>(function(){function clearance(){var b=document.body;if(!b||b.dataset.rautmlClearance)return;b.dataset.rautmlClearance='true';var p=parseFloat(getComputedStyle(b).paddingTop)||0;b.style.setProperty('padding-top',(p+64)+'px','important');}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',clearance,{once:true});else clearance();document.addEventListener('click',function(e){var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;if(!a)return;var href=a.getAttribute('href')||'';if(href.charAt(0)==='#'){e.preventDefault();var id=decodeURIComponent(href.slice(1));if(!id){document.documentElement.scrollTop=0;document.body&&(document.body.scrollTop=0);return;}var el=document.getElementById(id)||document.getElementsByName(id)[0];if(el&&el.scrollIntoView)el.scrollIntoView({behavior:'smooth',block:'start'});}},true);})();</script>`
   if (/<\/head>/i.test(html)) return html.replace(/<\/head>/i, `${guard}</head>`)
   if (/<body[^>]*>/i.test(html)) return html.replace(/<body([^>]*)>/i, `<body$1>${guard}`)
   return guard + html
@@ -278,6 +279,7 @@ export function DocumentFrame({
               className="rml-docframe__iframe"
               title={`${title ?? 'Document'} — v${layer.version}`}
               srcDoc={layer.doc}
+              sandbox="allow-scripts allow-forms allow-modals allow-downloads allow-popups allow-popups-to-escape-sandbox"
               onLoad={(e) => handleLoad(layer.key, e.currentTarget)}
             />
           </motion.div>

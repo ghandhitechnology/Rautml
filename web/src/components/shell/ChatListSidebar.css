@@ -20,6 +20,14 @@
   margin-bottom: var(--sp-3);
 }
 
+/* Electron's hidden-inset titlebar puts the native traffic lights directly in
+   this surface. They own the first row; the brand sits on the row beneath. */
+html[data-desktop='electron'] .rml-sidebar__head {
+  height: 72px;
+  padding: 32px var(--sp-2) 0;
+  margin-bottom: var(--sp-2);
+}
+
 .rml-brand {
   display: inline-flex;
   align-items: center;
@@ -304,20 +312,28 @@
   padding-inline: 0;
 }
 
+html[data-desktop='electron'] .rml-sidebar.is-collapsed .rml-sidebar__head {
+  height: 56px;
+  padding: 28px 0 0;
+  align-items: center;
+  margin-bottom: var(--sp-2);
+}
+
 .rml-sidebar.is-collapsed .rml-brand,
 .rml-sidebar.is-collapsed .rml-chatlist {
   display: none;
 }
 
 .rml-sidebar.is-collapsed .rml-sidebar__toggle {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
 }
 
 .rml-sidebar.is-collapsed .rml-newchat {
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  align-self: center;
+  width: 32px;
+  height: 32px;
   margin-inline: 0;
   padding: 0;
 }

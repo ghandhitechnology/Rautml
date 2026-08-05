@@ -16,7 +16,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type PointerEvent as ReactPointerEvent,
 } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
@@ -56,9 +55,6 @@ export interface ModelPickerProps {
   thread?: Thread
   className?: string
 }
-
-const HOVER_OPEN_MS = 250
-const HOVER_CLOSE_MS = 180
 
 export function ModelPicker({
   compact = false,
@@ -132,39 +128,6 @@ export function ModelPicker({
     }
   }, [open, close])
 
-  // Hover intent for the inline variant: idle briefly to open, a grace delay on
-  // leave so travelling from label to menu never snaps it shut. Mouse only —
-  // touch and keyboard use the click/Enter toggle.
-  const openTimer = useRef<number | null>(null)
-  const closeTimer = useRef<number | null>(null)
-  useEffect(
-    () => () => {
-      if (openTimer.current) window.clearTimeout(openTimer.current)
-      if (closeTimer.current) window.clearTimeout(closeTimer.current)
-    },
-    [],
-  )
-  const onHoverEnter = (e: ReactPointerEvent) => {
-    if (!inline || e.pointerType !== 'mouse') return
-    if (closeTimer.current) window.clearTimeout(closeTimer.current)
-    if (open || openTimer.current) return
-    openTimer.current = window.setTimeout(() => {
-      openTimer.current = null
-      setOpen(true)
-    }, HOVER_OPEN_MS)
-  }
-  const onHoverLeave = (e: ReactPointerEvent) => {
-    if (!inline || e.pointerType !== 'mouse') return
-    if (openTimer.current) {
-      window.clearTimeout(openTimer.current)
-      openTimer.current = null
-    }
-    closeTimer.current = window.setTimeout(() => {
-      closeTimer.current = null
-      setOpen(false)
-    }, HOVER_CLOSE_MS)
-  }
-
   // Nothing to pick until the catalog has loaded.
   if (!model || models.length === 0) return null
 
@@ -173,8 +136,6 @@ export function ModelPicker({
       <div
         ref={rootRef}
         className={cx('rml-model', 'rml-model--inline', className)}
-        onPointerEnter={onHoverEnter}
-        onPointerLeave={onHoverLeave}
       >
         <button
           ref={chipRef}

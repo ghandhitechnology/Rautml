@@ -12,6 +12,33 @@
   transition: grid-template-columns var(--dur-slow) var(--ease);
 }
 
+.rml-desktop-drag {
+  display: none;
+}
+
+.rml-desktop-compact-controls {
+  display: none;
+}
+
+html[data-desktop='electron'] .rml-desktop-drag {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 200;
+  display: block;
+  height: 28px;
+  pointer-events: none;
+  -webkit-app-region: drag;
+}
+
+html[data-desktop='electron'] button,
+html[data-desktop='electron'] a,
+html[data-desktop='electron'] input,
+html[data-desktop='electron'] textarea,
+html[data-desktop='electron'] select,
+html[data-desktop='electron'] [role='button'] {
+  -webkit-app-region: no-drag;
+}
+
 .rml-shell.is-fork-open {
   grid-template-columns: var(--sidebar-track) minmax(0, 1fr) var(--fork-w);
 }
@@ -20,7 +47,110 @@
   --sidebar-track: 52px;
 }
 
+html[data-desktop='electron'] .rml-shell.is-sidebar-collapsed {
+  --sidebar-track: 0px;
+}
+
+/* Collapsing uses a FLIP transition in Layout.tsx. The grid commits its final
+   geometry in one layout pass; rendered surfaces carry the visual motion, so
+   the track must not interpolate underneath them. */
+html[data-desktop='electron'] .rml-shell.is-sidebar-animating {
+  transition: none;
+}
+
+/* Out of the grid for the length of the slide: the panel travels as one rigid
+   surface instead of being squeezed — and re-wrapped — by a shrinking track.
+   It is opaque, so it also masks the main column's committed left edge until
+   the FLIP has caught up with it. */
+html[data-desktop='electron'] .rml-shell.is-sidebar-animating .rml-shell__sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 190;
+  width: var(--sidebar-w);
+  overflow: hidden;
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* The FLIP'd surfaces are already at their final width, so the ones that grew
+   overhang the column while they travel. Clip them to it — otherwise the
+   document page bleeds over the fork panel on its way in. */
+html[data-desktop='electron'] .rml-shell.is-sidebar-animating .rml-shell__main {
+  overflow: hidden;
+}
+
+html[data-desktop='electron'] .rml-shell.is-sidebar-animating :is(
+  .rml-docframe,
+  .rml-dochead__bar,
+  .rml-dock,
+  .rml-slot--ball,
+  .rml-topbar__lead,
+  .rml-thread,
+  .rml-welcome__inner,
+  .rml-composer
+) {
+  will-change: transform;
+}
+
+/* Mounted by Layout only while the rail is collapsed and still, so the styling
+   stays off the shell's state class — it has to survive the exit animation. */
+html[data-desktop='electron'] .rml-desktop-compact-controls {
+  position: fixed;
+  top: var(--sp-2);
+  left: 92px;
+  z-index: 201;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  -webkit-app-region: no-drag;
+}
+
+.rml-desktop-compact-controls button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-sm);
+  color: #fff;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.rml-desktop-compact-controls button:hover:not(:disabled) {
+  background: rgb(128 128 128 / 0.16);
+}
+
+.rml-desktop-compact-controls button:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.rml-desktop-compact-controls button:disabled {
+  opacity: 0.35;
+}
+
+.rml-desktop-compact-controls svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.72;
+  mix-blend-mode: difference;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+
+.rml-desktop-compact-controls button:hover:not(:disabled) svg,
+.rml-desktop-compact-controls button:focus-visible svg {
+  opacity: 1;
+}
+
 .rml-shell__sidebar {
+  grid-column: 1;
+  grid-row: 1;
   min-width: 0;
   height: 100%;
   overflow: hidden;
@@ -29,6 +159,8 @@
 /* -------------------------------------------------------------- main column */
 
 .rml-shell__main {
+  grid-column: 2;
+  grid-row: 1;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -50,6 +182,10 @@
   backdrop-filter: saturate(140%) blur(12px);
   -webkit-backdrop-filter: saturate(140%) blur(12px);
   z-index: 3;
+}
+
+html[data-desktop='electron'] .rml-shell.is-sidebar-collapsed .rml-topbar {
+  padding-left: 172px;
 }
 
 .rml-topbar__lead {
@@ -178,6 +314,8 @@
 /* ---------------------------------------------------------------- fork slot */
 
 .rml-shell__fork {
+  grid-column: 3;
+  grid-row: 1;
   min-width: 0;
   height: 100%;
   /* clip (not hidden): autofocus inside the entering panel must not leave a
@@ -264,6 +402,10 @@
 /* Phone: the sidebar leaves the grid and becomes an off-canvas drawer; the fork
  * panel floats over the full screen instead of narrowing the thread to nothing. */
 @media (max-width: 640px) {
+  html[data-desktop='electron'] .rml-desktop-compact-controls {
+    display: none;
+  }
+
   .rml-shell,
   .rml-shell.is-fork-open {
     grid-template-columns: 0 minmax(0, 1fr) 0;

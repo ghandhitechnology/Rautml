@@ -144,6 +144,7 @@ export function WidgetCard({ html, compact = false, className }: WidgetCardProps
         className="rml-widget__frame"
         title="Inline visual"
         srcDoc={srcDoc}
+        sandbox="allow-scripts allow-forms allow-modals allow-downloads allow-popups allow-popups-to-escape-sandbox"
         loading="lazy"
         scrolling="no"
         style={{ height: `${height}px` }}

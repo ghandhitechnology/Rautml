@@ -11,7 +11,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-config({ path: path.join(__dirname, '..', '..', '.env') });
+config({ path: process.env.RAUTML_ENV_PATH || path.join(__dirname, '..', '..', '.env') });
 
 const { default: express } = await import('express');
 // Ensures data dirs (server/data, server/data/workspaces) + schema exist.
@@ -29,9 +29,23 @@ const app = express();
 app.use(express.json({ limit: '20mb' }));
 app.use('/api', apiRouter);
 
+// In Electron the production renderer is served by the same loopback origin as
+// the API. This preserves every existing fetch, SSE, iframe, and download path.
+const webDist = process.env.RAUTML_WEB_DIST;
+if (webDist) {
+  const absoluteWebDist = path.resolve(webDist);
+  app.use(express.static(absoluteWebDist));
+  app.get('*', (_req, res) => res.sendFile(path.join(absoluteWebDist, 'index.html')));
+}
+
 // Overridable so a second checkout (or a test harness) can run alongside the
 // usual dev server instead of fighting it for the port.
 const PORT = Number(process.env.PORT) || 5175;
-app.listen(PORT, () => {
-  console.log(`Rautml server listening on http://localhost:${PORT}`);
+const HOST = process.env.HOST || '127.0.0.1';
+const server = app.listen(PORT, HOST, () => {
+  console.log(`Rautml server listening on http://${HOST}:${PORT}`);
 });
+
+const shutdown = () => server.close(() => process.exit(0));
+process.once('SIGTERM', shutdown);
+process.once('SIGINT', shutdown);

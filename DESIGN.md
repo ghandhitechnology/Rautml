@@ -158,6 +158,8 @@ A warm near-monochrome field where a single coral flame carries all meaning; eve
 
 The shell is a CSS grid of three columns: 260px linen sidebar, fluid main column, and a 380px fork panel that animates open from 0px (grid-template-columns transition, 420ms). Conversation content centers at `--thread-max` 760px. The top bar is 56px with a subtle backdrop blur.
 
+On macOS desktop, the native red/yellow/green traffic lights sit directly in the sidebar's first row using Electron's hidden-inset titlebar. That row is the draggable window surface; controls remain non-draggable, and no extra titlebar or imitation window controls are drawn.
+
 **Document mode inverts the frame:** when a chat has an asset, the main column drops all padding and scrolling — the generated page runs edge-to-edge and owns the viewport, while our chrome floats above it (glass header bar pinned top, glass composer dock pinned bottom, both `position: absolute` with pointer-events ghosting so the page stays interactive).
 
 Spacing follows a strict 4px rhythm (`--sp-1` 4px through `--sp-12` 48px); micro-offsets (1–2px) are allowed only for optical centering. Density is comfortable, never cramped: 8–12px gaps inside components, 16–24px between blocks. Markdown rhythm: 16px between blocks, 32px before headings.

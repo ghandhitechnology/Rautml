@@ -1,7 +1,7 @@
 /* AssetFrame — renders one asset version inside an <iframe srcDoc>.
  *
- * Deliberately NO `sandbox` attribute: generated assets are full HTML documents that may run
- * their own JS (charts, interactions). The iframe still guarantees style isolation from the app.
+ * Generated assets run scripts and interactions inside an opaque sandboxed origin,
+ * isolating the desktop shell without flattening the document experience.
  *
  * Auto-height: a tiny reporter script is injected before </body>; it watches the document with a
  * ResizeObserver and posts { type: '__rautml_h', h } to the parent. We match the message source
@@ -343,6 +343,7 @@ export function AssetFrame({
               className="rml-frame__iframe"
               title={`${title ?? 'Asset'} — v${layer.version}`}
               srcDoc={layer.doc}
+              sandbox="allow-scripts allow-forms allow-modals allow-downloads allow-popups allow-popups-to-escape-sandbox"
               onLoad={(e) => {
                 stampFrameTheme(e.currentTarget, useStore.getState().theme)
                 postFrameMarks(e.currentTarget, marks)
