@@ -32,7 +32,7 @@ export interface DocumentFrameProps {
   /** Version to display. Changing it (or the asset) cross-fades to the new document. */
   version: number
   title?: string
-  /** Raw HTML of whatever is on screen — the header uses it for copy-to-clipboard. */
+  /** Raw HTML of whatever is on screen — the header uses it for downloading. */
   onHtmlChange?: (html: string, assetId: string, version: number) => void
   className?: string
 }

@@ -127,8 +127,12 @@
   transform: scale(0.94);
 }
 
-.rml-dochead__btn.is-copied {
+.rml-dochead__btn.is-downloaded {
   color: var(--accent);
+}
+
+.rml-dochead__btn.is-failed {
+  color: var(--accent-hover);
 }
 
 .rml-dochead__glyph {

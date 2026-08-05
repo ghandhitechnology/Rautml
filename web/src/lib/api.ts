@@ -193,7 +193,7 @@ export function eventsUrl(chatId: string, afterSeq = 0): string {
   return `${API_BASE}/chats/${encodeURIComponent(chatId)}/events?after=${afterSeq}`
 }
 
-/** Convenience: fetch an asset version's raw HTML (for copy-html / srcdoc). */
+/** Convenience: fetch an asset version's raw HTML (for download / srcdoc). */
 export async function fetchAssetHtml(
   assetId: string,
   version: number | 'latest' = 'latest',

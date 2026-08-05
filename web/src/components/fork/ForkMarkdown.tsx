@@ -5,11 +5,12 @@
  * a copy button; links open in a new tab; tables scroll inside their own container.
  */
 
-import { memo, useCallback, useRef, useState, type ReactNode } from 'react'
+import { memo, useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
 import ReactMarkdown, { type Components, type Options } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
+import { normalizeForkMarkdown } from '../../lib/markdownMath'
 import { cx } from '../../lib/utils'
 import 'katex/dist/katex.min.css'
 import './ForkMarkdown.css'
@@ -67,7 +68,7 @@ const COMPONENTS: Components = {
 const REMARK: NonNullable<Options['remarkPlugins']> = [remarkGfm, remarkMath]
 // Half-written $…$ is normal while streaming — never throw, just render it plainly.
 const REHYPE: NonNullable<Options['rehypePlugins']> = [
-  [rehypeKatex, { throwOnError: false, errorColor: 'currentColor' }],
+  [rehypeKatex, { throwOnError: false, strict: false, errorColor: 'currentColor' }],
 ]
 
 export interface ForkMarkdownProps {
@@ -76,10 +77,12 @@ export interface ForkMarkdownProps {
 }
 
 export const ForkMarkdown = memo(function ForkMarkdown({ children, className }: ForkMarkdownProps) {
+  const markdown = useMemo(() => normalizeForkMarkdown(children), [children])
+
   return (
     <div className={cx('rml-forkmd', className)}>
       <ReactMarkdown remarkPlugins={REMARK} rehypePlugins={REHYPE} components={COMPONENTS}>
-        {children}
+        {markdown}
       </ReactMarkdown>
     </div>
   )

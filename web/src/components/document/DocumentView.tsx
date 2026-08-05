@@ -86,7 +86,7 @@ export function DocumentView({ className }: DocumentViewProps) {
     [asset],
   )
 
-  /* --------------------------------------------------------------- copy html */
+  /* ----------------------------------------------------------- download html */
 
   const htmlRef = useRef<{ key: string; html: string } | null>(null)
   const onHtmlChange = useCallback((html: string, assetId: string, v: number) => {
