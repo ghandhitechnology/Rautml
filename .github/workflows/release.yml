@@ -57,6 +57,11 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: npm run dist:mac
 
+      - name: Generate checksums
+        run: |
+          cd release
+          shasum -a 256 ./*.dmg ./*.zip > SHA256SUMS.txt
+
       - name: Publish private GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -64,6 +69,7 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" \
             release/*.dmg \
             release/*.zip \
+            release/SHA256SUMS.txt \
             --verify-tag \
             --generate-notes \
             --title "Rautml ${GITHUB_REF_NAME}"

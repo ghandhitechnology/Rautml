@@ -33,6 +33,19 @@ Use **Rautml → Check for Updates…** to open the latest private release, then
 the app in `/Applications`. GitHub login is required because the repository is private. This manual
 installation path does not require an Apple Developer account or a continuously running server.
 
+Personal builds use a complete ad-hoc macOS signature, but Apple does not trust or notarize that
+signature. On first launch, try opening Rautml once, then open **System Settings → Privacy &
+Security** and choose **Open Anyway**. If Finder specifically says the app is damaged, remove the
+download quarantine after copying this trusted personal build to Applications:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Rautml.app
+open /Applications/Rautml.app
+```
+
+Only use that command for a build downloaded from this repository. Each release includes
+`SHA256SUMS.txt` so the downloaded installer can be checked before opening it.
+
 Automatic in-place updates can be added later, but macOS requires those builds to be signed and
 notarized with an Apple Developer ID.
 

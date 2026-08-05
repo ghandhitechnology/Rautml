@@ -1,7 +1,7 @@
 {
   "name": "rautml",
   "productName": "Rautml",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Research-driven chat where the answer is a living page.",
   "author": "Hataewook",
   "private": true,
@@ -70,7 +70,7 @@
     "mac": {
       "category": "public.app-category.productivity",
       "icon": "build/icon.icns",
-      "identity": null,
+      "identity": "-",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "target": [
