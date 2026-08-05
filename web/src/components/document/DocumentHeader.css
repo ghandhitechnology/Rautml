@@ -62,9 +62,10 @@ html[data-desktop='electron'] .rml-shell.is-document:not(.is-sidebar-collapsed) 
   margin-left: var(--sp-4);
 }
 
-/* FLIP owns geometry during the sidebar transition; a concurrent margin
-   interpolation would create a second, conflicting path for the header. */
-html[data-desktop='electron'] .rml-shell.is-document.is-sidebar-animating .rml-dochead__bar {
+/* The sidebar transition animates this margin itself, from the pill's previous
+   left edge. A concurrent CSS interpolation would be a second, conflicting
+   path for the same property. */
+html[data-desktop='electron'] .rml-shell.is-sidebar-animating .rml-dochead__bar {
   transition: none;
 }
 

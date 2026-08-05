@@ -51,13 +51,18 @@ html[data-desktop='electron'] .rml-shell.is-sidebar-collapsed {
   --sidebar-track: 0px;
 }
 
-/* Document resizing uses a FLIP transition in Layout.tsx. The grid commits its
-   final geometry in one layout pass; rendered surfaces carry the visual motion. */
-html[data-desktop='electron'] .rml-shell.is-document.is-sidebar-animating {
+/* Collapsing uses a FLIP transition in Layout.tsx. The grid commits its final
+   geometry in one layout pass; rendered surfaces carry the visual motion, so
+   the track must not interpolate underneath them. */
+html[data-desktop='electron'] .rml-shell.is-sidebar-animating {
   transition: none;
 }
 
-html[data-desktop='electron'] .rml-shell.is-document.is-sidebar-animating .rml-shell__sidebar {
+/* Out of the grid for the length of the slide: the panel travels as one rigid
+   surface instead of being squeezed — and re-wrapped — by a shrinking track.
+   It is opaque, so it also masks the main column's committed left edge until
+   the FLIP has caught up with it. */
+html[data-desktop='electron'] .rml-shell.is-sidebar-animating .rml-shell__sidebar {
   position: fixed;
   inset: 0 auto 0 0;
   z-index: 190;
@@ -67,16 +72,29 @@ html[data-desktop='electron'] .rml-shell.is-document.is-sidebar-animating .rml-s
   will-change: transform;
 }
 
-html[data-desktop='electron'] .rml-shell.is-document.is-sidebar-animating :is(
+/* The FLIP'd surfaces are already at their final width, so the ones that grew
+   overhang the column while they travel. Clip them to it — otherwise the
+   document page bleeds over the fork panel on its way in. */
+html[data-desktop='electron'] .rml-shell.is-sidebar-animating .rml-shell__main {
+  overflow: hidden;
+}
+
+html[data-desktop='electron'] .rml-shell.is-sidebar-animating :is(
   .rml-docframe,
   .rml-dochead__bar,
   .rml-dock,
-  .rml-slot--ball
+  .rml-slot--ball,
+  .rml-topbar__lead,
+  .rml-thread,
+  .rml-welcome__inner,
+  .rml-composer
 ) {
   will-change: transform;
 }
 
-html[data-desktop='electron'] .rml-shell.is-sidebar-collapsed .rml-desktop-compact-controls {
+/* Mounted by Layout only while the rail is collapsed and still, so the styling
+   stays off the shell's state class — it has to survive the exit animation. */
+html[data-desktop='electron'] .rml-desktop-compact-controls {
   position: fixed;
   top: var(--sp-2);
   left: 92px;
@@ -384,7 +402,7 @@ html[data-desktop='electron'] .rml-shell.is-sidebar-collapsed .rml-topbar {
 /* Phone: the sidebar leaves the grid and becomes an off-canvas drawer; the fork
  * panel floats over the full screen instead of narrowing the thread to nothing. */
 @media (max-width: 640px) {
-  html[data-desktop='electron'] .rml-shell.is-sidebar-collapsed .rml-desktop-compact-controls {
+  html[data-desktop='electron'] .rml-desktop-compact-controls {
     display: none;
   }
 

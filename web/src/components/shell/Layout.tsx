@@ -16,6 +16,30 @@ const SIDEBAR_COLLAPSED_KEY = 'rautml.sidebarCollapsed'
 const SIDEBAR_TRANSITION_MS = 420
 const SIDEBAR_TRANSITION_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
 
+/* Collapsing commits the grid in a single layout pass and lets the rendered
+ * surfaces carry the motion (FLIP). Everything listed here is either centred in
+ * the main column or pinned to its right edge, so a translate alone lands it
+ * exactly — no scaling, which is what stretched the glass chrome and
+ * rubber-banded the document page while they moved. */
+const SIDEBAR_FLIP_SURFACES = {
+  document: ['.rml-docframe', '.rml-dock', '.rml-slot--ball'],
+  chat: [
+    '.rml-topbar__lead',
+    '.rml-topbar__actions',
+    '.rml-thread',
+    /* the inner column, not the full-bleed wrapper around it: only the centred
+     * box travels by half the track, which is the distance the eye follows */
+    '.rml-welcome__inner',
+    '.rml-composer',
+    '.rml-slot--ball',
+  ],
+}
+
+/* The document header pill spans the column: its right edge is pinned to the
+ * window and only its left edge travels. Translating it would swing the right
+ * cap — and its controls — off-screen, so its margin is what animates. */
+const SIDEBAR_INSET_SURFACES = ['.rml-dochead__bar']
+
 function readSidebarCollapsed(): boolean {
   try {
     return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
@@ -88,7 +112,6 @@ export function Layout({
     const shell = shellRef.current
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const useFlip =
-      documentMode &&
       document.documentElement.dataset.desktop === 'electron' &&
       !reduceMotion &&
       shell !== null &&
@@ -100,17 +123,21 @@ export function Layout({
       return
     }
 
-    /* The generated page lives in an iframe. Animating its actual grid width
-     * makes that independent document reflow on every frame, which produces a
-     * visible follow-then-snap when it crosses a responsive breakpoint. Instead
-     * we commit the final grid once, then FLIP the rendered surfaces from their
-     * previous bounds. The iframe reflows exactly once, before the next paint. */
-    const selectors = ['.rml-docframe', '.rml-dochead__bar', '.rml-dock', '.rml-slot--ball']
-    const surfaces = selectors
-      .map((selector) => shell.querySelector<HTMLElement>(selector))
-      .filter((element): element is HTMLElement => element !== null)
+    /* Animating the grid track itself re-laid out the entire main column on
+     * every frame — and in document mode it made the generated page reflow
+     * across its own breakpoints, a visible follow-then-snap. Instead the grid
+     * commits its final geometry once and the surfaces below FLIP from the
+     * bounds they just left. The column reflows exactly once, before paint. */
+    const query = (selectors: string[]) =>
+      selectors
+        .map((selector) => shell.querySelector<HTMLElement>(selector))
+        .filter((element): element is HTMLElement => element !== null)
+
+    const translated = query(SIDEBAR_FLIP_SURFACES[documentMode ? 'document' : 'chat'])
+    const inset = documentMode ? query(SIDEBAR_INSET_SURFACES) : []
+    const measured = [...translated, ...inset]
     const before = new Map<HTMLElement, DOMRect>(
-      surfaces.map((element) => [element, element.getBoundingClientRect()] as const),
+      measured.map((element) => [element, element.getBoundingClientRect()] as const),
     )
 
     sidebarTransitionActive.current = true
@@ -120,33 +147,51 @@ export function Layout({
     })
     persist()
 
-    const animations = surfaces.flatMap((element) => {
-      const first = before.get(element)
-      if (!first) return []
-      const last = element.getBoundingClientRect()
-      if (first.width <= 0 || last.width <= 0 || first.height <= 0 || last.height <= 0) return []
+    /* Read every final box before writing a single animation — the inset pass
+     * animates margin, which would invalidate any measurement taken after it. */
+    const after = new Map<HTMLElement, DOMRect>(
+      measured.map((element) => [element, element.getBoundingClientRect()] as const),
+    )
 
-      const deltaX = first.left - last.left
-      const deltaY = first.top - last.top
-      const scaleX = first.width / last.width
-      const scaleY = first.height / last.height
-      return [
+    const timing: KeyframeAnimationOptions = {
+      duration: SIDEBAR_TRANSITION_MS,
+      easing: SIDEBAR_TRANSITION_EASE,
+      fill: 'both',
+    }
+    const animations: Animation[] = []
+
+    for (const element of translated) {
+      const first = before.get(element)
+      const last = after.get(element)
+      if (!first || !last) continue
+      const deltaX = Math.round(first.left - last.left)
+      const deltaY = Math.round(first.top - last.top)
+      if (deltaX === 0 && deltaY === 0) continue
+      animations.push(
         element.animate(
           [
-            {
-              transform: `translate3d(${deltaX}px, ${deltaY}px, 0) scale(${scaleX}, ${scaleY})`,
-              transformOrigin: 'top left',
-            },
-            { transform: 'translate3d(0, 0, 0) scale(1, 1)', transformOrigin: 'top left' },
+            { transform: `translate3d(${deltaX}px, ${deltaY}px, 0)` },
+            { transform: 'translate3d(0, 0, 0)' },
           ],
-          {
-            duration: SIDEBAR_TRANSITION_MS,
-            easing: SIDEBAR_TRANSITION_EASE,
-            fill: 'both',
-          },
+          timing,
         ),
-      ]
-    })
+      )
+    }
+
+    for (const element of inset) {
+      const first = before.get(element)
+      const last = after.get(element)
+      if (!first || !last) continue
+      const delta = Math.round(first.left - last.left)
+      if (delta === 0) continue
+      const marginLeft = Number.parseFloat(getComputedStyle(element).marginLeft) || 0
+      animations.push(
+        element.animate(
+          [{ marginLeft: `${marginLeft + delta}px` }, { marginLeft: `${marginLeft}px` }],
+          timing,
+        ),
+      )
+    }
 
     const sidebarElement = sidebarRef.current
     if (sidebarElement) {
@@ -155,23 +200,28 @@ export function Layout({
           collapsed
             ? [{ transform: 'translate3d(0, 0, 0)' }, { transform: 'translate3d(-100%, 0, 0)' }]
             : [{ transform: 'translate3d(-100%, 0, 0)' }, { transform: 'translate3d(0, 0, 0)' }],
-          {
-            duration: SIDEBAR_TRANSITION_MS,
-            easing: SIDEBAR_TRANSITION_EASE,
-            fill: 'both',
-          },
+          timing,
         ),
       )
     }
 
-    sidebarAnimations.current = animations
-    void Promise.allSettled(animations.map((animation) => animation.finished)).then(() => {
+    const settle = () => {
       if (sidebarAnimations.current !== animations) return
-      animations.forEach((animation) => animation.cancel())
       sidebarAnimations.current = []
       sidebarTransitionActive.current = false
-      setSidebarAnimating(false)
-    })
+      /* Leave the animating state first, in this same task. Cancelling while
+       * the class is still applied paints one frame of the sidebar back at its
+       * starting position — the flash the transition used to end on. */
+      flushSync(() => setSidebarAnimating(false))
+      animations.forEach((animation) => animation.cancel())
+    }
+
+    sidebarAnimations.current = animations
+    if (animations.length === 0) {
+      settle()
+      return
+    }
+    void Promise.allSettled(animations.map((animation) => animation.finished)).then(settle)
   }
 
   /* Small screens collapse the sidebar into an off-canvas drawer. The state is
@@ -211,15 +261,19 @@ export function Layout({
       )}
     >
       <div className="rml-desktop-drag" aria-hidden="true" />
+      {/* The rail's controls hand off to the panel's own toggle: they arrive
+          only once the sidebar has finished leaving, and step aside the moment
+          it starts coming back. Overlapping the two used to read as the toggle
+          teleporting across the window. */}
       <AnimatePresence>
-        {sidebarCollapsed ? (
+        {sidebarCollapsed && !sidebarAnimating ? (
           <motion.nav
             className="rml-desktop-compact-controls"
             aria-label="Conversation controls"
             initial={{ opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.2, ease: EASE }}
+            transition={{ duration: 0.18, ease: EASE }}
           >
             <button
               type="button"
