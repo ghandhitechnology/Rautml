@@ -100,6 +100,7 @@ export function Layout({
         className,
       )}
     >
+      <div className="rml-desktop-drag" aria-hidden="true" />
       <aside className="rml-shell__sidebar">
         {sidebar ?? (
           <ChatListSidebar

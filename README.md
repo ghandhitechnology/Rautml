@@ -1,11 +1,26 @@
 # Rautml
 
-Research-driven chat where the answer is a **web page**. Ask for something substantial and
+Research-driven chat where the answer is a **living page**. Ask for something substantial and
 GPT-5.6-sol researches it (web/image search, page reads, bash) and builds a rich, self-contained
 HTML document that takes over the chat view. Small follow-up questions live in a forked side
 chat (the coral ball) so the page never gets buried.
 
-## Run
+## macOS app
+
+The Electron build keeps the local Express engine and all existing model, source, document,
+download, and CLI-discovery features inside a native macOS app. It uses the native traffic lights
+with a hidden titlebar, and stores its database, model cache, and optional `.env` in
+`~/Library/Application Support/Rautml/`.
+
+```bash
+npm run dev:desktop  # desktop shell with Vite hot reload
+npm run desktop      # production renderer in Electron
+npm run dist:mac     # arm64 DMG + ZIP in release/
+```
+
+The distributable must be signed and notarized with an Apple Developer ID before public release.
+
+## Web development
 
 ```bash
 npm install

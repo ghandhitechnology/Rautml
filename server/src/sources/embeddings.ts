@@ -22,7 +22,8 @@ function getPipe(): Promise<FeatureExtractionPipeline | null> {
   if (!pipePromise) {
     pipePromise = (async () => {
       try {
-        const { pipeline } = await import('@huggingface/transformers');
+        const { pipeline, env } = await import('@huggingface/transformers');
+        if (process.env.RAUTML_CACHE_DIR) env.cacheDir = process.env.RAUTML_CACHE_DIR;
         const pipe = await pipeline('feature-extraction', MODEL_ID, { dtype: 'q8' });
         console.log(`[sources] embedding model ready: ${MODEL_ID}`);
         return pipe as FeatureExtractionPipeline;

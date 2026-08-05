@@ -4,7 +4,7 @@
 
 ## Platform
 
-web
+macOS desktop (Electron), with the web workspace retained for development
 
 ## Users
 
@@ -25,7 +25,8 @@ A neighboring chat product could not truthfully claim both: answers as living, v
 
 ## Operating Context
 
-- Monorepo: `server/` (Express + TS + node:sqlite, port 5175) and `web/` (Vite + React 18 + TS, port 5174). All UI lives in `web/`; PRODUCT.md at root is the single product authority.
+- Monorepo: `server/` (Express + TS + node:sqlite), `web/` (Vite + React 18 + TS), and `desktop/` (Electron host). The packaged app starts its engine on a private loopback port; all UI remains in `web/`.
+- The macOS window uses native traffic lights in a hidden-inset titlebar. Content fills the window and the sidebar provides the draggable region without adding a separate desktop chrome bar.
 - Runs are durable and server-side: reload mid-generation and the timeline resumes via SSE replay; `ask_user_input_v0` questions park the run in SQLite until answered.
 - Follow-ups live in a forked side thread (the "fork ball" orb → 380px panel) so the page never gets buried — "ask, don't scroll."
 - In-place edits ("make the header purple") patch the page via `str_replace` and bump a version picker (v1, v2, …); every version stays viewable.
@@ -36,7 +37,7 @@ A neighboring chat product could not truthfully claim both: answers as living, v
 ## Capabilities and Constraints
 
 - Model tools: `web_search`, `web_fetch`, `image_search` (Firecrawl), `bash_tool`, `create_file`, `str_replace`, `view`, `present_files`, `visualize_read_me`, `visualize_show_widget`, `ask_user_input_v0`.
-- Requires `OPENROUTER_API_KEY` and `FIRECRAWL_API_KEY`; Node 26+ (built-in `node:sqlite`).
+- Provider credentials remain optional and feature-specific. The desktop app inherits the user's login-shell environment and reads its private `.env` from Application Support; the packaged Node runtime provides `node:sqlite`.
 - Generated pages are self-contained HTML — the app must frame arbitrary model-authored documents gracefully, light or dark, ugly or beautiful.
 - Terminology (fixed): **asset** (a generated HTML document), **fork** / **fork ball** (the side thread and its orb), **activity timeline** (live tool-call stream), **run** (one server-side generation), **takeover** (asset filling the main column).
 - Known environment quirk: a parent checkout's dev server can squat port 5175, making smoke tests hit stale routes — verify which server answers before trusting a route.

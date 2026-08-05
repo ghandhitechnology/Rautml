@@ -1,19 +1,36 @@
 {
   "name": "rautml",
+  "productName": "Rautml",
+  "version": "0.1.0",
+  "description": "Research-driven chat where the answer is a living page.",
+  "author": "Hataewook",
   "private": true,
+  "main": "desktop/main.mjs",
   "workspaces": [
     "server",
     "web"
   ],
   "scripts": {
     "dev": "concurrently -n server,web -c blue,magenta \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:desktop": "concurrently -k -s first -n server,web,electron -c blue,magenta,green \"npm:dev:server\" \"npm:dev:web\" \"wait-on http://127.0.0.1:5174 && cross-env RAUTML_DEV_URL=http://127.0.0.1:5174 electron .\"",
     "dev:server": "npm run dev -w server",
     "dev:web": "npm run dev -w web",
+    "build": "npm run build:server && npm run build:web",
+    "build:server": "tsc -p server/tsconfig.json",
+    "build:web": "npm run build -w web",
+    "desktop": "npm run build && electron .",
+    "pack:mac": "npm run build && electron-builder --mac dir --arm64",
+    "dist:mac": "npm run build && electron-builder --mac dmg zip --arm64",
+    "postinstall": "electron-builder install-app-deps",
     "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
     "test:server": "npm test -w server"
   },
   "devDependencies": {
-    "concurrently": "^9.1.0"
+    "concurrently": "^9.1.0",
+    "cross-env": "^10.1.0",
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3",
+    "wait-on": "^9.1.0"
   },
   "allowScripts": {
     "esbuild@0.28.1": true,
@@ -22,5 +39,73 @@
     "onnxruntime-node@1.24.3": true,
     "sharp@0.34.5": true,
     "protobufjs@7.6.5": true
+  },
+  "build": {
+    "appId": "com.hataewook.rautml",
+    "productName": "Rautml",
+    "artifactName": "Rautml-${version}-${arch}.${ext}",
+    "asar": true,
+    "files": [
+      "desktop/**/*",
+      "server/dist/**/*",
+      "server/package.json",
+      "web/dist/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/onnxruntime-node/**/*",
+      "node_modules/sharp/**/*",
+      "node_modules/@img/**/*"
+    ],
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "electronLanguages": [
+      "en",
+      "ko"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.icns",
+      "identity": null,
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "dmg": {
+      "title": "Rautml",
+      "backgroundColor": "#faf9f5",
+      "window": {
+        "width": 540,
+        "height": 380
+      },
+      "contents": [
+        {
+          "x": 150,
+          "y": 190,
+          "type": "file"
+        },
+        {
+          "x": 390,
+          "y": 190,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    }
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
+    "dotenv": "^16.6.1",
+    "express": "^4.22.2",
+    "hwp.js": "^0.0.3",
+    "jszip": "^3.10.1",
+    "mammoth": "^1.12.0",
+    "multer": "^2.2.0",
+    "unpdf": "^1.8.0"
   }
 }

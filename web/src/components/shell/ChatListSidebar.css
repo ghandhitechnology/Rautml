@@ -20,6 +20,14 @@
   margin-bottom: var(--sp-3);
 }
 
+/* Electron's hidden-inset titlebar puts the native traffic lights directly in
+   this surface. The brand shares their row, so there is no ornamental titlebar. */
+html[data-desktop='electron'] .rml-sidebar__head {
+  height: 52px;
+  padding-inline: 88px var(--sp-3);
+  margin-bottom: var(--sp-2);
+}
+
 .rml-brand {
   display: inline-flex;
   align-items: center;
@@ -302,6 +310,12 @@
 .rml-sidebar.is-collapsed .rml-sidebar__head {
   justify-content: center;
   padding-inline: 0;
+}
+
+html[data-desktop='electron'] .rml-sidebar.is-collapsed .rml-sidebar__head {
+  height: 82px;
+  padding: 42px 0 0;
+  align-items: center;
 }
 
 .rml-sidebar.is-collapsed .rml-brand,

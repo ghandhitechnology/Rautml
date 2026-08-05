@@ -5,7 +5,11 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-export const DATA_DIR = path.join(__dirname, '..', 'data');
+// Desktop builds live inside a read-only app bundle. Electron points this at
+// Application Support so chats, generated assets, and source files stay durable.
+export const DATA_DIR = process.env.RAUTML_DATA_DIR
+  ? path.resolve(process.env.RAUTML_DATA_DIR)
+  : path.join(__dirname, '..', 'data');
 export const WORKSPACES_DIR = path.join(DATA_DIR, 'workspaces');
 export const SOURCES_DIR = path.join(DATA_DIR, 'sources');
 export const DB_PATH = path.join(DATA_DIR, 'rautml.db');

@@ -12,12 +12,40 @@
   transition: grid-template-columns var(--dur-slow) var(--ease);
 }
 
+.rml-desktop-drag {
+  display: none;
+}
+
+html[data-desktop='electron'] .rml-desktop-drag {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 200;
+  display: block;
+  height: 28px;
+  pointer-events: none;
+  -webkit-app-region: drag;
+}
+
+html[data-desktop='electron'] button,
+html[data-desktop='electron'] a,
+html[data-desktop='electron'] input,
+html[data-desktop='electron'] textarea,
+html[data-desktop='electron'] select,
+html[data-desktop='electron'] [role='button'] {
+  -webkit-app-region: no-drag;
+}
+
 .rml-shell.is-fork-open {
   grid-template-columns: var(--sidebar-track) minmax(0, 1fr) var(--fork-w);
 }
 
 .rml-shell.is-sidebar-collapsed {
   --sidebar-track: 52px;
+}
+
+html[data-desktop='electron'] .rml-shell.is-sidebar-collapsed {
+  /* Native traffic lights need a stable home even when the rail compacts. */
+  --sidebar-track: 84px;
 }
 
 .rml-shell__sidebar {
