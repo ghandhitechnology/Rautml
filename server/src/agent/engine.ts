@@ -13,6 +13,7 @@ import { db, WORKSPACES_DIR } from '../db.js';
 import * as repo from '../repo.js';
 import * as sse from '../sse.js';
 import { buildToolRegistry } from '../tools/index.js';
+import { aboutMeBlock } from '../settings.js';
 import { formatBytes } from '../sources/indexer.js';
 import type {
   ElaborationLevel,
@@ -429,6 +430,10 @@ function buildContext(
   let system = thread === 'fork' ? `${SYSTEM_PROMPT}\n\n---\n\n${FORK_PREAMBLE}` : SYSTEM_PROMPT;
   const layer = elaboration ? ELABORATION_PREAMBLES[elaboration] : undefined;
   if (layer) system = `${system}\n\n---\n\n${layer}`;
+  // Personalization is user-global, not per-run, so it is read here at build
+  // time instead of being threaded through the run's persisted selection.
+  const about = aboutMeBlock();
+  if (about) system = `${system}\n\n---\n\n${about}`;
   const turns =
     thread === 'fork'
       ? [

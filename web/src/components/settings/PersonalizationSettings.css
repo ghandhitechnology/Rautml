@@ -1,0 +1,67 @@
+.rml-personal__field {
+  padding: var(--sp-4) var(--sp-5);
+}
+
+.rml-personal__label h3 {
+  margin: 0 0 3px;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.rml-personal__label p {
+  margin: 0 0 var(--sp-3);
+  max-width: 52ch;
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.rml-personal__field textarea {
+  display: block;
+  width: 100%;
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-body);
+  resize: vertical;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+
+.rml-personal__field textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 0.72;
+}
+
+.rml-personal__field textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+.rml-personal__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-top: var(--sp-2);
+  min-height: 16px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.rml-personal__state .is-saved {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.rml-personal__count {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}

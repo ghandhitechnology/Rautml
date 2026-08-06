@@ -1,0 +1,92 @@
+.rml-settings-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--text-muted);
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.rml-settings-btn svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.rml-settings-btn__icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  /* The gear turns a sixth of a tooth on hover — enough to register as
+     mechanical, not enough to become a spinner. */
+  transition: transform var(--dur) var(--ease);
+}
+
+.rml-settings-btn:hover .rml-settings-btn__icon {
+  transform: rotate(60deg);
+}
+
+.rml-settings-btn__label {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+/* ---- sidebar footer: the primary entry ---- */
+
+.rml-settings-btn.is-sidebar {
+  width: 100%;
+  min-height: 34px;
+  flex: 0 0 auto;
+  margin: var(--sp-2) var(--sp-1) 0;
+  padding: var(--sp-2) var(--sp-3);
+  width: calc(100% - var(--sp-2));
+  border-radius: var(--r-pill);
+  text-align: left;
+}
+
+.rml-settings-btn.is-sidebar:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.rml-settings-btn.is-sidebar:active {
+  background: var(--pressed);
+}
+
+.rml-settings-btn.is-sidebar.is-collapsed {
+  width: 34px;
+  margin-inline: auto;
+  padding: 0;
+  justify-content: center;
+}
+
+/* ---- top bar: icon-only twin, matches the theme toggle ---- */
+
+.rml-settings-btn.is-topbar {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-pill);
+}
+
+.rml-settings-btn.is-topbar:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.rml-settings-btn.is-topbar:active {
+  background: var(--pressed);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rml-settings-btn:hover .rml-settings-btn__icon {
+    transform: none;
+  }
+}

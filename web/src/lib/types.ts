@@ -392,3 +392,36 @@ export interface InputRequest {
 }
 
 export type ThemeName = 'light' | 'dark'
+
+/* ------------------------------------------------------------------ settings */
+
+/** An API key as reported by the server: enough to recognise, never the secret.
+ *  Mirrors `ApiKeyStatus` in server/src/types.ts. */
+export interface ApiKeyStatus {
+  name: string
+  label: string
+  hint: string
+  optional: boolean
+  set: boolean
+  /** Last four characters, e.g. `••••4f2a`. Empty when unset. */
+  masked: string
+  /**
+   * Where the effective value comes from. `environment` means the user's shell
+   * exported it, which overrides the saved file on every restart.
+   */
+  source: 'file' | 'environment' | 'unset'
+}
+
+/** Mirrors `Personalization` in server/src/types.ts. */
+export interface Personalization {
+  designPreferences: string
+  aboutMe: string
+}
+
+export interface SettingsPayload {
+  keys: ApiKeyStatus[]
+  personalization: Personalization
+}
+
+/** Which pane of the settings page is showing. */
+export type SettingsSection = 'models' | 'keys' | 'personalization'

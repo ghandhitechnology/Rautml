@@ -14,6 +14,7 @@ Rautml/
     src/index.ts          # bootstrap: dotenv, db init, routes, listen
     src/db.ts             # schema DDL + migration on boot
     src/repo.ts           # typed persistence layer (all SQL lives here)
+    src/settings.ts       # API keys (.env upsert + live process.env) + personalization blocks
     src/types.ts          # shared server types (mirror of web/src/lib/types.ts)
     src/sse.ts            # SSE hub: subscribe(chatId, res), publish(chatId, event) + persistence to tool_events
     src/agent/openrouter.ts  # chat.completions call w/ streaming, retry/backoff on 429/5xx
@@ -42,14 +43,23 @@ Rautml/
     src/components/chat/    # MessageBubble, Markdown, ActivityTimeline, InputChips, FileCard, WidgetCard
     src/components/asset/   # AssetCard, AssetFrame (iframe), VersionPicker
     src/components/fork/    # ForkBall, ForkPanel, ForkThread
+    src/components/settings/# SettingsPage (takeover) + SettingsButton, ModelSettings, KeySettings,
+                            # PersonalizationSettings
 ```
 
 Ownership boundaries (parallel agents MUST stay in their dirs; App.tsx wiring is done by the assembler):
-shell→components/shell+theme+state+lib, chat→components/chat, asset→components/asset, fork→components/fork.
+shell→components/shell+theme+state+lib, chat→components/chat, asset→components/asset, fork→components/fork,
+settings→components/settings.
 
 ## Environment
 
 - `OPENROUTER_API_KEY`, `FIRECRAWL_API_KEY` in `/Users/pyu/projects/hobbies/Rautml/.env` (already present).
+  `BROWSERBASE_API_KEY` / `BROWSERBASE_PROJECT_ID` are stored for upcoming browser tooling; nothing reads
+  them yet. All four are editable in-app under Settings → API keys, which rewrites that same file
+  (`RAUTML_ENV_PATH`, `<userData>/.env` under Electron) and updates `process.env` live. Every consumer
+  reads `process.env` at call time — `research.ts firecrawlKey()`, `openrouter.ts apiKey()`,
+  `providers.ts` — which is what makes a saved key take effect without a restart. Keep it that way:
+  a module-scope `process.env.X` read would silently pin the value from boot.
 - Optional overrides: `PORT` (server, default 5175), `WEB_PORT` / `API_PORT` (vite dev + its /api proxy),
   `OPENROUTER_BASE_URL` and `CODEX_RESPONSES_URL` (point a provider at a proxy or a local mock). These let a
   second checkout — or a test harness driving the app against a fake provider — run without port conflicts.
@@ -97,6 +107,9 @@ sources(id TEXT PK, chat_id TEXT, name TEXT, ext TEXT, mime TEXT, size INTEGER,
 -- NULL when the embedding model was unavailable (lexical fallback applies)
 source_chunks(id INTEGER PK AUTOINCREMENT, source_id TEXT, chat_id TEXT, seq INTEGER,
               start_off INTEGER, end_off INTEGER, text TEXT, embedding BLOB);
+-- user-global preferences. Keys: 'design_preferences', 'about_me'. API keys are
+-- NOT here — they stay in the .env file the process boots from (see settings.ts).
+settings(key TEXT PK, value TEXT, updated_at INTEGER);
 ```
 
 ## HTTP API (all JSON under /api)
@@ -119,6 +132,19 @@ source_chunks(id INTEGER PK AUTOINCREMENT, source_id TEXT, chat_id TEXT, seq INT
 - `GET  /api/chats/:id/sources` → `Source[]`
 - `GET  /api/sources/:sourceId/file` → raw file download
 - `DELETE /api/sources/:sourceId` → removes the file, its chunks and its disk dir; emits source.removed
+- `GET  /api/settings` → `{ keys: ApiKeyStatus[], personalization: Personalization }`
+- `PUT  /api/settings/keys` `{ [NAME]: string }` → `{ keys }` — writes the managed keys to the env file
+  and to `process.env` at once, so a saved key works on the next message with no restart. An empty value
+  clears the key. Unmanaged variables, comments, and ordering in the file are preserved. Also drops the
+  provider discovery cache, so an OpenRouter key flips that provider to connected immediately.
+- `PUT  /api/settings/personalization` `{ designPreferences?: string, aboutMe?: string }` → `{ personalization }`
+  (omitted fields untouched; each capped at 4000 chars)
+
+The three settings routes are loopback-gated like `POST /api/providers/:id/reconnect` — they read and
+write this machine's own configuration. `GET /api/settings` never returns a secret: each key reports
+`set`, a `masked` tail (`••••4f2a`), and a `source` of `file` | `environment` | `unset`. `environment`
+means the user's login shell exported it, which dotenv will not override on the next boot — the UI says
+so, because otherwise an edit made in-app looks like it silently reverted.
 
 `POST /api/chats/:id/messages` also accepts `sourceIds?: string[]` (must belong to the chat) — the
 files uploaded with that message. They are listed in the model turn as an `<attached_files>` block and
@@ -309,6 +335,27 @@ Motion: framer-motion; standard easing `[0.22, 1, 0.36, 1]`; durations 200–450
   explanation). Appends an extra system-prompt layer per run (prompts.ts `ELABORATION_PREAMBLES`); it changes
   the path, never the conclusions. Global, default `bachelors`, persisted to localStorage
   (`rautml.elaboration`), sent with each POST /messages; runs store it so resume keeps it.
+- **Settings** (components/settings): a compact "Settings" pill in the chat-sidebar footer — the slot the old
+  ProviderBar panel occupied — plus an icon-only twin in the top bar, because on desktop a collapsed sidebar
+  has a 0px track and would otherwise strand the entry. Either opens a full-window takeover with its own left
+  nav and three sections. The page renders as an overlay *beside* Layout, not in place of it: unmounting the
+  shell would tear down the live thread and its SSE view. While open the shell carries `inert` (set
+  imperatively — React 18 has no such prop) and `.is-settings-open`, which hides the z-index-201 titlebar
+  controls that would otherwise float over the page. The overlay sits at z-index 150, below the Electron drag
+  strip, so the window stays draggable. Escape closes. Settings state lives in the store (`settingsOpen`,
+  `settingsSection`); nothing here is persisted to localStorage — the server owns it.
+  - **Model selector** — the former ProviderBar, given a page: provider groups all expanded, per-model
+    checkboxes writing `enabledModelIds`, "Connect with CLI", Refresh, and a re-read on window focus so a
+    Terminal login shows up on return. Same two guards as before: the last enabled model cannot be unchecked,
+    and models behind a disconnected CLI are locked.
+  - **API keys** — masked-only display, save/remove per key, and a warning when a key's `source` is
+    `environment`. Saving refreshes providers, since a new OpenRouter key changes that provider's status.
+  - **Personalization** — two textareas that save on blur. *Design choices* is appended to `DESIGN_README` by
+    the `visualize_read_me` tool (`tools/ux.ts`), so it arrives exactly when the model is deciding how a page
+    looks and only then; it lands under the constitution's existing "the user's styling wishes override the
+    house" clause. *More about me* is appended to the system prompt in `engine.ts buildContext()`, covering
+    main and fork threads. Both are read server-side from the `settings` table at prompt-build time rather
+    than threaded through a run's persisted selection — they are user-global, not per-run.
 - **InputChips**: input.request renders tappable option chips in the thread; tap → POST input, chips lock in.
 - **Markdown**: react-markdown + remark-gfm + remark-math + rehype-katex. Code blocks styled, copy button.
 - **Reload/reconnect**: on chat open, GET /api/chats/:id renders full state incl. timeline from events; SSE
@@ -336,6 +383,11 @@ interface Source { id:string; chatId:string; name:string; ext:string; mime:strin
   status:'processing'|'ready'|'error'; error?:string; textChars:number; chunkCount:number; createdAt:number }
 interface ChatEvent { seq:number; chatId:string; thread:Thread; type:string; data:any }
 interface PendingInput { id:string; question:string; options:string[] }
+// settings — `masked` is the last four characters; the secret itself never leaves the server.
+interface ApiKeyStatus { name:string; label:string; hint:string; optional:boolean; set:boolean;
+  masked:string; source:'file'|'environment'|'unset' }
+interface Personalization { designPreferences:string; aboutMe:string }
+interface SettingsPayload { keys:ApiKeyStatus[]; personalization:Personalization }
 ```
 
 ## Quality bars
