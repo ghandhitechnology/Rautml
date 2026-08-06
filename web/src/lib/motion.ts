@@ -15,6 +15,11 @@ export const transition = {
   slow: { duration: DUR.slow, ease: EASE },
 } as const
 
+/** Length of the sidebar's collapse/expand slide. Lives here rather than in
+ *  Layout so the panel's own contents can sit out the transition without the
+ *  two modules importing each other. */
+export const SIDEBAR_TRANSITION_MS = 420
+
 /** Spring used for panels sliding in (fork panel, cards settling). */
 export const SPRING = { type: 'spring' as const, stiffness: 340, damping: 34, mass: 0.9 }
 

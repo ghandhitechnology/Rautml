@@ -1,8 +1,9 @@
 /* ForkThread — the mini chat inside the fork panel.
  *
  * Everything it renders comes from the store's fork-thread slice: messages, the fork
- * run's timeline, and any ask_user_input_v0 chips addressed to the fork. Nothing is
- * imported from components/chat — the fork owns its own bubbles, timeline and markdown.
+ * run's timeline, and any ask_user_input_v0 chips addressed to the fork. The fork owns
+ * its own bubbles, timeline and markdown; CopyButton is the one thing it borrows from
+ * components/chat, so a copied turn behaves identically on both surfaces.
  */
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
@@ -19,6 +20,7 @@ import {
 import type { InputRequest, Message } from '../../lib/types'
 import { cx } from '../../lib/utils'
 import { EASE } from '../../lib/motion'
+import { CopyButton } from '../chat/Markdown'
 import ForkMarkdown from './ForkMarkdown'
 import ForkTimeline from './ForkTimeline'
 import ContextAttachmentTile from './ContextAttachmentTile'
@@ -37,6 +39,11 @@ const SUGGESTIONS = [
 ]
 
 /* ----------------------------------------------------------------- bubbles */
+
+/** A finished turn can be lifted out of the panel; a half-written one can't. */
+function canCopy(message: Message) {
+  return message.status !== 'streaming' && message.content.trim().length > 0
+}
 
 function UserBubble({ message }: { message: Message }) {
   return (
@@ -57,6 +64,11 @@ function UserBubble({ message }: { message: Message }) {
         ) : null}
         {message.content}
       </div>
+      {canCopy(message) ? (
+        <div className="rml-forkmsg__actions">
+          <CopyButton value={message.content} label="Copy message" />
+        </div>
+      ) : null}
     </motion.div>
   )
 }
@@ -86,6 +98,11 @@ function AssistantBlock({ message }: { message: Message }) {
           {streaming ? <span className="rml-forkmsg__caret" aria-hidden="true" /> : null}
         </div>
       )}
+      {canCopy(message) ? (
+        <div className="rml-forkmsg__actions">
+          <CopyButton value={message.content} label="Copy message" />
+        </div>
+      ) : null}
     </motion.div>
   )
 }

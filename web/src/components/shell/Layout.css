@@ -16,7 +16,7 @@
   display: none;
 }
 
-.rml-desktop-compact-controls {
+.rml-titlebar-controls {
   display: none;
 }
 
@@ -92,9 +92,10 @@ html[data-desktop='electron'] .rml-shell.is-sidebar-animating :is(
   will-change: transform;
 }
 
-/* Mounted by Layout only while the rail is collapsed and still, so the styling
-   stays off the shell's state class — it has to survive the exit animation. */
-html[data-desktop='electron'] .rml-desktop-compact-controls {
+/* Parked next to the native traffic lights: the 32px buttons centre on y=24 with
+   the lights, and the gap after 68px is deliberate. Fixed and outside the grid,
+   so it holds still through the collapse FLIP — which is the point of it. */
+html[data-desktop='electron'] .rml-titlebar-controls {
   position: fixed;
   top: var(--sp-2);
   left: 92px;
@@ -105,7 +106,11 @@ html[data-desktop='electron'] .rml-desktop-compact-controls {
   -webkit-app-region: no-drag;
 }
 
-.rml-desktop-compact-controls button {
+.rml-titlebar-controls__slot {
+  display: grid;
+}
+
+.rml-titlebar-controls button {
   display: grid;
   place-items: center;
   width: 32px;
@@ -118,19 +123,19 @@ html[data-desktop='electron'] .rml-desktop-compact-controls {
     transform var(--dur-fast) var(--ease);
 }
 
-.rml-desktop-compact-controls button:hover:not(:disabled) {
+.rml-titlebar-controls button:hover:not(:disabled) {
   background: rgb(128 128 128 / 0.16);
 }
 
-.rml-desktop-compact-controls button:active:not(:disabled) {
+.rml-titlebar-controls button:active:not(:disabled) {
   transform: scale(0.94);
 }
 
-.rml-desktop-compact-controls button:disabled {
+.rml-titlebar-controls button:disabled {
   opacity: 0.35;
 }
 
-.rml-desktop-compact-controls svg {
+.rml-titlebar-controls svg {
   width: 18px;
   height: 18px;
   fill: none;
@@ -143,8 +148,8 @@ html[data-desktop='electron'] .rml-desktop-compact-controls {
   transition: opacity var(--dur-fast) var(--ease);
 }
 
-.rml-desktop-compact-controls button:hover:not(:disabled) svg,
-.rml-desktop-compact-controls button:focus-visible svg {
+.rml-titlebar-controls button:hover:not(:disabled) svg,
+.rml-titlebar-controls button:focus-visible svg {
   opacity: 1;
 }
 
@@ -184,6 +189,9 @@ html[data-desktop='electron'] .rml-desktop-compact-controls {
   z-index: 3;
 }
 
+/* Collapsed, the titlebar controls are two buttons ending at x=160 and the topbar
+   starts at the window edge, so its lead has to clear them. Expanded, the group
+   is a single button standing over the sidebar and the topbar needs nothing. */
 html[data-desktop='electron'] .rml-shell.is-sidebar-collapsed .rml-topbar {
   padding-left: 172px;
 }
@@ -402,7 +410,9 @@ html[data-desktop='electron'] .rml-shell.is-sidebar-collapsed .rml-topbar {
 /* Phone: the sidebar leaves the grid and becomes an off-canvas drawer; the fork
  * panel floats over the full screen instead of narrowing the thread to nothing. */
 @media (max-width: 640px) {
-  html[data-desktop='electron'] .rml-desktop-compact-controls {
+  /* No room beside the traffic lights at this width — the panel's own toggle
+     takes over (ChatListSidebar.css puts it back). */
+  html[data-desktop='electron'] .rml-titlebar-controls {
     display: none;
   }
 

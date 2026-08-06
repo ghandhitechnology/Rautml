@@ -69,8 +69,11 @@ export function Composer({
   const stagedUploads = useStagedUploads()
 
   // File attach lives on the main composer only; the fork panel asks about
-  // the chat, it doesn't feed it.
-  const canAttach = thread === 'main' && !compact && !!activeChatId && !disabled
+  // the chat, it doesn't feed it. The slot is held open before a chat exists —
+  // otherwise the placeholder jumps a button's width when the first send
+  // creates one, in what reads as the same input bar.
+  const showAttach = thread === 'main' && !compact
+  const canAttach = showAttach && !!activeChatId && !disabled
   const staged = canAttach ? stagedUploads : []
   const uploading = staged.some((u) => u.status === 'uploading')
 
@@ -184,11 +187,44 @@ export function Composer({
       </AnimatePresence>
 
       <div
-        className={cx('rml-composer__field', isRunning && 'is-running', dragOver && 'is-dragover')}
+        className={cx(
+          'rml-composer__field',
+          showAttach && 'has-attach',
+          isRunning && 'is-running',
+          dragOver && 'is-dragover',
+        )}
         onDragOver={handleDragOver}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
       >
+        {/* Attach files into the chat's local sources; they ride the next send. */}
+        {showAttach && (
+          <>
+            <input
+              ref={fileRef}
+              type="file"
+              accept={ACCEPT_EXTS}
+              multiple
+              hidden
+              onChange={handleFileInput}
+            />
+            <button
+              type="button"
+              className="rml-composer__attach"
+              onClick={pickFiles}
+              disabled={!canAttach}
+              aria-label="Attach files"
+              title={
+                canAttach
+                  ? '파일 첨부 · Attach files (pdf, csv, docx, pptx, md, tex, hwp, hwpx)'
+                  : 'Open a chat to attach files'
+              }
+            >
+              <Icon name="paperclip" size={16} />
+            </button>
+          </>
+        )}
+
         <textarea
           ref={ref}
           className="rml-composer__input"
@@ -204,29 +240,6 @@ export function Composer({
           spellCheck={false}
           aria-label={thread === 'fork' ? 'Fork message' : 'Message'}
         />
-
-        {/* Attach files into the chat's local sources; they ride the next send. */}
-        {canAttach && (
-          <>
-            <input
-              ref={fileRef}
-              type="file"
-              accept={ACCEPT_EXTS}
-              multiple
-              hidden
-              onChange={handleFileInput}
-            />
-            <button
-              type="button"
-              className="rml-composer__attach"
-              onClick={pickFiles}
-              aria-label="Attach files"
-              title="파일 첨부 · Attach files (pdf, csv, docx, pptx, md, tex, hwp, hwpx)"
-            >
-              <Icon name="paperclip" size={16} />
-            </button>
-          </>
-        )}
 
         {/* Elaboration + model + effort selection travels with the next message;
             fork inherits it. The audience pebble sits left of the model pebble. */}

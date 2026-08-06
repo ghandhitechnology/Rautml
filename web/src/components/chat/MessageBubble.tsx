@@ -8,7 +8,7 @@ import type { ReactNode } from 'react'
 import { cx } from '../../lib/utils'
 import type { Message } from '../../lib/types'
 import { useSources } from '../../state/store'
-import Markdown from './Markdown'
+import Markdown, { CopyButton } from './Markdown'
 import { Icon } from './icons'
 import './MessageBubble.css'
 
@@ -20,6 +20,8 @@ export interface MessageBubbleProps {
   compact?: boolean
   /** Show the three-dot thinking indicator when an assistant turn has no text yet. */
   thinking?: boolean
+  /** Offer the copy affordance under the turn. */
+  copyable?: boolean
   className?: string
 }
 
@@ -56,12 +58,17 @@ export function MessageBubble({
   children,
   compact = false,
   thinking = false,
+  copyable = true,
   className,
 }: MessageBubbleProps) {
   const isUser = message.role === 'user'
   const streaming = message.status === 'streaming'
   const errored = message.status === 'error'
   const empty = message.content.trim().length === 0
+  // half-written answers are a footgun to copy; interrupted ones are still worth keeping
+  const canCopy = copyable && !streaming && !empty
+  // the user bubble is a small card — its copy control is glyph-only
+  const iconOnly = isUser
 
   return (
     <article
@@ -97,6 +104,12 @@ export function MessageBubble({
           ) : null}
         </div>
       )}
+
+      {canCopy ? (
+        <div className="rml-msg__actions">
+          <CopyButton value={message.content} label={iconOnly ? 'Copy message' : 'Copy'} />
+        </div>
+      ) : null}
 
       {children ? <div className="rml-msg__extras">{children}</div> : null}
     </article>

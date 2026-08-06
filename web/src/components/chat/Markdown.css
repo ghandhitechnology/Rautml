@@ -330,7 +330,8 @@
   color: var(--text);
 }
 
-.rml-copy.is-copied {
+.rml-copy.is-copied,
+.rml-copy.is-failed {
   color: var(--accent-hover);
   opacity: 1;
 }

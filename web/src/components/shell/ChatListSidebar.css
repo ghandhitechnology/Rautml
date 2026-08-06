@@ -21,11 +21,20 @@
 }
 
 /* Electron's hidden-inset titlebar puts the native traffic lights directly in
-   this surface. They own the first row; the brand sits on the row beneath. */
+   this surface, and the shell's titlebar controls hover over it too. They own the
+   first row; the brand starts far enough below that the toggle's hover background
+   never crowds the wordmark. */
 html[data-desktop='electron'] .rml-sidebar__head {
-  height: 72px;
-  padding: 32px var(--sp-2) 0;
+  height: 80px;
+  padding: 40px var(--sp-2) 0;
   margin-bottom: var(--sp-2);
+}
+
+/* In Electron the toggle lives beside the traffic lights instead (Layout.css) —
+   this one would be a second copy of it. On the web there are no traffic lights
+   and no fixed group, so it stays: it is the only way to collapse the panel. */
+html[data-desktop='electron'] .rml-sidebar__toggle {
+  display: none;
 }
 
 .rml-brand {
@@ -313,8 +322,8 @@ html[data-desktop='electron'] .rml-sidebar__head {
 }
 
 html[data-desktop='electron'] .rml-sidebar.is-collapsed .rml-sidebar__head {
-  height: 56px;
-  padding: 28px 0 0;
+  height: 64px;
+  padding: 36px 0 0;
   align-items: center;
   margin-bottom: var(--sp-2);
 }
@@ -345,6 +354,13 @@ html[data-desktop='electron'] .rml-sidebar.is-collapsed .rml-sidebar__head {
 /* Compacting is a desktop workspace preference. The phone drawer always opens
  * with the complete brand, chat list, and footer. */
 @media (max-width: 640px) {
+  /* The titlebar group is hidden this narrow, so an Electron window down here
+     needs its in-panel toggle back. The collapsed-drawer rule below still wins
+     on specificity, which is what keeps the phone drawer toggle-free. */
+  html[data-desktop='electron'] .rml-sidebar__toggle {
+    display: grid;
+  }
+
   .rml-sidebar.is-collapsed {
     padding: var(--sp-3) var(--sp-2) var(--sp-2);
   }

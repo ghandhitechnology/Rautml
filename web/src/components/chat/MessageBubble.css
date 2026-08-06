@@ -146,6 +146,54 @@
   border-color: color-mix(in srgb, var(--accent) 42%, transparent);
 }
 
+/* ----------------------------------------------------------------- actions */
+
+/* Sits between the turn and its extras so it hugs the text it copies.
+ * The row keeps its height whether or not the button shows, so revealing it
+ * on hover never nudges the thread. */
+.rml-msg__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-top: 6px;
+}
+
+.rml-msg--user .rml-msg__actions {
+  justify-content: flex-end;
+}
+
+.rml-msg__actions .rml-copy {
+  opacity: 0;
+}
+
+.rml-msg:hover .rml-msg__actions .rml-copy,
+.rml-msg__actions .rml-copy:focus-visible,
+.rml-msg__actions .rml-copy.is-copied,
+.rml-msg__actions .rml-copy.is-failed {
+  opacity: 1;
+}
+
+/* no hover on touch — the control just stays put */
+@media (hover: none) {
+  .rml-msg__actions .rml-copy {
+    opacity: 0.72;
+  }
+}
+
+/* the bubble is a small card: glyph only */
+.rml-msg--user .rml-msg__actions .rml-copy__text {
+  display: none;
+}
+
+.rml-msg--user .rml-msg__actions .rml-copy {
+  padding: 5px;
+}
+
+/* the row already opens the gap the extras would have asked for */
+.rml-msg__actions + .rml-msg__extras {
+  margin-top: var(--sp-3);
+}
+
 /* ------------------------------------------------------------------ extras */
 
 .rml-msg__extras {

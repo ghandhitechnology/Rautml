@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useActiveChatId, useChats, useOnBlankChat, useStore } from '../../state/store'
 import { absoluteTime, cx, relativeTime } from '../../lib/utils'
-import { EASE } from '../../lib/motion'
+import { EASE, SIDEBAR_TRANSITION_MS } from '../../lib/motion'
 import TypewriterText from './TypewriterText'
 import ProviderBar from './ProviderBar'
 import rautmlMark from '../../assets/rautml-mark.png'
@@ -33,6 +33,30 @@ export function ChatListSidebar({
   const [armedId, setArmedId] = useState<string | null>(null)
   const [, setTick] = useState(0)
   const disarmTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  /* Collapsing hides the list with display:none while every row stays mounted, so
+   * expanding hands framer-motion a position delta for all of them at once and the
+   * list cascades open. Hold the rows still for the length of the shell's slide.
+   * The prop flips at the start of an expand — the case this guards — and at the
+   * end of a collapse, where it is a harmless tail over an already-hidden list. */
+  const [rowsStill, setRowsStill] = useState(false)
+  /* bumped on every flip: a boolean alone can't restart a window that is already
+   * open, so a second toggle inside 420ms would inherit the first one's deadline */
+  const [stillToken, setStillToken] = useState(0)
+  const prevCollapsed = useRef(collapsed)
+  if (prevCollapsed.current !== collapsed) {
+    prevCollapsed.current = collapsed
+    /* during render, not in an effect: the suppression has to already be in place
+     * for the commit that gives the rows their boxes back */
+    setRowsStill(true)
+    setStillToken((n) => n + 1)
+  }
+  useEffect(() => {
+    if (!stillToken) return
+    const timer = setTimeout(() => setRowsStill(false), SIDEBAR_TRANSITION_MS)
+    return () => clearTimeout(timer)
+  }, [stillToken])
+  const rowMotion = !reduceMotion && !rowsStill
 
   // keep relative timestamps honest without a per-item timer
   useEffect(() => {
@@ -118,7 +142,7 @@ export function ChatListSidebar({
               return (
                 <motion.li
                   key={chat.id}
-                  layout={reduceMotion ? false : 'position'}
+                  layout={rowMotion ? 'position' : false}
                   initial={{ opacity: 0, y: -4 }}
                   animate={{ opacity: 1, y: 0, scale: 1, clipPath: 'inset(0% 0% 0% 0%)' }}
                   exit={
@@ -131,6 +155,9 @@ export function ChatListSidebar({
                           clipPath: 'inset(0% 0% 100% 0%)',
                         }
                   }
+                  /* `layout={false}` above is what stops the cascade, so the row's
+                     own enter/exit keeps its timing throughout — a chat created or
+                     deleted mid-slide still fades rather than popping */
                   transition={
                     reduceMotion
                       ? { duration: 0.01 }

@@ -23,6 +23,13 @@
     background-color var(--dur-fast) var(--ease);
 }
 
+/* the wide left inset gives the placeholder its measure; once the paperclip
+ * occupies that slot it takes the same inset the send button has on the right,
+ * so the two controls sit symmetrically on the pill. */
+.rml-composer__field.has-attach {
+  padding-left: var(--sp-3);
+}
+
 .rml-composer__field:hover {
   border-color: color-mix(in srgb, var(--accent) 26%, var(--border));
 }
@@ -89,9 +96,14 @@
     color var(--dur-fast) var(--ease);
 }
 
-.rml-composer__attach:hover {
+.rml-composer__attach:hover:not(:disabled) {
   background: var(--surface-2);
   color: var(--text);
+}
+
+/* held open before a chat exists — visibly inert rather than absent */
+.rml-composer__attach:disabled {
+  opacity: 0.45;
 }
 
 /* --------------------------------------------------------- staged uploads */
@@ -284,6 +296,13 @@
     flex: 1 1 100%;
   }
 
+  /* the paperclip keeps its place ahead of the input on the first line — the
+   * chips and send button are what wrap below. 28px button + the 8px gap. */
+  .rml-composer__field.has-attach .rml-composer__input {
+    flex-basis: calc(100% - 36px);
+  }
+
+  .rml-composer__attach,
   .rml-composer__model {
     margin-bottom: 0;
   }

@@ -27,7 +27,8 @@
 
 .rml-forkmsg--user {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  align-items: flex-end;
   padding-left: var(--sp-6);
 }
 
@@ -110,6 +111,39 @@
   56%,
   100% {
     opacity: 0.15;
+  }
+}
+
+/* ----------------------------------------------------------------- actions */
+
+/* Same reveal as the main thread: opacity, not display, so the button stays a
+ * tab stop. The panel is 380px wide, so it is glyph-only here. */
+.rml-forkmsg__actions {
+  display: flex;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.rml-forkmsg__actions .rml-copy {
+  padding: 5px;
+  opacity: 0;
+}
+
+.rml-forkmsg__actions .rml-copy__text {
+  display: none;
+}
+
+.rml-forkmsg:hover .rml-forkmsg__actions .rml-copy,
+.rml-forkmsg__actions .rml-copy:focus-visible,
+.rml-forkmsg__actions .rml-copy.is-copied,
+.rml-forkmsg__actions .rml-copy.is-failed {
+  opacity: 1;
+}
+
+/* no hover on touch — the control just stays put */
+@media (hover: none) {
+  .rml-forkmsg__actions .rml-copy {
+    opacity: 0.72;
   }
 }
 

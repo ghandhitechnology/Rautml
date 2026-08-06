@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useChatMeta, useConnection, useForkOpen, useOnBlankChat, useProviderAlert, useStore, useStoreError } from '../../state/store'
 import { cx } from '../../lib/utils'
-import { EASE } from '../../lib/motion'
+import { EASE, SIDEBAR_TRANSITION_MS } from '../../lib/motion'
 import { Icon } from '../chat/icons'
 import ChatListSidebar from './ChatListSidebar'
 import Composer from './Composer'
@@ -13,7 +13,6 @@ import TypewriterText from './TypewriterText'
 import './Layout.css'
 
 const SIDEBAR_COLLAPSED_KEY = 'rautml.sidebarCollapsed'
-const SIDEBAR_TRANSITION_MS = 420
 const SIDEBAR_TRANSITION_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
 
 /* Collapsing commits the grid in a single layout pass and lets the rendered
@@ -266,47 +265,53 @@ export function Layout({
       )}
     >
       <div className="rml-desktop-drag" aria-hidden="true" />
-      {/* The rail's controls hand off to the panel's own toggle: they arrive
-          only once the sidebar has finished leaving, and step aside the moment
-          it starts coming back. Overlapping the two used to read as the toggle
-          teleporting across the window. */}
-      <AnimatePresence>
-        {sidebarCollapsed && !sidebarAnimating ? (
-          <motion.nav
-            className="rml-desktop-compact-controls"
-            aria-label="Conversation controls"
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.18, ease: EASE }}
-          >
-            <button
-              type="button"
-              aria-label="Expand sidebar"
-              title="Expand sidebar"
-              onClick={() => setDesktopSidebarCollapsed(false)}
+      {/* Sits in the titlebar strip beside the traffic lights and stays there in
+          both states — the toggle used to teleport between here and the panel's
+          own head. Only the new-chat shortcut is conditional: it stands in for
+          the panel's button while the panel is away. */}
+      <nav className="rml-titlebar-controls" aria-label="Conversation controls">
+        <button
+          type="button"
+          aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-expanded={!sidebarCollapsed}
+          aria-controls="rautml-conversation-list"
+          title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          onClick={() => setDesktopSidebarCollapsed(!sidebarCollapsed)}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3.5" y="4" width="17" height="16" rx="3" />
+            <path d="M9 4v16" />
+            <path d={sidebarCollapsed ? 'm14 9 3 3-3 3' : 'm16 9-3 3 3 3'} />
+          </svg>
+        </button>
+        <AnimatePresence>
+          {sidebarCollapsed && !sidebarAnimating ? (
+            /* the wrapper carries the entry, not the button: framer writes its
+               values as inline styles, which would outrank the group's own
+               :disabled and :active rules */
+            <motion.div
+              className="rml-titlebar-controls__slot"
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.18, ease: EASE }}
             >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <rect x="3.5" y="4" width="17" height="16" rx="3" />
-                <path d="M9 4v16" />
-                <path d="m14 9 3 3-3 3" />
-              </svg>
-            </button>
-            <button
-              type="button"
-              aria-label="New chat"
-              title={onBlankChat ? "You're already in a new chat" : 'New chat'}
-              disabled={onBlankChat}
-              onClick={() => void newChat()}
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M13.5 5H6.4A2.4 2.4 0 0 0 4 7.4v10.2A2.4 2.4 0 0 0 6.4 20h10.2a2.4 2.4 0 0 0 2.4-2.4v-7.1" />
-                <path d="m12 14 1-.2 6.4-6.4a2 2 0 0 0-2.8-2.8L10.2 11l-.2 3z" />
-              </svg>
-            </button>
-          </motion.nav>
-        ) : null}
-      </AnimatePresence>
+              <button
+                type="button"
+                aria-label="New chat"
+                title={onBlankChat ? "You're already in a new chat" : 'New chat'}
+                disabled={onBlankChat}
+                onClick={() => void newChat()}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M13.5 5H6.4A2.4 2.4 0 0 0 4 7.4v10.2A2.4 2.4 0 0 0 6.4 20h10.2a2.4 2.4 0 0 0 2.4-2.4v-7.1" />
+                  <path d="m12 14 1-.2 6.4-6.4a2 2 0 0 0-2.8-2.8L10.2 11l-.2 3z" />
+                </svg>
+              </button>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+      </nav>
       <aside ref={sidebarRef} className="rml-shell__sidebar">
         {sidebar ?? (
           <ChatListSidebar

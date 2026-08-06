@@ -32,6 +32,9 @@ async function writeClipboard(text: string): Promise<boolean> {
     /* fall through to the legacy path */
   }
   try {
+    /* selecting the scratch textarea takes focus off whatever was pressed, and
+     * a keyboard user would land back on <body> — hand it straight back */
+    const previous = document.activeElement as HTMLElement | null
     const ta = document.createElement('textarea')
     ta.value = text
     ta.setAttribute('readonly', '')
@@ -41,6 +44,7 @@ async function writeClipboard(text: string): Promise<boolean> {
     ta.select()
     const ok = document.execCommand('copy')
     document.body.removeChild(ta)
+    previous?.focus?.({ preventScroll: true })
     return ok
   } catch {
     return false
@@ -57,41 +61,46 @@ export function CopyButton({
   className?: string
   label?: string
 }) {
-  const [copied, setCopied] = useState(false)
+  /* a denied clipboard has to say so: an unchanged button is indistinguishable
+   * from a successful copy, and the packaged app can lose both write paths */
+  const [state, setState] = useState<'idle' | 'ok' | 'fail'>('idle')
   const timer = useRef<number | undefined>(undefined)
 
   useEffect(() => () => window.clearTimeout(timer.current), [])
 
   const onClick = useCallback(async () => {
     const ok = await writeClipboard(value)
-    if (!ok) return
-    setCopied(true)
+    setState(ok ? 'ok' : 'fail')
     window.clearTimeout(timer.current)
-    timer.current = window.setTimeout(() => setCopied(false), 1600)
+    timer.current = window.setTimeout(() => setState('idle'), 1600)
   }, [value])
+
+  const copied = state === 'ok'
+  const failed = state === 'fail'
+  const text = copied ? 'Copied' : failed ? 'Copy failed' : label
 
   return (
     <button
       type="button"
-      className={cx('rml-copy', copied && 'is-copied', className)}
+      className={cx('rml-copy', copied && 'is-copied', failed && 'is-failed', className)}
       onClick={onClick}
-      aria-label={copied ? 'Copied' : label}
-      title={copied ? 'Copied' : label}
+      aria-label={text}
+      title={text}
     >
       <span className="rml-copy__glyph">
         <AnimatePresence initial={false} mode="wait">
           <motion.span
-            key={copied ? 'ok' : 'idle'}
+            key={state}
             initial={{ opacity: 0, scale: 0.7 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.7 }}
             transition={{ duration: 0.2, ease: EASE }}
           >
-            <Icon name={copied ? 'check' : 'copy'} size={13} />
+            <Icon name={copied ? 'check' : failed ? 'alert' : 'copy'} size={13} />
           </motion.span>
         </AnimatePresence>
       </span>
-      <span className="rml-copy__text">{copied ? 'Copied' : label}</span>
+      <span className="rml-copy__text">{text}</span>
     </button>
   )
 }
