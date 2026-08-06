@@ -10,6 +10,7 @@ import { motion } from 'framer-motion'
 import { EASE } from '../../lib/motion'
 import { cx, uid } from '../../lib/utils'
 import { useTheme } from '../../state/store'
+import { useNearViewport } from '../../lib/useNearViewport'
 import './WidgetCard.css'
 
 const MAX_HEIGHT = 400
@@ -73,9 +74,29 @@ a{color:${v.accent}}
 </style>`
 }
 
+/* The parent writes this height back onto the frame, resizing our viewport and
+ * changing what we measure — a closed loop. Because measure() includes
+ * documentElement.offsetHeight (the viewport), viewport-relative content
+ * measures taller than the frame it was just handed, every time, and ratchets
+ * upward at rAF cadence forever. A burst limit catches that: no real document
+ * changes height 15 times a second, so exceeding it means we are measuring our
+ * own writes — freeze at the current height, which is stable and never clips.
+ * A short history of reported heights catches the slower A -> B -> A flip,
+ * latching onto the cycle and settling at its tall end. Measurement is also
+ * rAF-coalesced, so a burst of ResizeObserver callbacks costs one pass. */
 function heightScript(id: string): string {
-  return `<script>(function(){var ID=${JSON.stringify(id)},last=-1;
-function send(){var d=document.documentElement,b=document.body,h=Math.ceil(Math.max(d.scrollHeight,b?b.scrollHeight:0,d.offsetHeight));if(h!==last){last=h;try{parent.postMessage({__rautml_h:h,id:ID},'*')}catch(e){}}}
+  return `<script>(function(){var ID=${JSON.stringify(id)},HISTORY=4,BURST_MS=1000,BURST_MAX=15,last=-1,raf=0,recent=[],lo=0,hi=0,stamps=[],frozen=false;
+function measure(){var d=document.documentElement,b=document.body;return Math.ceil(Math.max(d.scrollHeight,b?b.scrollHeight:0,d.offsetHeight))}
+function emit(h){var now=(window.performance&&performance.now)?performance.now():+new Date();
+while(stamps.length&&now-stamps[0]>BURST_MS)stamps.shift();stamps.push(now);
+if(stamps.length>BURST_MAX){frozen=true;return}
+last=h;try{parent.postMessage({__rautml_h:h,id:ID},'*')}catch(e){}}
+function post(){if(frozen)return;var h=measure();if(h<=0||Math.abs(h-last)<2)return;
+if(hi&&h>=lo-1&&h<=hi+1)return;
+if(hi){hi=0;lo=0;recent=[]}
+if(recent.indexOf(h)!==-1){lo=h;hi=h;for(var i=0;i<recent.length;i++){if(recent[i]<lo)lo=recent[i];if(recent[i]>hi)hi=recent[i]}recent=[];if(hi!==last)emit(hi);return}
+recent.push(h);if(recent.length>HISTORY)recent.shift();emit(h)}
+function send(){if(raf)return;raf=requestAnimationFrame(function(){raf=0;post()})}
 try{new ResizeObserver(send).observe(document.documentElement)}catch(e){}
 window.addEventListener('load',send);document.addEventListener('DOMContentLoaded',send);
 [0,80,300,900].forEach(function(t){setTimeout(send,t)});send();})()<\/script>`
@@ -105,6 +126,7 @@ export interface WidgetCardProps {
 }
 
 export function WidgetCard({ html, compact = false, className }: WidgetCardProps) {
+  const [hostRef, near] = useNearViewport<HTMLDivElement>()
   const frameRef = useRef<HTMLIFrameElement | null>(null)
   const idRef = useRef<string>(uid('w-'))
   const vars = useThemeVars()
@@ -134,21 +156,28 @@ export function WidgetCard({ html, compact = false, className }: WidgetCardProps
 
   return (
     <motion.div
+      ref={hostRef}
       className={cx('rml-widget', compact && 'rml-widget--compact', ready && 'is-ready', className)}
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.36, ease: EASE }}
     >
-      <iframe
-        ref={frameRef}
-        className="rml-widget__frame"
-        title="Inline visual"
-        srcDoc={srcDoc}
-        sandbox="allow-scripts allow-forms allow-modals allow-downloads allow-popups allow-popups-to-escape-sandbox"
-        loading="lazy"
-        scrolling="no"
-        style={{ height: `${height}px` }}
-      />
+      {near ? (
+        <iframe
+          ref={frameRef}
+          className="rml-widget__frame"
+          title="Inline visual"
+          srcDoc={srcDoc}
+          sandbox="allow-scripts allow-forms allow-modals allow-downloads allow-popups allow-popups-to-escape-sandbox"
+          loading="lazy"
+          scrolling="no"
+          style={{ height: `${height}px` }}
+        />
+      ) : (
+        /* Released while far offscreen — hold the measured height so the thread
+         * keeps its shape and scrolling back reflows nothing. */
+        <div className="rml-widget__frame" style={{ height: `${height}px` }} aria-hidden="true" />
+      )}
     </motion.div>
   )
 }

@@ -266,23 +266,70 @@ const CONTEXT_BRIDGE = String.raw`
   var lastMarks = [];
   var badgeCleanups = [];
   var badgeRepositions = [];
-  var badgeTick = 0;
+  var badgeWatch = null;
+  var badgeRaf = 0;
   var retryTimers = [];
+
+  /* Badges are absolutely positioned from getBoundingClientRect, so they only
+   * need to move when the layout underneath them moves. This used to be a
+   * 1400ms interval per asset document, which forces layout in every one of
+   * them forever — a chat with many assets pays that bill for as long as it is
+   * open, whether or not anything is on screen. Drive it off the events that
+   * can actually shift a badge instead, coalesced into one pass per frame. */
+  function runRepositions() {
+    badgeRaf = 0;
+    for (var i = 0; i < badgeRepositions.length; i += 1) badgeRepositions[i]();
+  }
+
+  function scheduleRepositions() {
+    /* No document.hidden guard needed: rAF is already parked while hidden, and
+     * the queued pass runs on the frame the document comes back. */
+    if (badgeRaf) return;
+    badgeRaf = window.requestAnimationFrame(runRepositions);
+  }
+
+  function startBadgeWatch() {
+    if (badgeWatch) return;
+    var ro = null;
+    try {
+      ro = new ResizeObserver(scheduleRepositions);
+      if (document.documentElement) ro.observe(document.documentElement);
+      if (document.body) ro.observe(document.body);
+    } catch (e) {}
+    window.addEventListener('resize', scheduleRepositions);
+    window.addEventListener('scroll', scheduleRepositions, true);
+    window.addEventListener('load', scheduleRepositions);
+    document.addEventListener('transitionend', scheduleRepositions, true);
+    document.addEventListener('animationend', scheduleRepositions, true);
+    badgeWatch = function () {
+      if (ro) ro.disconnect();
+      window.removeEventListener('resize', scheduleRepositions);
+      window.removeEventListener('scroll', scheduleRepositions, true);
+      window.removeEventListener('load', scheduleRepositions);
+      document.removeEventListener('transitionend', scheduleRepositions, true);
+      document.removeEventListener('animationend', scheduleRepositions, true);
+      if (badgeRaf) {
+        window.cancelAnimationFrame(badgeRaf);
+        badgeRaf = 0;
+      }
+    };
+  }
 
   function addBadgeReposition(reposition) {
     badgeRepositions.push(reposition);
-    if (!badgeTick) {
-      badgeTick = window.setInterval(function () {
-        if (document.hidden) return;
-        for (var i = 0; i < badgeRepositions.length; i += 1) badgeRepositions[i]();
-      }, 1400);
+    startBadgeWatch();
+    /* Late-rendering content (charts, images, fonts) settles after the badge is
+     * attached — a few decaying passes cover it without a standing timer. */
+    var settle = [0, 160, 600, 1600];
+    for (var s = 0; s < settle.length; s += 1) {
+      retryTimers.push(window.setTimeout(scheduleRepositions, settle[s]));
     }
     return function () {
       var index = badgeRepositions.indexOf(reposition);
       if (index !== -1) badgeRepositions.splice(index, 1);
-      if (!badgeRepositions.length && badgeTick) {
-        window.clearInterval(badgeTick);
-        badgeTick = 0;
+      if (!badgeRepositions.length && badgeWatch) {
+        badgeWatch();
+        badgeWatch = null;
       }
     };
   }

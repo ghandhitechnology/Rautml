@@ -27,6 +27,7 @@ import {
   type FrameContextPayload,
 } from '../../lib/frameContext'
 import { useQuestionedMarks, useStore, useTheme } from '../../state/store'
+import { useNearViewport } from '../../lib/useNearViewport'
 import './AssetFrame.css'
 
 /** postMessage discriminator shared with the injected reporter. */
@@ -35,10 +36,33 @@ export const HEIGHT_MESSAGE_TYPE = '__rautml_h'
 /** Floor for the frame — an asset never collapses below this, even while loading. */
 export const MIN_FRAME_HEIGHT = 200
 
+/** Ceiling. Nothing legitimate reports this tall; a bigger number is a runaway. */
+export const MAX_FRAME_HEIGHT = 12000
+
 const HEIGHT_SCRIPT = `
 <script>(function () {
   var TYPE = '${HEIGHT_MESSAGE_TYPE}';
-  var last = -1, raf = 0;
+  // The parent writes our reported height back onto the frame, which resizes
+  // our viewport, which changes what we measure — a closed loop.
+  //
+  // measure() deliberately includes documentElement.offsetHeight (the viewport
+  // itself) so short content still fills the frame, which means the loop can
+  // only ever ratchet *upward*: an asset whose content is viewport-relative
+  // plus anything (min-height:100vh with a footer, height:110% under a
+  // full-height root, a chart that re-fits) measures taller than the frame it
+  // was just given, every single time. That runs at rAF cadence for as long as
+  // the chat stays open and walks the height into the millions.
+  //
+  // Two guards, because the loop has two shapes:
+  //   * a burst limit catches the ratchet — no real document changes height
+  //     more than a handful of times a second, so exceeding that means we are
+  //     measuring our own writes. Freeze at the current height: stable, still
+  //     tall enough not to clip.
+  //   * a short history of what we reported catches the A -> B -> A flip, which
+  //     never trips the burst limit if it is slow. Latch onto the cycle's
+  //     range and settle at its tall end.
+  var HISTORY = 4, MAX_H = 12000, BURST_MS = 1000, BURST_MAX = 15;
+  var last = -1, raf = 0, recent = [], lo = 0, hi = 0, stamps = [], frozen = false;
   function measure() {
     var d = document.documentElement, b = document.body;
     return Math.ceil(Math.max(
@@ -46,11 +70,37 @@ const HEIGHT_SCRIPT = `
       d ? d.scrollHeight : 0, d ? d.offsetHeight : 0
     ));
   }
-  function post() {
-    var h = measure();
-    if (h <= 0 || h === last) return;
+  function send(h) {
+    var now = (window.performance && performance.now) ? performance.now() : +new Date();
+    while (stamps.length && now - stamps[0] > BURST_MS) stamps.shift();
+    stamps.push(now);
+    if (stamps.length > BURST_MAX) {
+      frozen = true;
+      return;
+    }
     last = h;
     try { parent.postMessage({ type: TYPE, h: h }, '*'); } catch (e) {}
+  }
+  function post() {
+    if (frozen) return;
+    var h = measure();
+    if (h > MAX_H) h = MAX_H;
+    if (h <= 0 || Math.abs(h - last) < 2) return;
+    if (hi && h >= lo - 1 && h <= hi + 1) return;
+    if (hi) { hi = 0; lo = 0; recent = []; }
+    if (recent.indexOf(h) !== -1) {
+      lo = h; hi = h;
+      for (var i = 0; i < recent.length; i += 1) {
+        if (recent[i] < lo) lo = recent[i];
+        if (recent[i] > hi) hi = recent[i];
+      }
+      recent = [];
+      if (hi !== last) send(hi);
+      return;
+    }
+    recent.push(h);
+    if (recent.length > HISTORY) recent.shift();
+    send(h);
   }
   function schedule() {
     if (raf) return;
@@ -116,6 +166,9 @@ export function AssetFrame({
   className,
 }: AssetFrameProps) {
   const reduceMotion = useReducedMotion()
+  // Scrolled far enough away and the document is released; the measured height
+  // is kept so the frame holds its place and scroll position never jumps.
+  const [hostRef, near] = useNearViewport<HTMLDivElement>()
   const [layers, setLayers] = useState<Layer[]>([])
   const [heights, setHeights] = useState<Record<string, number>>({})
   const [status, setStatus] = useState<Status>('loading')
@@ -178,7 +231,7 @@ export function AssetFrame({
   const handleMessage = useCallback((event: MessageEvent) => {
     const data = event.data as { type?: unknown; h?: unknown } | null
     if (!data || typeof data !== 'object' || data.type !== HEIGHT_MESSAGE_TYPE) return
-    const h = Math.ceil(Number(data.h))
+    const h = Math.min(MAX_FRAME_HEIGHT, Math.ceil(Number(data.h)))
     if (!Number.isFinite(h) || h <= 0) return
 
     let key: string | null = null
@@ -306,13 +359,14 @@ export function AssetFrame({
 
   return (
     <motion.div
+      ref={hostRef}
       className={cx('rml-frame', ready && 'is-ready', className)}
       initial={false}
       animate={{ height: status === 'error' ? 'auto' : frameHeight }}
       transition={reduceMotion ? { duration: 0 } : { duration: 0.42, ease: EASE }}
     >
       <AnimatePresence initial={false}>
-        {layers.map((layer, i) => (
+        {(near ? layers : []).map((layer, i) => (
           <motion.div
             key={layer.key}
             className="rml-frame__layer"
@@ -343,7 +397,7 @@ export function AssetFrame({
       </AnimatePresence>
 
       <AnimatePresence>
-        {!ready && status !== 'error' && (
+        {near && !ready && status !== 'error' && (
           <motion.div
             key="skeleton"
             className="rml-frame__skeleton"
