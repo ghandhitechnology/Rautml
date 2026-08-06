@@ -136,6 +136,13 @@ const OPENROUTER_MODELS = [
 
 let cached: { at: number; providers: ProviderInfo[] } | null = null;
 
+/** Drop the discovery cache so the next read re-evaluates auth. Called after an
+ *  API key is saved, so OpenRouter flips to connected without waiting out
+ *  CACHE_MS or requiring a manual refresh. */
+export function invalidateProviderCache(): void {
+  cached = null;
+}
+
 export async function discoverProviders(force = false): Promise<ProviderInfo[]> {
   if (!force && cached && Date.now() - cached.at < CACHE_MS) return cached.providers;
   const specs: Array<[ProviderId, string, string, string | null, () => Promise<ModelInfo[]>]> = [

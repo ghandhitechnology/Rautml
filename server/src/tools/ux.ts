@@ -2,6 +2,7 @@
 import type { ToolCtx, ToolDef } from '../types.js';
 import { createPendingInput } from '../repo.js';
 import { DESIGN_README } from '../agent/prompts.js';
+import { designPreferencesBlock } from '../settings.js';
 
 const visualizeReadMe: ToolDef = {
   name: 'visualize_read_me',
@@ -12,8 +13,12 @@ const visualizeReadMe: ToolDef = {
     properties: {},
     additionalProperties: false,
   },
+  // The user's standing design preferences ride along with the constitution
+  // rather than the system prompt: this tool is called exactly once, right
+  // before the first asset, which is the moment those preferences matter.
   async execute(_args: any, _ctx: ToolCtx): Promise<string> {
-    return DESIGN_README;
+    const preferences = designPreferencesBlock();
+    return preferences ? `${DESIGN_README}\n\n---\n\n${preferences}` : DESIGN_README;
   },
 };
 

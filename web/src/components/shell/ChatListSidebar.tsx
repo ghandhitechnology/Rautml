@@ -4,7 +4,7 @@ import { useActiveChatId, useChats, useOnBlankChat, useStore } from '../../state
 import { absoluteTime, cx, relativeTime } from '../../lib/utils'
 import { EASE, SIDEBAR_TRANSITION_MS } from '../../lib/motion'
 import TypewriterText from './TypewriterText'
-import ProviderBar from './ProviderBar'
+import SettingsButton from '../settings/SettingsButton'
 import rautmlMark from '../../assets/rautml-mark.png'
 import './ChatListSidebar.css'
 
@@ -220,7 +220,7 @@ export function ChatListSidebar({
           </AnimatePresence>
         </ul>
       </nav>
-      <ProviderBar />
+      <SettingsButton collapsed={collapsed} />
     </div>
   )
 }

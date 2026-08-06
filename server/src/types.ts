@@ -181,3 +181,34 @@ export interface ToolDef {
   parameters: object;
   execute(args: any, ctx: ToolCtx): Promise<string>;
 }
+
+// --- Settings ---
+
+/** An API key as reported to the renderer: enough to recognise, never the secret. */
+export interface ApiKeyStatus {
+  name: string;
+  label: string;
+  hint: string;
+  optional: boolean;
+  set: boolean;
+  /** Last four characters, e.g. `••••4f2a`. Empty when unset. */
+  masked: string;
+  /**
+   * Where the effective value comes from. `environment` means the user's shell
+   * exported it, which overrides the saved file on every restart — the UI warns
+   * about that, because an edit made here would look like it reverted.
+   */
+  source: 'file' | 'environment' | 'unset';
+}
+
+export interface Personalization {
+  /** Standing design wishes, appended to the asset design constitution. */
+  designPreferences: string;
+  /** Profession, interests, preferred voice — appended to the system prompt. */
+  aboutMe: string;
+}
+
+export interface SettingsPayload {
+  keys: ApiKeyStatus[];
+  personalization: Personalization;
+}

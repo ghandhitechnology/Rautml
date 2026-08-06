@@ -137,6 +137,15 @@ CREATE INDEX IF NOT EXISTS idx_tool_events_chat_seq ON tool_events (chat_id, seq
 CREATE INDEX IF NOT EXISTS idx_assets_chat ON assets (chat_id);
 CREATE INDEX IF NOT EXISTS idx_asset_versions_asset_version ON asset_versions (asset_id, version);
 CREATE INDEX IF NOT EXISTS idx_pending_inputs_chat_resolved ON pending_inputs (chat_id, resolved);
+-- User-global preferences (personalization). API keys are NOT here: they live
+-- in the .env file the process boots from, which is already the config source
+-- of truth. See settings.ts.
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT,
+  updated_at INTEGER
+);
+
 CREATE INDEX IF NOT EXISTS idx_sources_chat ON sources (chat_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_source_chunks_source ON source_chunks (source_id, seq);
 CREATE INDEX IF NOT EXISTS idx_source_chunks_chat ON source_chunks (chat_id);

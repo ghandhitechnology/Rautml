@@ -10,6 +10,9 @@
 //   POST   /api/chats/:id/stop            → { stopped: string[] }
 //   GET    /api/chats/:id/events?after=N  → SSE (replay of seq > N, then live)
 //   GET    /api/assets/:assetId/:version  → text/html
+//   GET    /api/settings                  → { keys, personalization }
+//   PUT    /api/settings/keys             → { keys }            (loopback only)
+//   PUT    /api/settings/personalization  → { personalization } (loopback only)
 //
 // All persistence goes through repo.ts; all agent work goes through engine.ts;
 // all fan-out goes through sse.ts. No SQL and no model calls live here.
@@ -21,8 +24,14 @@ import multer from 'multer';
 import { SOURCES_DIR, WORKSPACES_DIR } from '../db.js';
 import * as engine from '../agent/engine.js';
 import { resolveSelection } from '../agent/models.js';
-import { defaultModelId, discoverProviders, launchReconnect } from '../agent/providers.js';
+import {
+  defaultModelId,
+  discoverProviders,
+  invalidateProviderCache,
+  launchReconnect,
+} from '../agent/providers.js';
 import * as repo from '../repo.js';
+import * as settings from '../settings.js';
 import * as sse from '../sse.js';
 import { extForName, SUPPORTED_EXTS } from '../sources/extract.js';
 import { enqueueIndex, rawFilePath, sourceDir } from '../sources/indexer.js';
@@ -72,6 +81,12 @@ function param(req: Request, name: string): string {
   const value = (req.params as Record<string, string | string[] | undefined>)[name];
   if (Array.isArray(value)) return value[0] ?? '';
   return value ?? '';
+}
+
+/** Gate for routes that touch this machine's own configuration or shell. */
+function isLoopback(req: Request): boolean {
+  const address = req.socket.remoteAddress ?? '';
+  return address === '::1' || address === '127.0.0.1' || address.startsWith('::ffff:127.');
 }
 
 function parseThread(value: unknown): Thread | null {
@@ -143,11 +158,49 @@ router.get('/models', async (req: Request, res: Response) => {
 });
 
 router.post('/providers/:id/reconnect', async (req: Request, res: Response) => {
-  const address = req.socket.remoteAddress ?? '';
-  if (!(address === '::1' || address === '127.0.0.1' || address.startsWith('::ffff:127.'))) {
+  if (!isLoopback(req)) {
     return fail(res, 403, 'Provider login can only be launched from this computer');
   }
   res.json(await launchReconnect(param(req, 'id')));
+});
+
+// ---------------------------------------------------------------------------
+// settings — API keys (.env) + personalization (settings table)
+//
+// Loopback-gated like provider login: these read and write this machine's
+// configuration, so they must not be reachable from another host even if the
+// server is ever bound more widely.
+// ---------------------------------------------------------------------------
+
+router.get('/settings', (req: Request, res: Response) => {
+  if (!isLoopback(req)) return fail(res, 403, 'Settings are only readable from this computer');
+  res.json({ keys: settings.readKeys(), personalization: settings.readPersonalization() });
+});
+
+router.put('/settings/keys', async (req: Request, res: Response) => {
+  if (!isLoopback(req)) return fail(res, 403, 'Settings are only writable from this computer');
+  const body = req.body;
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return fail(res, 400, 'Expected an object of key/value pairs');
+  }
+  try {
+    const keys = await settings.writeKeys(body as Record<string, string>);
+    // A new OpenRouter key changes that provider's auth status; drop the 30s
+    // discovery cache so the next /models reflects it immediately.
+    invalidateProviderCache();
+    res.json({ keys });
+  } catch (err) {
+    fail(res, 500, (err as Error)?.message ?? 'Could not save API keys');
+  }
+});
+
+router.put('/settings/personalization', (req: Request, res: Response) => {
+  if (!isLoopback(req)) return fail(res, 403, 'Settings are only writable from this computer');
+  const body = req.body ?? {};
+  const patch: Record<string, string> = {};
+  if (typeof body.designPreferences === 'string') patch.designPreferences = body.designPreferences;
+  if (typeof body.aboutMe === 'string') patch.aboutMe = body.aboutMe;
+  res.json({ personalization: settings.writePersonalization(patch) });
 });
 
 // ---------------------------------------------------------------------------

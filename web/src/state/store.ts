@@ -12,6 +12,7 @@ import { connectChatEvents, type SseConnection, type SseStatus } from '../lib/ss
 import { uid } from '../lib/utils'
 import { removeFrameContext, type QuestionedMark } from '../lib/frameContext'
 import type {
+  ApiKeyStatus,
   Asset,
   AssetCreatedEvent,
   ElaborationLevel,
@@ -30,9 +31,11 @@ import type {
   MessageDeltaEvent,
   MessageStartEvent,
   ModelInfo,
+  Personalization,
   ProviderInfo,
   ProviderErrorEvent,
   PendingInput,
+  SettingsSection,
   PresentedFile,
   Run,
   RunPhaseEvent,
@@ -157,7 +160,24 @@ export interface StoreState {
   error: string | null
   providerAlert: { providerId: string; message: string } | null
 
+  /* settings — the server owns this data, so none of it is persisted locally */
+  settingsOpen: boolean
+  settingsSection: SettingsSection
+  /** Masked key status from the server. Empty until the page is first opened. */
+  apiKeys: ApiKeyStatus[]
+  personalization: Personalization
+  settingsLoaded: boolean
+  /** Save feedback for the settings page: keyed by field name. */
+  settingsSaving: Record<string, boolean>
+  settingsError: string | null
+
   /* actions */
+  openSettings: (section?: SettingsSection) => void
+  closeSettings: () => void
+  setSettingsSection: (section: SettingsSection) => void
+  loadSettings: () => Promise<void>
+  saveApiKey: (name: string, value: string) => Promise<void>
+  savePersonalization: (patch: Partial<Personalization>) => Promise<void>
   loadModels: () => Promise<void>
   refreshProviders: () => Promise<void>
   reconnectProvider: (providerId: string) => Promise<void>
@@ -1234,6 +1254,72 @@ export const useStore = create<StoreState>()((set, get) => ({
   error: null,
   providerAlert: null,
 
+  settingsOpen: false,
+  settingsSection: 'models',
+  apiKeys: [],
+  personalization: { designPreferences: '', aboutMe: '' },
+  settingsLoaded: false,
+  settingsSaving: {},
+  settingsError: null,
+
+  openSettings: (section) => {
+    set((s) => ({ settingsOpen: true, settingsSection: section ?? s.settingsSection }))
+    // Fetch once per session; later opens render the state already in hand.
+    if (!get().settingsLoaded) void get().loadSettings()
+  },
+
+  closeSettings: () => set({ settingsOpen: false, settingsError: null }),
+
+  setSettingsSection: (section) => set({ settingsSection: section }),
+
+  loadSettings: async () => {
+    try {
+      const { keys, personalization } = await api.getSettings()
+      set({ apiKeys: keys, personalization, settingsLoaded: true, settingsError: null })
+    } catch (err) {
+      set({ settingsError: err instanceof Error ? err.message : 'Could not load settings' })
+    }
+  },
+
+  saveApiKey: async (name, value) => {
+    set((s) => ({ settingsSaving: { ...s.settingsSaving, [name]: true }, settingsError: null }))
+    try {
+      const { keys } = await api.saveApiKeys({ [name]: value })
+      set({ apiKeys: keys })
+      // A key can change a provider's auth status (OpenRouter), and the server
+      // has already dropped its discovery cache — pick the new status up now.
+      void get().refreshProviders()
+    } catch (err) {
+      set({ settingsError: err instanceof Error ? err.message : 'Could not save that key' })
+    } finally {
+      set((s) => {
+        const settingsSaving = { ...s.settingsSaving }
+        delete settingsSaving[name]
+        return { settingsSaving }
+      })
+    }
+  },
+
+  savePersonalization: async (patch) => {
+    const fields = Object.keys(patch)
+    set((s) => ({
+      settingsSaving: { ...s.settingsSaving, ...Object.fromEntries(fields.map((f) => [f, true])) },
+      settingsError: null,
+    }))
+    try {
+      const { personalization } = await api.savePersonalization(patch)
+      set({ personalization })
+    } catch (err) {
+      set({ settingsError: err instanceof Error ? err.message : 'Could not save that preference' })
+    } finally {
+      set((s) => {
+        const settingsSaving = { ...s.settingsSaving }
+        for (const field of fields) delete settingsSaving[field]
+        return { settingsSaving }
+      })
+    }
+  },
+
   loadModels: async () => {
     try {
       const { models, providers, defaultModelId } = await api.listModels()
@@ -2171,3 +2257,12 @@ export const useFollowUpAttachments = () => useStore((s) => s.followUpAttachment
 export const useConnection = () => useStore((s) => s.connection)
 export const useStoreError = () => useStore((s) => s.error)
 export const useProviderAlert = () => useStore((s) => s.providerAlert)
+
+/* ---------------------------------------------------------------- settings */
+
+export const useSettingsOpen = () => useStore((s) => s.settingsOpen)
+export const useSettingsSection = () => useStore((s) => s.settingsSection)
+export const useApiKeys = () => useStore((s) => s.apiKeys)
+export const usePersonalization = () => useStore((s) => s.personalization)
+export const useSettingsError = () => useStore((s) => s.settingsError)
+export const useSettingsSaving = (field: string) => useStore((s) => Boolean(s.settingsSaving[field]))

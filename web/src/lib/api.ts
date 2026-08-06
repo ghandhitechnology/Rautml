@@ -1,7 +1,18 @@
 /* Typed fetch wrappers for every route in CONTRACT.md § HTTP API.
  * Dev server proxies /api → http://localhost:5175 (see vite.config.ts). */
 
-import type { Chat, ChatSnapshot, FollowUpAttachment, ModelInfo, ProviderInfo, Source, Thread } from './types'
+import type {
+  ApiKeyStatus,
+  Chat,
+  ChatSnapshot,
+  FollowUpAttachment,
+  ModelInfo,
+  Personalization,
+  ProviderInfo,
+  SettingsPayload,
+  Source,
+  Thread,
+} from './types'
 
 export const API_BASE = '/api'
 
@@ -106,6 +117,32 @@ export function sendMessage(
   return request<{ runId: string }>(`/chats/${encodeURIComponent(chatId)}/messages`, {
     method: 'POST',
     body: JSON.stringify({ content, thread, ...selection, attachments, sourceIds }),
+  })
+}
+
+/* ----------------------------------------------------------------- settings */
+
+/** GET /api/settings → API key status (masked) + personalization */
+export function getSettings(): Promise<SettingsPayload> {
+  return request<SettingsPayload>('/settings')
+}
+
+/** PUT /api/settings/keys — an empty value clears that key. Takes effect on the
+ *  running engine immediately; no restart. */
+export function saveApiKeys(patch: Record<string, string>): Promise<{ keys: ApiKeyStatus[] }> {
+  return request<{ keys: ApiKeyStatus[] }>('/settings/keys', {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+  })
+}
+
+/** PUT /api/settings/personalization — omitted fields are left untouched. */
+export function savePersonalization(
+  patch: Partial<Personalization>,
+): Promise<{ personalization: Personalization }> {
+  return request<{ personalization: Personalization }>('/settings/personalization', {
+    method: 'PUT',
+    body: JSON.stringify(patch),
   })
 }
 

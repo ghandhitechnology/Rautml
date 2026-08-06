@@ -1,0 +1,229 @@
+/* Full-window takeover. Sits above the shell but below the Electron drag strip
+   (z-index 200 in Layout.css) so the title bar keeps working. */
+.rml-settings {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+  display: grid;
+  grid-template-columns: 264px minmax(0, 1fr);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------- left nav */
+
+.rml-settings__nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+  padding: var(--sp-6) var(--sp-4) var(--sp-6) var(--sp-5);
+  border-right: 1px solid var(--border);
+  background: var(--surface-2);
+  overflow-y: auto;
+}
+
+/* Clear the traffic lights (main.mjs pins them at x16/y18). */
+html[data-desktop='electron'] .rml-settings__nav {
+  padding-top: 54px;
+}
+
+html[data-desktop='electron'] .rml-settings__pane {
+  padding-top: var(--sp-8);
+}
+
+.rml-settings__brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+/* Serif is the house's identity voice — the same register as the app title. */
+.rml-settings__title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 23px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.rml-settings__close {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border-radius: var(--r-pill);
+  color: var(--text-muted);
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.rml-settings__close:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.rml-settings__close svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+
+.rml-settings__tabs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rml-settings__tab {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 10px var(--sp-3);
+  border-radius: var(--r-md);
+  text-align: left;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.rml-settings__tab:hover {
+  background: var(--hover);
+}
+
+.rml-settings__tab.is-active {
+  background: var(--accent-soft);
+}
+
+.rml-settings__tab-label {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+  transition: color var(--dur-fast) var(--ease);
+}
+
+.rml-settings__tab.is-active .rml-settings__tab-label {
+  color: var(--text);
+}
+
+.rml-settings__tab-blurb {
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+  color: var(--text-muted);
+  opacity: 0.82;
+}
+
+/* The rail slides between tabs via framer-motion's layoutId. */
+.rml-settings__rail {
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 2.5px;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+}
+
+/* --------------------------------------------------------------- the pane */
+
+.rml-settings__pane {
+  overflow-y: auto;
+  padding: var(--sp-10) var(--sp-8) var(--sp-12);
+}
+
+.rml-settings__content {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.rml-settings__error {
+  margin: 0 0 var(--sp-5);
+  padding: 10px var(--sp-4);
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border));
+  border-radius: var(--r-md);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: var(--fs-sm);
+}
+
+/* -------------------------------------------------- shared section chrome */
+
+.rml-settings-section__head {
+  margin-bottom: var(--sp-6);
+}
+
+.rml-settings-section__head h2 {
+  margin: 0 0 var(--sp-2);
+  font-family: var(--font-serif);
+  font-size: var(--fs-xl);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.rml-settings-section__head p {
+  margin: 0;
+  max-width: 56ch;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-body);
+  color: var(--text-muted);
+}
+
+.rml-settings-card {
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.rml-settings-card + .rml-settings-card {
+  margin-top: var(--sp-4);
+}
+
+/* ------------------------------------------------------------- responsive */
+
+@media (max-width: 720px) {
+  .rml-settings {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .rml-settings__nav {
+    gap: var(--sp-4);
+    padding: var(--sp-4);
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    overflow: visible;
+  }
+
+  .rml-settings__tabs {
+    flex-direction: row;
+    gap: var(--sp-2);
+    overflow-x: auto;
+  }
+
+  .rml-settings__tab {
+    flex: 0 0 auto;
+    padding: 7px var(--sp-3);
+  }
+
+  .rml-settings__tab-blurb,
+  .rml-settings__rail {
+    display: none;
+  }
+
+  .rml-settings__pane {
+    padding: var(--sp-6) var(--sp-4) var(--sp-10);
+  }
+}

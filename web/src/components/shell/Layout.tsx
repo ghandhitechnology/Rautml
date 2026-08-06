@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { useChatMeta, useConnection, useForkOpen, useOnBlankChat, useProviderAlert, useStore, useStoreError } from '../../state/store'
+import { useChatMeta, useConnection, useForkOpen, useOnBlankChat, useProviderAlert, useSettingsOpen, useStore, useStoreError } from '../../state/store'
 import { cx } from '../../lib/utils'
 import { EASE, SIDEBAR_TRANSITION_MS } from '../../lib/motion'
 import { Icon } from '../chat/icons'
@@ -92,12 +92,24 @@ export function Layout({
   const newChat = useStore((s) => s.newChat)
   const dismissProviderAlert = useStore((s) => s.dismissProviderAlert)
   const reconnectProvider = useStore((s) => s.reconnectProvider)
+  const openSettings = useStore((s) => s.openSettings)
+  const settingsOpen = useSettingsOpen()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed)
   const [sidebarAnimating, setSidebarAnimating] = useState(false)
   const shellRef = useRef<HTMLDivElement>(null)
   const sidebarRef = useRef<HTMLElement>(null)
   const sidebarTransitionActive = useRef(false)
   const sidebarAnimations = useRef<Animation[]>([])
+
+  /* The settings takeover covers the shell but is a sibling of it, so the shell
+   * has to be taken out of the tab order and the a11y tree by hand. `inert` is
+   * set imperatively: React 18 does not recognise it as a prop. */
+  useEffect(() => {
+    const shell = shellRef.current
+    if (!shell) return
+    if (settingsOpen) shell.setAttribute('inert', '')
+    else shell.removeAttribute('inert')
+  }, [settingsOpen])
 
   const setDesktopSidebarCollapsed = (collapsed: boolean) => {
     if (collapsed === sidebarCollapsed || sidebarTransitionActive.current) return
@@ -261,6 +273,7 @@ export function Layout({
         navOpen && 'is-nav-open',
         sidebarCollapsed && 'is-sidebar-collapsed',
         sidebarAnimating && 'is-sidebar-animating',
+        settingsOpen && 'is-settings-open',
         className,
       )}
     >
@@ -408,9 +421,7 @@ export function Layout({
             </span>
             <button type="button" onClick={() => void reconnectProvider(providerAlert.providerId)}>Reconnect</button>
             <button type="button" onClick={() => {
-              setDesktopSidebarCollapsed(false)
-              setNavOpen(true)
-              window.dispatchEvent(new Event('rautml:open-providers'))
+              openSettings('models')
               dismissProviderAlert()
             }}>Change provider</button>
             <button className="rml-provider-warning__close" type="button" aria-label="Dismiss" onClick={dismissProviderAlert}>×</button>

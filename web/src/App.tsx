@@ -4,6 +4,7 @@ import { ChatThread } from './components/chat'
 import { AssetCard } from './components/asset'
 import { DocumentDock, DocumentView } from './components/document'
 import { ForkBall, ForkPanel } from './components/fork'
+import { SettingsButton, SettingsPage } from './components/settings'
 import {
   useActiveChatId,
   useAsset,
@@ -89,8 +90,12 @@ export default function App() {
   )
 
   return (
+    <>
     <Layout
       documentMode={documentMode}
+      // Icon-only twin of the sidebar entry. On desktop a collapsed sidebar has
+      // a 0px track, so without this settings would be unreachable there.
+      header={<SettingsButton variant="topbar" />}
       composer={
         documentMode ? (
           <DocumentDock />
@@ -125,5 +130,7 @@ export default function App() {
         </div>
       )}
     </Layout>
+    <SettingsPage />
+    </>
   )
 }

@@ -106,6 +106,13 @@ html[data-desktop='electron'] .rml-titlebar-controls {
   -webkit-app-region: no-drag;
 }
 
+/* These sit at z-index 201 so they clear the drag strip, which also puts them
+   above the settings takeover. They control the chat shell, so while settings
+   is covering it they are both meaningless and in the way. */
+html[data-desktop='electron'] .rml-shell.is-settings-open .rml-titlebar-controls {
+  display: none;
+}
+
 .rml-titlebar-controls__slot {
   display: grid;
 }
