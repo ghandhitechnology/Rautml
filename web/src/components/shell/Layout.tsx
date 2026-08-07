@@ -30,6 +30,7 @@ const SIDEBAR_COLLAPSE_RATIO = 0.5
 const SIDEBAR_DEFAULT_PX = 260
 const SIDEBAR_PEEK_DELAY_MS = 100
 const SIDEBAR_PEEK_CLOSE_DELAY_MS = 180
+const TOAST_DISMISS_MS = 6_000
 
 type ShellStyle = CSSProperties & { '--sidebar-w': string }
 
@@ -152,8 +153,14 @@ export function Layout({
   const [sidebarPeeking, setSidebarPeeking] = useState(false)
   const shellRef = useRef<HTMLDivElement>(null)
   const sidebarRef = useRef<HTMLElement>(null)
+  const sidebarResizerRef = useRef<HTMLDivElement>(null)
   const sidebarWidthRef = useRef(sidebarWidth)
   const sidebarResizeActive = useRef(false)
+  const sidebarResizeRaf = useRef<number | null>(null)
+  const sidebarResizePendingX = useRef(0)
+  /* Track width the drag started on: the grid holds it for the whole gesture
+   * and commits the dragged width once, on pointer-up. */
+  const sidebarResizeOrigin = useRef(0)
   const sidebarTransitionActive = useRef(false)
   const sidebarAnimations = useRef<Animation[]>([])
   const sidebarPeekOpenTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -170,6 +177,15 @@ export function Layout({
     if (settingsOpen) shell.setAttribute('inert', '')
     else shell.removeAttribute('inert')
   }, [settingsOpen])
+
+  /* Toasts auto-dismiss so a stale one never camps on screen. The timer resets
+   * when a new message replaces the old; the close button remains for anyone
+   * who wants it gone sooner. */
+  useEffect(() => {
+    if (!error) return
+    const timer = setTimeout(dismissError, TOAST_DISMISS_MS)
+    return () => clearTimeout(timer)
+  }, [error, dismissError])
 
   /* Capture the stable pre-toggle boxes synchronously from Zustand, before
    * React commits the fork's new grid track. The layout effect below can then
@@ -497,18 +513,77 @@ export function Layout({
     }
   }
 
+  /* Drag frames run on rAF and never touch React state. The grid track holds
+   * the width the drag started on, so the main column — and in document mode
+   * the generated page's iframe — does not re-lay out per pointermove. Instead
+   * the sidebar panel stretches over its committed track while the main
+   * surface rides a left-origin translate+scale, the same transform family the
+   * collapse FLIP uses. The track commits exactly once, on pointer-up. */
+  const applySidebarResizeFrame = () => {
+    sidebarResizeRaf.current = null
+    if (!sidebarResizeActive.current) return
+    const shell = shellRef.current
+    if (!shell) return
+    const next = clampSidebarWidth(sidebarResizePendingX.current, sidebarWidthBounds)
+    sidebarWidthRef.current = next
+    const delta = next - sidebarResizeOrigin.current
+
+    const sidebar = sidebarRef.current
+    if (sidebar) sidebar.style.width = `${next}px`
+    shell.style.setProperty('--sidebar-drag-x', `${next}px`)
+
+    const main = shell.querySelector<HTMLElement>('.rml-shell__main')
+    if (main) {
+      /* offsetWidth reads the committed box, ignoring the transform already on
+       * it — the scale must not compound across frames. */
+      const committed = main.offsetWidth
+      const scaleX = committed > 0 ? (committed - delta) / committed : 1
+      main.style.transformOrigin = 'left center'
+      main.style.transform = `translate3d(${delta}px, 0, 0) scaleX(${scaleX})`
+    }
+
+    const resizer = sidebarResizerRef.current
+    if (resizer) {
+      const rounded = String(Math.round(next))
+      resizer.setAttribute('aria-valuenow', rounded)
+      resizer.setAttribute('aria-valuetext', `${rounded} pixels`)
+    }
+  }
+
+  const clearSidebarDragGeometry = () => {
+    const shell = shellRef.current
+    const sidebar = sidebarRef.current
+    const main = shell?.querySelector<HTMLElement>('.rml-shell__main')
+    if (sidebar) sidebar.style.removeProperty('width')
+    if (shell) shell.style.removeProperty('--sidebar-drag-x')
+    if (main) {
+      main.style.removeProperty('transform')
+      main.style.removeProperty('transform-origin')
+    }
+  }
+
   const finishSidebarResize = (target: HTMLDivElement, pointerId: number) => {
     if (!sidebarResizeActive.current) return
     sidebarResizeActive.current = false
-    setSidebarResizing(false)
+    if (sidebarResizeRaf.current !== null) {
+      window.cancelAnimationFrame(sidebarResizeRaf.current)
+      sidebarResizeRaf.current = null
+    }
     if (target.hasPointerCapture(pointerId)) target.releasePointerCapture(pointerId)
-    setDesktopSidebarWidth(sidebarWidthRef.current, true)
+    /* Swap the drag's stand-in geometry for the real track in one synchronous
+     * commit — still under is-sidebar-resizing, so the track change cannot
+     * animate. The resizing class only drops after the commit has landed. */
+    clearSidebarDragGeometry()
+    flushSync(() => setDesktopSidebarWidth(sidebarWidthRef.current, true))
+    setSidebarResizing(false)
   }
 
   const onSidebarResizeStart = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || sidebarCollapsed || sidebarTransitionActive.current) return
     event.preventDefault()
     sidebarResizeActive.current = true
+    sidebarResizeOrigin.current = sidebarWidthRef.current
+    sidebarResizePendingX.current = sidebarWidthRef.current
     setSidebarResizing(true)
     event.currentTarget.setPointerCapture(event.pointerId)
   }
@@ -528,7 +603,9 @@ export function Layout({
       return
     }
 
-    setDesktopSidebarWidth(pointerX)
+    sidebarResizePendingX.current = pointerX
+    if (sidebarResizeRaf.current !== null) return
+    sidebarResizeRaf.current = window.requestAnimationFrame(applySidebarResizeFrame)
   }
 
   const onSidebarResizeEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -582,6 +659,7 @@ export function Layout({
       sidebarTransitionActive.current = false
       forkAnimations.current.forEach((animation) => animation.cancel())
       forkAnimations.current = []
+      if (sidebarResizeRaf.current !== null) window.cancelAnimationFrame(sidebarResizeRaf.current)
       clearSidebarPeekTimers()
     },
     [],
@@ -691,6 +769,7 @@ export function Layout({
         )}
       </aside>
       <div
+        ref={sidebarResizerRef}
         className="rml-shell__sidebar-resizer"
         role="separator"
         aria-label="Resize conversation sidebar"
@@ -807,9 +886,11 @@ export function Layout({
 
       <AnimatePresence>
         {error ? (
+          /* The store's error channel only carries errors, so the toast is an
+           * assertive alert rather than a polite status. */
           <motion.div
             className="rml-toast"
-            role="status"
+            role="alert"
             initial={{ opacity: 0, y: 10, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.98 }}

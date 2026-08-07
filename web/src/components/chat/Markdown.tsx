@@ -3,7 +3,7 @@
  * Code fences get a language label and a copy button; everything else is styled
  * against the design tokens so prose feels typeset rather than dumped. */
 
-import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState, type ImgHTMLAttributes } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
@@ -142,6 +142,30 @@ function CodeBlock({ code, lang }: { code: string; lang?: string }) {
 
 /* -------------------------------------------------------------- components */
 
+/** Broken images get a quiet note instead of the browser's torn-file box. */
+function MdImage({ alt, src, ...props }: ImgHTMLAttributes<HTMLImageElement>) {
+  const [failed, setFailed] = useState(false)
+  useEffect(() => setFailed(false), [src])
+  if (failed) {
+    return (
+      <span className="rml-md__img-missing">
+        <Icon name="image" size={13} />
+        <span>{alt ? `Image unavailable — ${alt}` : 'Image unavailable'}</span>
+      </span>
+    )
+  }
+  return (
+    <img
+      {...props}
+      src={src}
+      alt={alt ?? ''}
+      className="rml-md__img"
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
+  )
+}
+
 const COMPONENTS: Components = {
   a({ node: _node, children, href, ...props }) {
     return (
@@ -180,7 +204,7 @@ const COMPONENTS: Components = {
     )
   },
   img({ node: _node, alt, ...props }) {
-    return <img {...props} alt={alt ?? ''} className="rml-md__img" loading="lazy" />
+    return <MdImage {...props} alt={alt ?? ''} />
   },
   input({ node: _node, ...props }) {
     // GFM task-list checkboxes: read-only, restyled.
@@ -191,13 +215,50 @@ const COMPONENTS: Components = {
 /* ------------------------------------------------------------------ public */
 
 export interface MarkdownProps {
-  /** Raw markdown source. Streams fine — re-parsed on every delta. */
+  /**
+   * Raw markdown source. While `streaming` the parse is throttled to a ~150ms
+   * trailing edge — the store flushes deltas every 16ms and a full
+   * remark/rehype/KaTeX pass per flush is the thread's hot path. On completion
+   * the exact source renders immediately.
+   */
   children: string
+  streaming?: boolean
   className?: string
 }
 
+/** Trailing-edge throttle for streamed text; inactive passes through untouched. */
+function useThrottledText(text: string, active: boolean, ms: number): string {
+  const [shown, setShown] = useState(text)
+  const lastEmit = useRef(0)
+  const timer = useRef<number | undefined>(undefined)
+
+  useEffect(() => {
+    window.clearTimeout(timer.current)
+    if (!active) {
+      // The final render must be immediate and exact — KaTeX included.
+      lastEmit.current = 0
+      setShown(text)
+      return
+    }
+    const wait = ms - (Date.now() - lastEmit.current)
+    if (wait <= 0) {
+      lastEmit.current = Date.now()
+      setShown(text)
+    } else {
+      timer.current = window.setTimeout(() => {
+        lastEmit.current = Date.now()
+        setShown(text)
+      }, wait)
+    }
+    return () => window.clearTimeout(timer.current)
+  }, [text, active, ms])
+
+  return active ? shown : text
+}
+
 /** Styled markdown + math. Memoized: streaming re-renders hit this a lot. */
-export const Markdown = memo(function Markdown({ children, className }: MarkdownProps) {
+export const Markdown = memo(function Markdown({ children, streaming = false, className }: MarkdownProps) {
+  const source = useThrottledText(children, streaming, 150)
   return (
     <div className={cx('rml-md', className)}>
       <ReactMarkdown
@@ -206,7 +267,7 @@ export const Markdown = memo(function Markdown({ children, className }: Markdown
         components={COMPONENTS}
         skipHtml
       >
-        {children}
+        {source}
       </ReactMarkdown>
     </div>
   )

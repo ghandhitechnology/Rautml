@@ -2,9 +2,10 @@
  *   user      → right-aligned, accent-tinted card, plain text (line breaks preserved)
  *   assistant → no card at all: full-width prose, the page itself is the surface
  * While `status === 'streaming'` the last block grows a shimmering caret.
- * `status === 'error'` swaps in a muted, coral-edged treatment. */
+ * `status === 'error'` swaps in a muted, coral-edged treatment.
+ * Memoized: stream flushes hit the thread every 16ms; unchanged turns skip. */
 
-import type { ReactNode } from 'react'
+import { memo, type ReactNode } from 'react'
 import { cx } from '../../lib/utils'
 import type { Message } from '../../lib/types'
 import { useSources } from '../../state/store'
@@ -53,7 +54,7 @@ function ThinkingDots() {
   )
 }
 
-export function MessageBubble({
+export const MessageBubble = memo(function MessageBubble({
   message,
   children,
   compact = false,
@@ -93,7 +94,9 @@ export function MessageBubble({
           {empty ? (
             streaming || thinking ? <ThinkingDots /> : null
           ) : (
-            <Markdown className={cx(compact && 'rml-md--compact')}>{message.content}</Markdown>
+            <Markdown className={cx(compact && 'rml-md--compact')} streaming={streaming}>
+              {message.content}
+            </Markdown>
           )}
 
           {errored ? (
@@ -114,6 +117,6 @@ export function MessageBubble({
       {children ? <div className="rml-msg__extras">{children}</div> : null}
     </article>
   )
-}
+})
 
 export default MessageBubble

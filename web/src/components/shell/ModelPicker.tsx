@@ -95,6 +95,11 @@ export function ModelPicker({
 
   const rootRef = useRef<HTMLDivElement>(null)
   const chipRef = useRef<HTMLButtonElement>(null)
+  const popRef = useRef<HTMLDivElement>(null)
+  /* The selected option carries this ref so opening the popover can move focus
+   * straight onto the current model (the DownloadMenu pattern: focus into the
+   * menu on open, back to the chip on Escape). */
+  const selectedOptionRef = useRef<HTMLButtonElement>(null)
   const dialogId = useId()
 
   const close = useCallback(
@@ -105,9 +110,13 @@ export function ModelPicker({
     [setOpen],
   )
 
-  // Outside click / Escape.
+  // Outside click / Escape. Opening moves focus into the popover.
   useEffect(() => {
     if (!open) return
+    const focusFrame = window.requestAnimationFrame(() => {
+      const target = selectedOptionRef.current ?? popRef.current?.querySelector('button')
+      target?.focus()
+    })
     const onPointerDown = (e: PointerEvent) => {
       if (!rootRef.current?.contains(e.target as Node)) close()
     }
@@ -122,6 +131,7 @@ export function ModelPicker({
     // than dispatching a pointer event to the parent document.
     window.addEventListener('blur', onWindowBlur)
     return () => {
+      window.cancelAnimationFrame(focusFrame)
       document.removeEventListener('pointerdown', onPointerDown, true)
       document.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('blur', onWindowBlur)
@@ -158,6 +168,7 @@ export function ModelPicker({
         <AnimatePresence>
           {open && (
             <motion.div
+              ref={popRef}
               id={dialogId}
               className="rml-model__menu"
               role="dialog"
@@ -167,13 +178,14 @@ export function ModelPicker({
               exit={{ opacity: 0, scale: 0.97, y: 5 }}
               transition={{ duration: 0.2, ease: EASE }}
             >
-              <div className="rml-model__providers" role="tablist" aria-label="Provider">
+              {/* A pressed-button group, not tabs: there is no arrow-key tab
+                  behaviour here, so the honest role is group + aria-pressed. */}
+              <div className="rml-model__providers" role="group" aria-label="Provider">
                 {providerGroups.map((provider) => (
                   <button
                     key={provider.id}
                     type="button"
-                    role="tab"
-                    aria-selected={provider.id === activeProvider?.id}
+                    aria-pressed={provider.id === activeProvider?.id}
                     className={cx('rml-model__provider-tab', provider.id === activeProvider?.id && 'is-active')}
                     onClick={() => setActiveProviderId(provider.id)}
                   >
@@ -202,6 +214,7 @@ export function ModelPicker({
                   return (
                     <li key={m.id} role="option" aria-selected={selected}>
                       <button
+                        ref={selected ? selectedOptionRef : undefined}
                         type="button"
                         className={cx('rml-model__menu-option', selected && 'is-selected')}
                         onClick={() => setModel(m.id)}
@@ -267,6 +280,7 @@ export function ModelPicker({
       <AnimatePresence>
         {open && (
           <motion.div
+            ref={popRef}
             id={dialogId}
             className="rml-model__pop"
             role="dialog"
@@ -276,13 +290,14 @@ export function ModelPicker({
             exit={{ opacity: 0, scale: 0.97, y: 6 }}
             transition={{ duration: 0.22, ease: EASE }}
           >
-            <div className="rml-model__providers" role="tablist" aria-label="Provider">
+            {/* A pressed-button group, not tabs: there is no arrow-key tab
+                behaviour here, so the honest role is group + aria-pressed. */}
+            <div className="rml-model__providers" role="group" aria-label="Provider">
               {providerGroups.map((provider) => (
                 <button
                   key={provider.id}
                   type="button"
-                  role="tab"
-                  aria-selected={provider.id === activeProvider?.id}
+                  aria-pressed={provider.id === activeProvider?.id}
                   className={cx('rml-model__provider-tab', provider.id === activeProvider?.id && 'is-active')}
                   onClick={() => setActiveProviderId(provider.id)}
                 >
@@ -312,6 +327,7 @@ export function ModelPicker({
                 return (
                   <li key={m.id} role="option" aria-selected={selected}>
                     <button
+                      ref={selected ? selectedOptionRef : undefined}
                       type="button"
                       className={cx('rml-model__option', selected && 'is-selected')}
                       onClick={() => setModel(m.id)}

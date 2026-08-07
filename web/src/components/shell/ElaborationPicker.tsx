@@ -50,6 +50,11 @@ export function ElaborationPicker({ className }: ElaborationPickerProps) {
 
   const rootRef = useRef<HTMLDivElement>(null)
   const chipRef = useRef<HTMLButtonElement>(null)
+  const popRef = useRef<HTMLDivElement>(null)
+  /* The selected option carries this ref so opening the popover can move focus
+   * straight onto the current level (the DownloadMenu pattern: focus into the
+   * menu on open, back to the chip on Escape). */
+  const selectedOptionRef = useRef<HTMLButtonElement>(null)
   const dialogId = useId()
 
   const close = useCallback(
@@ -60,9 +65,13 @@ export function ElaborationPicker({ className }: ElaborationPickerProps) {
     [setOpen],
   )
 
-  // Outside click / Escape.
+  // Outside click / Escape. Opening moves focus into the popover.
   useEffect(() => {
     if (!open) return
+    const focusFrame = window.requestAnimationFrame(() => {
+      const target = selectedOptionRef.current ?? popRef.current?.querySelector('button')
+      target?.focus()
+    })
     const onPointerDown = (e: PointerEvent) => {
       if (!rootRef.current?.contains(e.target as Node)) close()
     }
@@ -72,6 +81,7 @@ export function ElaborationPicker({ className }: ElaborationPickerProps) {
     document.addEventListener('pointerdown', onPointerDown)
     document.addEventListener('keydown', onKeyDown)
     return () => {
+      window.cancelAnimationFrame(focusFrame)
       document.removeEventListener('pointerdown', onPointerDown)
       document.removeEventListener('keydown', onKeyDown)
     }
@@ -100,6 +110,7 @@ export function ElaborationPicker({ className }: ElaborationPickerProps) {
       <AnimatePresence>
         {open && (
           <motion.div
+            ref={popRef}
             id={dialogId}
             className="rml-elab__pop"
             role="dialog"
@@ -116,6 +127,7 @@ export function ElaborationPicker({ className }: ElaborationPickerProps) {
                 return (
                   <li key={option.id} role="option" aria-selected={isSelected}>
                     <button
+                      ref={isSelected ? selectedOptionRef : undefined}
                       type="button"
                       className={cx('rml-elab__option', isSelected && 'is-selected')}
                       onClick={() => {

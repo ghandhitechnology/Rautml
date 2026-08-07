@@ -40,7 +40,10 @@ export function ForkPanel({ title = 'Follow-up', subtitle, className }: ForkPane
   useEffect(() => {
     if (!forkOpen) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close()
+      if (e.key !== 'Escape') return
+      // Settings sits above the panel and has its own Escape — let that one win.
+      if (useStore.getState().settingsOpen) return
+      close()
     }
     window.addEventListener('keydown', onKey)
     // Clear any scroll the browser applied while the panel was entering.

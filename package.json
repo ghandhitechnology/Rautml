@@ -30,6 +30,7 @@
     "cross-env": "^10.1.0",
     "electron": "^43.3.0",
     "electron-builder": "^26.15.3",
+    "electron-updater": "^6.8.9",
     "wait-on": "^9.1.0"
   },
   "allowScripts": {
@@ -62,6 +63,11 @@
     "directories": {
       "output": "release",
       "buildResources": "build"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "ghandhitechnology",
+      "repo": "Rautml"
     },
     "electronLanguages": [
       "en",

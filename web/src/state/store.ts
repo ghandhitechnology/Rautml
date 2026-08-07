@@ -156,6 +156,8 @@ export interface StoreState {
   followUpAttachments: FollowUpAttachment[]
   /** Files uploading/uploaded for the next main-thread message. */
   stagedUploads: StagedUpload[]
+  /** Composer text per chat+thread, keyed `${chatId}:${thread}` — survives chat switches. */
+  drafts: Record<string, string>
   connection: SseStatus
   error: string | null
   providerAlert: { providerId: string; message: string } | null
@@ -203,7 +205,8 @@ export interface StoreState {
   applyEvent: (event: ChatEvent) => void
   applyEvents: (events: ChatEvent[]) => void
   resolveInput: (pendingInputId: string, value: string) => Promise<void>
-  stopRun: () => Promise<void>
+  /** Stop the run on one thread; no argument stops every run in the chat. */
+  stopRun: (thread?: Thread) => Promise<void>
   setForkOpen: (open: boolean) => void
   toggleFork: () => void
   /** Open the fork panel on the message that carries this attachment. */
@@ -212,6 +215,10 @@ export interface StoreState {
   addFollowUpAttachment: (attachment: Omit<FollowUpAttachment, 'label'>) => void
   removeFollowUpAttachment: (id: string) => void
   clearFollowUpAttachments: () => void
+  /** Stash composer text for a chat+thread; an empty value drops the entry. */
+  setDraft: (chatId: string, thread: Thread, value: string) => void
+  /** The draft for a chat+thread ('' when none). */
+  getDraft: (chatId: string, thread: Thread) => string
   /** Upload files into the active chat's local sources and stage them on the composer. */
   attachFiles: (files: File[]) => Promise<void>
   /** Unstage a file; if it already reached local sources, it is deleted there too. */
@@ -1224,6 +1231,27 @@ function disconnect() {
   connection = null
 }
 
+/**
+ * A hidden tab can get its stream killed (or its backoff timer frozen) without any
+ * event firing, so coming back forces an immediate resume from lastSeq instead of
+ * waiting out the retry. Guards: no connection → no active chat; a healthy or
+ * in-flight connect is left alone; and reconnect() flips the status synchronously,
+ * so the paired focus + visibility events of one tab return can't storm.
+ */
+function reconnectActiveStream() {
+  if (!connection) return
+  const status = useStore.getState().connection
+  if (status === 'open' || status === 'connecting') return
+  connection.reconnect()
+}
+
+if (typeof window !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') reconnectActiveStream()
+  })
+  window.addEventListener('focus', reconnectActiveStream)
+}
+
 /* ------------------------------------------------------------------- store */
 
 export const useStore = create<StoreState>()((set, get) => ({
@@ -1250,6 +1278,7 @@ export const useStore = create<StoreState>()((set, get) => ({
   forkFocus: null,
   followUpAttachments: [],
   stagedUploads: [],
+  drafts: {},
   connection: 'closed',
   error: null,
   providerAlert: null,
@@ -1585,9 +1614,12 @@ export const useStore = create<StoreState>()((set, get) => ({
     set((s) => {
       const byChat = { ...s.byChat }
       const titleDirty = { ...s.titleDirty }
+      const drafts = { ...s.drafts }
       delete byChat[chatId]
       delete titleDirty[chatId]
-      return { chats: s.chats.filter((c) => c.id !== chatId), byChat, titleDirty }
+      delete drafts[`${chatId}:main`]
+      delete drafts[`${chatId}:fork`]
+      return { chats: s.chats.filter((c) => c.id !== chatId), byChat, titleDirty, drafts }
     })
     if (wasActive) {
       disconnect()
@@ -1880,11 +1912,25 @@ export const useStore = create<StoreState>()((set, get) => ({
     }
   },
 
-  stopRun: async () => {
+  stopRun: async (thread) => {
     const chatId = get().activeChatId
     if (!chatId) return
     try {
-      await api.stopRun(chatId)
+      // lib/api's stopRun has no thread param — post the scoped body from here.
+      // No thread means stop everything running in the chat (the old behavior).
+      const res = await fetch(`${api.API_BASE}/chats/${encodeURIComponent(chatId)}/stop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(thread ? { thread } : {}),
+      })
+      if (!res.ok) {
+        let message = res.statusText || `Request failed (${res.status})`
+        const body: unknown = await res.json().catch(() => undefined)
+        if (body && typeof body === 'object' && 'error' in body && typeof body.error === 'string') {
+          message = body.error
+        }
+        throw new api.ApiError(res.status, message, body)
+      }
     } catch (err) {
       set({ error: errorMessage(err) })
     }
@@ -1952,6 +1998,17 @@ export const useStore = create<StoreState>()((set, get) => ({
     for (const attachment of get().followUpAttachments) removeFrameContext(attachment.id)
     set({ followUpAttachments: [] })
   },
+
+  setDraft: (chatId, thread, value) =>
+    set((s) => {
+      const key = `${chatId}:${thread}`
+      const drafts = { ...s.drafts }
+      if (value) drafts[key] = value
+      else delete drafts[key]
+      return { drafts }
+    }),
+
+  getDraft: (chatId, thread) => get().drafts[`${chatId}:${thread}`] ?? '',
 
   attachFiles: async (files) => {
     const chatId = get().activeChatId
@@ -2071,6 +2128,7 @@ function errorMessage(err: unknown): string {
 const EMPTY_MESSAGES: Message[] = []
 const EMPTY_ASSETS: Asset[] = []
 const EMPTY_WIDGETS: string[] = []
+const EMPTY_ASSET_IDS: string[] = []
 const EMPTY_FILES: PresentedFile[] = []
 const EMPTY_INPUTS: InputRequest[] = []
 
@@ -2104,7 +2162,7 @@ export const useAsset = (assetId?: string) =>
   useStore((s) => (assetId ? (activeChatState(s)?.assets.find((a) => a.id === assetId) ?? null) : null))
 
 export const useAssetIdsForMessage = (messageId: string) =>
-  useStore((s) => activeChatState(s)?.assetsByMessage[messageId] ?? EMPTY_WIDGETS)
+  useStore((s) => activeChatState(s)?.assetsByMessage[messageId] ?? EMPTY_ASSET_IDS)
 
 export const useWidgets = (messageId: string) =>
   useStore((s) => activeChatState(s)?.widgets[messageId] ?? EMPTY_WIDGETS)
@@ -2240,6 +2298,23 @@ const EMPTY_MARKS: QuestionedMark[] = []
  */
 export const useQuestionedMarks = (assetId: string | undefined): QuestionedMark[] => {
   const messages = useMessages('fork')
+  // Marks derive only from the attachments on fork user messages, but a
+  // message.delta rebuilds the list identity every token. Key the memo on the
+  // attachment content (ids + versions + asset ids) so the returned array keeps
+  // its identity unless the marks themselves actually change — the frames diff
+  // and re-mark on identity, and attachments are immutable once sent.
+  const marksKey = useMemo(() => {
+    if (!assetId) return ''
+    const parts: string[] = []
+    for (const message of messages) {
+      if (message.role !== 'user' || !message.attachments) continue
+      for (const attachment of message.attachments) {
+        if (attachment.assetId !== assetId) continue
+        parts.push(`${attachment.id}:${attachment.version}:${attachment.assetId}`)
+      }
+    }
+    return parts.join('|')
+  }, [messages, assetId])
   return useMemo(() => {
     if (!assetId) return EMPTY_MARKS
     const marks: QuestionedMark[] = []
@@ -2251,7 +2326,9 @@ export const useQuestionedMarks = (assetId: string | undefined): QuestionedMark[
       }
     }
     return marks.length ? marks : EMPTY_MARKS
-  }, [messages, assetId])
+    // `messages` is intentionally keyed through marksKey: when the key is
+    // unchanged the computed marks are content-identical too.
+  }, [marksKey, assetId])
 }
 export const useFollowUpAttachments = () => useStore((s) => s.followUpAttachments)
 export const useConnection = () => useStore((s) => s.connection)

@@ -27,7 +27,9 @@
   font-size: var(--fs-md);
   line-height: 1.62;
   white-space: pre-wrap;
+  /* Korean keeps words whole (DESIGN.md); `anywhere` stays the long-URL hatch. */
   overflow-wrap: anywhere;
+  word-break: keep-all;
 }
 
 .rml-msg--user .rml-msg__extras {

@@ -35,7 +35,7 @@ export interface ComposerProps {
   running?: boolean
   /** Override sending; defaults to store.sendMessage(thread, content). */
   onSend?: (content: string) => void | Promise<void>
-  /** Override stopping; defaults to store.stopRun(). */
+  /** Override stopping; defaults to store.stopRun(thread). */
   onStop?: () => void
   /** Small hint line under the field (e.g. input chips are pending). */
   hint?: ReactNode
@@ -56,7 +56,7 @@ export function Composer({
   hint,
   className,
 }: ComposerProps) {
-  const [value, setValue] = useState('')
+  const [localValue, setLocalValue] = useState('')
   const [dragOver, setDragOver] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -64,9 +64,27 @@ export function Composer({
   const storeRunning = useIsRunning(thread)
   const sendMessage = useStore((s) => s.sendMessage)
   const stopRun = useStore((s) => s.stopRun)
+  const setDraft = useStore((s) => s.setDraft)
+  const draft = useStore((s) =>
+    activeChatId ? s.drafts[`${activeChatId}:${thread}`] : undefined,
+  )
   const attachFiles = useStore((s) => s.attachFiles)
   const removeStagedUpload = useStore((s) => s.removeStagedUpload)
   const stagedUploads = useStagedUploads()
+
+  /* The draft lives in the store, keyed by chat + thread, so flipping to the
+   * document dock (which unmounts this composer) keeps the text and switching
+   * chats swaps it. Typing writes straight through — no debounce. With no chat
+   * open (the welcome composer) there is nothing to key on; the value stays
+   * local until the first send creates one. */
+  const value = activeChatId ? (draft ?? '') : localValue
+  const setValue = useCallback(
+    (next: string) => {
+      if (activeChatId) setDraft(activeChatId, thread, next)
+      else setLocalValue(next)
+    },
+    [activeChatId, setDraft, thread],
+  )
 
   // File attach lives on the main composer only; the fork panel asks about
   // the chat, it doesn't feed it. The slot is held open before a chat exists —
@@ -125,7 +143,7 @@ export function Composer({
     requestAnimationFrame(() => ref.current?.focus())
     if (onSend) void onSend(content)
     else void sendMessage(thread, content)
-  }, [onSend, sendMessage, thread, value])
+  }, [onSend, sendMessage, setValue, thread, value])
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key !== 'Enter') return
@@ -139,7 +157,7 @@ export function Composer({
 
   const handleStop = () => {
     if (onStop) onStop()
-    else void stopRun()
+    else void stopRun(thread)
   }
 
   return (

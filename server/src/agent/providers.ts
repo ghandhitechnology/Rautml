@@ -66,7 +66,11 @@ function providerName(id: ProviderId): string {
 }
 
 function authStatus(id: ProviderId): ProviderAuthStatus {
-  if (id === 'codex') return jsonFile(path.join(HOME, '.codex/auth.json'))?.tokens?.access_token ? 'connected' : 'disconnected';
+  if (id === 'codex') {
+    // RAUTML_CODEX=0 vetoes Codex entirely (CONTRACT.md § Provider dispatch).
+    if (process.env.RAUTML_CODEX === '0') return 'disconnected';
+    return jsonFile(path.join(HOME, '.codex/auth.json'))?.tokens?.access_token ? 'connected' : 'disconnected';
+  }
   if (id === 'grok-build') {
     const data = jsonFile(path.join(HOME, '.grok/auth.json'));
     return data && Object.values(data).some((v: any) => typeof v?.key === 'string' && v.key) ? 'connected' : 'disconnected';
@@ -81,6 +85,14 @@ function authStatus(id: ProviderId): ProviderAuthStatus {
     return token?.access_token ? 'connected' : 'disconnected';
   }
   return process.env.OPENROUTER_API_KEY ? 'connected' : 'disconnected';
+}
+
+/**
+ * Synchronous connected-check against the same auth evidence authStatus feeds
+ * discoverProviders — read live at call time, without catalog discovery.
+ */
+export function providerConnected(providerId: string): boolean {
+  return authStatus(providerId as ProviderId) === 'connected';
 }
 
 async function codexModels(): Promise<ModelInfo[]> {
@@ -172,8 +184,10 @@ export const DEFAULT_MODEL_ID = 'codex:openai/gpt-5.6-sol';
 
 export async function defaultModelId(): Promise<string> {
   const providers = await discoverProviders();
-  const preferred = providers.flatMap((p) => p.models).find((m) => m.id === DEFAULT_MODEL_ID);
-  if (preferred) return preferred.id;
+  // The catalog default only applies when its provider is connected; a
+  // disconnected default would route the run straight into a provider error.
+  const preferred = providers.find((p) => p.models.some((m) => m.id === DEFAULT_MODEL_ID));
+  if (preferred?.authStatus === 'connected') return DEFAULT_MODEL_ID;
   return providers.find((p) => p.authStatus === 'connected' && p.models.length)?.models[0]?.id
     ?? providers.find((p) => p.models.length)?.models[0]?.id
     ?? DEFAULT_MODEL_ID;

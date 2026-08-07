@@ -5,6 +5,9 @@
  * store.sendMessage('fork', …); swaps to a stop button while the fork run
  * streams. Carries the fork-scoped ModelPicker toggle: the side thread keeps
  * its own model + effort pair and never changes the main chat's.
+ *
+ * The field's text is the store's per-chat draft (`${chatId}:fork`), so an
+ * unsent follow-up survives closing the panel or switching chats and back.
  */
 
 import {
@@ -12,11 +15,10 @@ import {
   useEffect,
   useLayoutEffect,
   useRef,
-  useState,
   type KeyboardEvent,
 } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
-import { useFollowUpAttachments, useIsRunning, useStore } from '../../state/store'
+import { useActiveChatId, useFollowUpAttachments, useIsRunning, useStore } from '../../state/store'
 import { cx } from '../../lib/utils'
 import { EASE } from '../../lib/motion'
 import { ModelPicker } from '../shell/ModelPicker'
@@ -38,7 +40,9 @@ export function ForkComposer({
   disabled = false,
   className,
 }: ForkComposerProps) {
-  const [value, setValue] = useState('')
+  const chatId = useActiveChatId()
+  const value = useStore((s) => (chatId ? (s.drafts[`${chatId}:fork`] ?? '') : ''))
+  const setDraft = useStore((s) => s.setDraft)
   const reduceMotion = useReducedMotion()
   const ref = useRef<HTMLTextAreaElement>(null)
   const running = useIsRunning('fork')
@@ -46,6 +50,13 @@ export function ForkComposer({
   const sendMessage = useStore((s) => s.sendMessage)
   const stopRun = useStore((s) => s.stopRun)
   const removeAttachment = useStore((s) => s.removeFollowUpAttachment)
+
+  const setValue = useCallback(
+    (next: string) => {
+      if (chatId) setDraft(chatId, 'fork', next)
+    },
+    [chatId, setDraft],
+  )
 
   const canSend = value.trim().length > 0 && !running && !disabled
 
@@ -93,7 +104,7 @@ export function ForkComposer({
     setValue('')
     requestAnimationFrame(() => ref.current?.focus())
     void sendMessage('fork', content, attachments)
-  }, [attachments, sendMessage, value])
+  }, [attachments, sendMessage, setValue, value])
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key !== 'Enter') return
@@ -163,7 +174,7 @@ export function ForkComposer({
               key="stop"
               type="button"
               className="rml-forkcomposer__btn rml-forkcomposer__btn--stop"
-              onClick={() => void stopRun()}
+              onClick={() => void stopRun('fork')}
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.8 }}

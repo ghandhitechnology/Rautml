@@ -9,9 +9,12 @@
  *
  * Version switching keeps the *old* frame visible at the *old* height until the incoming version
  * has reported its first height — then the two cross-fade and the height morphs. No jank, no flash.
+ *
+ * Wrapped in memo: all props are primitives (plus an optional callback), so a thread
+ * re-render from streaming tokens never re-renders the live document subtree.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { fetchAssetHtml } from '../../lib/api'
 import { stampFrameTheme, withThemeAttr } from '../../lib/frameTheme'
@@ -157,7 +160,7 @@ const BONES: [width: string, height: number][] = [
   ['56%', 11],
 ]
 
-export function AssetFrame({
+export const AssetFrame = memo(function AssetFrame({
   assetId,
   version,
   title,
@@ -320,7 +323,13 @@ export function AssetFrame({
   /* ---------------------------------------------- questioned-selection marks */
 
   const marks = useQuestionedMarks(assetId)
+  // Streaming fork tokens rebuild this array every flush; re-marking the frames
+  // on content that didn't change makes them redo the same DOM work per token.
+  const postedMarks = useRef('')
   useEffect(() => {
+    const serialized = JSON.stringify(marks)
+    if (serialized === postedMarks.current) return
+    postedMarks.current = serialized
     for (const el of frames.current.values()) postFrameMarks(el, marks)
   }, [marks, layers])
 
@@ -433,6 +442,6 @@ export function AssetFrame({
       )}
     </motion.div>
   )
-}
+})
 
 export default AssetFrame

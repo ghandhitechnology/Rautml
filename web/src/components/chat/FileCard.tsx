@@ -1,6 +1,7 @@
 /* Download cards for `present_files` (files.presented). One row per file:
  * extension glyph, name, size, and a download affordance. */
 
+import { memo } from 'react'
 import { motion } from 'framer-motion'
 import { EASE } from '../../lib/motion'
 import { cx, formatBytes } from '../../lib/utils'
@@ -66,8 +67,9 @@ export interface FileCardsProps {
   className?: string
 }
 
-/** Responsive grid of FileCards — what ChatThread renders for one files.presented event. */
-export function FileCards({ files, chatId, compact, className }: FileCardsProps) {
+/** Responsive grid of FileCards — what ChatThread renders for one files.presented event.
+ * Memoized: the files array keeps identity across stream flushes. */
+export const FileCards = memo(function FileCards({ files, chatId, compact, className }: FileCardsProps) {
   if (!files.length) return null
   return (
     <div className={cx('rml-files', compact && 'rml-files--compact', className)}>
@@ -76,6 +78,6 @@ export function FileCards({ files, chatId, compact, className }: FileCardsProps)
       ))}
     </div>
   )
-}
+})
 
 export default FileCard

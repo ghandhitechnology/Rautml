@@ -2,7 +2,12 @@
 // type. Everything returns plain UTF-8 text; downstream (indexer) chunks and
 // embeds it. Extraction is best-effort: a parse failure surfaces as a thrown
 // error and the source lands in status 'error' (still downloadable, never lost).
-import { promises as fs } from 'node:fs';
+//
+// Parsing is CPU-bound (unpdf/mammoth/JSZip/hwp), so extractText dispatches
+// the work to a worker thread (extract.worker.ts) and the server stays
+// responsive; if the worker cannot start, extraction falls back to in-process.
+import { existsSync, promises as fs } from 'node:fs';
+import { Worker } from 'node:worker_threads';
 import mammoth from 'mammoth';
 import JSZip from 'jszip';
 import { parse as parseHwp } from 'hwp.js';
@@ -32,6 +37,16 @@ export const EXTRACT_CHAR_CAP = 8_000_000;
 /** Bytes read for plain-text formats — a 300MB CSV must not be slurped whole. */
 const PLAIN_TEXT_BYTE_CAP = 48 * 1024 * 1024;
 
+/**
+ * Bytes accepted for the binary formats, which are parsed whole in memory.
+ * Uploads may reach 400MB (multer cap), but parsing a 400MB PDF is exactly
+ * the freeze scenario — refuse early instead of grinding the process down.
+ */
+const BINARY_PARSE_BYTE_CAP = 100 * 1024 * 1024;
+
+/** Formats the parse cap applies to: everything not read as plain text. */
+const BINARY_EXTS: ReadonlySet<string> = new Set(['pdf', 'docx', 'pptx', 'hwp', 'hwpx']);
+
 const TRUNCATION_NOTE = '\n\n[…extraction truncated: the file continues beyond this point…]';
 
 export function extForName(name: string): SupportedExt | null {
@@ -41,7 +56,124 @@ export function extForName(name: string): SupportedExt | null {
   return (SUPPORTED_EXTS as readonly string[]).includes(ext) ? (ext as SupportedExt) : null;
 }
 
-export async function extractText(absPath: string, ext: string): Promise<string> {
+// ---------------------------------------------------------------------------
+// worker dispatch — the actual parse lives in extractTextInProcess below and
+// runs on the worker thread; the main thread only ships paths back and forth.
+// ---------------------------------------------------------------------------
+
+/** Wire protocol with extract.worker.ts — one job in, one reply out. */
+export type ExtractReply = { ok: true; text: string } | { ok: false; error: string };
+
+interface PendingJob {
+  resolve: (text: string) => void;
+  reject: (err: Error) => void;
+}
+
+let worker: Worker | null = null;
+let workerViable = false; // answered at least one job — proven able to start
+let workerUnavailable = false; // never came up — stay in-process from then on
+let activeJob: PendingJob | null = null;
+let extractChain: Promise<void> = Promise.resolve();
+
+/**
+ * Extract through the worker, one job at a time (the indexer queue is already
+ * sequential; the chain just guards against a second concurrent caller).
+ */
+export function extractText(absPath: string, ext: string): Promise<string> {
+  const run = extractChain.then(() => dispatchExtract(absPath, ext));
+  extractChain = run.then(
+    () => {},
+    () => {},
+  );
+  return run;
+}
+
+async function dispatchExtract(absPath: string, ext: string): Promise<string> {
+  if (workerUnavailable) return extractTextInProcess(absPath, ext);
+  try {
+    return await runWorkerJob(absPath, ext);
+  } catch (err) {
+    if (!workerUnavailable) throw err;
+    // The worker could not start — fall back in-process (warned once already).
+    return extractTextInProcess(absPath, ext);
+  }
+}
+
+function runWorkerJob(absPath: string, ext: string): Promise<string> {
+  let instance = worker;
+  if (!instance) {
+    try {
+      instance = spawnWorker();
+    } catch (err) {
+      // new Worker() itself threw — same story as an async spawn failure.
+      markWorkerUnavailable(err as Error);
+      throw err;
+    }
+    worker = instance;
+  }
+  return new Promise<string>((resolve, reject) => {
+    activeJob = { resolve, reject };
+    instance.postMessage({ absPath, ext });
+  });
+}
+
+/**
+ * The built server loads dist/sources/extract.worker.js; under tsx (dev and
+ * tests) only the .ts source exists, which the worker picks up through the
+ * inherited tsx loader in execArgv.
+ */
+function workerEntryUrl(): URL {
+  const js = new URL('./extract.worker.js', import.meta.url);
+  return existsSync(js) ? js : new URL('./extract.worker.ts', import.meta.url);
+}
+
+function spawnWorker(): Worker {
+  const instance = new Worker(workerEntryUrl());
+  instance.on('message', (reply: ExtractReply) => {
+    const job = activeJob;
+    activeJob = null;
+    if (!job) return;
+    workerViable = true; // any reply — even a parse error — proves the worker runs
+    if (reply.ok) job.resolve(reply.text);
+    else job.reject(new Error(reply.error));
+  });
+  instance.on('error', (err) => retireWorker(instance, err));
+  instance.on('exit', (code) => {
+    // An exit before the reply means the job (and the worker) is lost.
+    retireWorker(instance, new Error(`extraction worker stopped (exit code ${code})`));
+  });
+  instance.unref();
+  return instance;
+}
+
+/** A dead worker rejects its in-flight job; the next job spawns a fresh one. */
+function retireWorker(dead: Worker, err: Error): void {
+  if (worker === dead) worker = null;
+  void dead.terminate();
+  const job = activeJob;
+  activeJob = null;
+  if (!workerViable) markWorkerUnavailable(err);
+  job?.reject(err);
+}
+
+function markWorkerUnavailable(err: Error): void {
+  if (workerUnavailable) return;
+  workerUnavailable = true;
+  console.warn(
+    `[sources] extraction worker unavailable (${err.message}); extracting in-process instead`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// the parse itself
+// ---------------------------------------------------------------------------
+
+/**
+ * The actual extraction. Normally runs on the worker thread via extractText;
+ * called directly only as the fallback when the worker cannot start.
+ */
+export async function extractTextInProcess(absPath: string, ext: string): Promise<string> {
+  if (BINARY_EXTS.has(ext)) await assertUnderParseCap(absPath);
   switch (ext) {
     case 'csv':
     case 'md':
@@ -61,6 +193,16 @@ export async function extractText(absPath: string, ext: string): Promise<string>
     default:
       throw new Error(`Unsupported file type: .${ext}`);
   }
+}
+
+/** Binary parsers slurp the whole file, so refuse the huge ones up front. */
+async function assertUnderParseCap(absPath: string): Promise<void> {
+  const { size } = await fs.stat(absPath);
+  if (size <= BINARY_PARSE_BYTE_CAP) return;
+  const mb = (bytes: number) => Math.round(bytes / 1024 / 1024);
+  throw new Error(
+    `File too large to parse: ${mb(size)}MB exceeds the ${mb(BINARY_PARSE_BYTE_CAP)}MB cap`,
+  );
 }
 
 function capText(text: string): string {
@@ -85,8 +227,14 @@ async function readPlainText(absPath: string): Promise<string> {
     const stat = await handle.stat();
     const bytes = Math.min(stat.size, PLAIN_TEXT_BYTE_CAP);
     const buffer = Buffer.alloc(bytes);
-    await handle.read(buffer, 0, bytes, 0);
-    let text = buffer.toString('utf8');
+    // A single read() is not guaranteed to fill the buffer — loop to EOF/cap.
+    let offset = 0;
+    while (offset < bytes) {
+      const { bytesRead } = await handle.read(buffer, offset, bytes - offset, offset);
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    let text = buffer.toString('utf8', 0, offset);
     if (stat.size > PLAIN_TEXT_BYTE_CAP) text += TRUNCATION_NOTE;
     return text;
   } finally {

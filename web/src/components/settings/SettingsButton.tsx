@@ -35,6 +35,7 @@ export function SettingsButton({ className, variant = 'sidebar', collapsed = fal
       onClick={() => openSettings()}
       aria-label="Settings"
       title="Settings"
+      data-settings-button
     >
       <span className="rml-settings-btn__icon" aria-hidden="true">
         <GearIcon />

@@ -4,7 +4,9 @@
 
 ## Platform
 
-macOS desktop (Electron), with the web workspace retained for development
+web
+
+macOS desktop (Electron), with the web workspace retained for development.
 
 ## Users
 

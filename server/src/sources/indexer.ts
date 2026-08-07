@@ -140,6 +140,9 @@ async function indexSource(sourceId: string): Promise<void> {
       text: chunk.text,
       embedding: vectors?.[i] ? new Uint8Array(vectors[i]!.buffer, 0, vectors[i]!.byteLength) : null,
     }));
+    // The source may have been deleted while we extracted/embedded — bail
+    // instead of re-inserting chunks for a row that no longer exists.
+    if (!repo.getSource(source.id)) return;
     repo.replaceSourceChunks(source.id, source.chatId, chunks);
     repo.setSourceReady(source.id, text.length, chunks.length);
   } catch (err) {

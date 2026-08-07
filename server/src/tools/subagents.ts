@@ -1,4 +1,4 @@
-// `spawn_subagents` — the lead agent fans a big research job out to 2–5
+// `spawn_subagents` — the lead agent fans a big research job out to 1–5
 // parallel subagents. Each subagent is a mini agentic loop with its own
 // OpenRouter stream and its own tool calling over the research tools only;
 // its lifecycle and activity surface as `subagent.*` SSE events (persisted
@@ -7,7 +7,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { getModel } from '../agent/models.js';
-import { streamChat, type ChatMessage, type OpenRouterTool } from '../agent/llm.js';
+import { resolveSubagentProvider, streamChat, type ChatMessage, type OpenRouterTool } from '../agent/llm.js';
 import { SUBAGENT_SYSTEM_PROMPT } from '../agent/prompts.js';
 import type { ToolCtx, ToolDef } from '../types.js';
 import { researchTools } from './research.js';
@@ -167,6 +167,9 @@ async function runSubagent(
         tools: wireTools,
         toolChoice: nudged ? 'none' : 'auto',
         model: task.model,
+        // Subagents always run on OpenRouter when it's connected, regardless of
+        // the chat's own inference provider; undefined keeps current inference.
+        providerId: resolveSubagentProvider(task.model),
         reasoningEffort: effort,
         signal: ctx.signal,
         onText: (delta) => {
@@ -264,13 +267,13 @@ async function runSubagent(
 const spawn_subagents: ToolDef = {
   name: 'spawn_subagents',
   description:
-    'Divide a large research job across 2–5 parallel research subagents. Each task becomes an independent subagent with its own web_search / web_fetch / image_search loop that researches the brief and reports back; the combined reports are returned to you. Briefs must be self-contained — a subagent sees nothing of this conversation. Use once, early, when research is bigger than a medium-large task; do not use for small look-ups. Subagents cannot spawn subagents, write files, or ask the user anything.',
+    'Divide a large research job across 1–5 parallel research subagents. Each task becomes an independent subagent with its own web_search / web_fetch / image_search loop that researches the brief and reports back; the combined reports are returned to you. Briefs must be self-contained — a subagent sees nothing of this conversation. Use once, early, when research is bigger than a medium-large task; do not use for small look-ups. Subagents cannot spawn subagents, write files, or ask the user anything.',
   parameters: {
     type: 'object',
     properties: {
       tasks: {
         type: 'array',
-        minItems: 2,
+        minItems: 1,
         maxItems: MAX_TASKS,
         description: 'One focused research brief per subagent.',
         items: {

@@ -1,4 +1,4 @@
-import type { ToolDef } from '../types.js';
+import type { ToolCtx, ToolDef } from '../types.js';
 
 const FIRECRAWL_SEARCH_URL = 'https://api.firecrawl.dev/v1/search';
 const FIRECRAWL_SCRAPE_URL = 'https://api.firecrawl.dev/v1/scrape';
@@ -37,7 +37,17 @@ function stripHtml(html: string): string {
     .trim();
 }
 
-async function firecrawlPost(url: string, body: object): Promise<any> {
+/**
+ * The 30s fetch cap combined with the run's abort signal, so a stopped run
+ * cancels in-flight fetches instead of waiting them out. AbortSignal.any is
+ * available on every Node we ship (>=20.3).
+ */
+function fetchSignal(ctx: ToolCtx): AbortSignal {
+  const timeout = AbortSignal.timeout(TIMEOUT_MS);
+  return ctx.signal ? AbortSignal.any([ctx.signal, timeout]) : timeout;
+}
+
+async function firecrawlPost(url: string, body: object, signal: AbortSignal): Promise<any> {
   const res = await fetch(url, {
     method: 'POST',
     headers: {
@@ -45,7 +55,7 @@ async function firecrawlPost(url: string, body: object): Promise<any> {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(TIMEOUT_MS),
+    signal,
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -64,12 +74,16 @@ const web_search: ToolDef = {
     },
     required: ['query'],
   },
-  async execute(args: { query: string }): Promise<string> {
+  async execute(args: { query: string }, ctx: ToolCtx): Promise<string> {
     try {
-      const data = await firecrawlPost(FIRECRAWL_SEARCH_URL, {
-        query: args.query,
-        limit: 8,
-      });
+      const data = await firecrawlPost(
+        FIRECRAWL_SEARCH_URL,
+        {
+          query: args.query,
+          limit: 8,
+        },
+        fetchSignal(ctx),
+      );
       const results: any[] = data?.data?.web ?? data?.data ?? [];
       if (!Array.isArray(results) || results.length === 0) {
         return 'No results found.';
@@ -97,12 +111,16 @@ const web_fetch: ToolDef = {
     },
     required: ['url'],
   },
-  async execute(args: { url: string }): Promise<string> {
+  async execute(args: { url: string }, ctx: ToolCtx): Promise<string> {
     try {
-      const data = await firecrawlPost(FIRECRAWL_SCRAPE_URL, {
-        url: args.url,
-        formats: ['markdown'],
-      });
+      const data = await firecrawlPost(
+        FIRECRAWL_SCRAPE_URL,
+        {
+          url: args.url,
+          formats: ['markdown'],
+        },
+        fetchSignal(ctx),
+      );
       const markdown: string | undefined = data?.data?.markdown ?? data?.markdown;
       if (typeof markdown === 'string' && markdown.length > 0) {
         return truncate(markdown, FETCH_TRUNCATE_CHARS);
@@ -111,7 +129,7 @@ const web_fetch: ToolDef = {
     } catch (firecrawlErr: any) {
       try {
         const res = await fetch(args.url, {
-          signal: AbortSignal.timeout(TIMEOUT_MS),
+          signal: fetchSignal(ctx),
         });
         if (!res.ok) {
           return `ERROR: fetch failed with ${res.status} ${res.statusText}`;
@@ -136,13 +154,17 @@ const image_search: ToolDef = {
     },
     required: ['query'],
   },
-  async execute(args: { query: string }): Promise<string> {
+  async execute(args: { query: string }, ctx: ToolCtx): Promise<string> {
     try {
-      const data = await firecrawlPost(FIRECRAWL_SEARCH_V2_URL, {
-        query: args.query,
-        limit: 8,
-        sources: ['images'],
-      });
+      const data = await firecrawlPost(
+        FIRECRAWL_SEARCH_V2_URL,
+        {
+          query: args.query,
+          limit: 8,
+          sources: ['images'],
+        },
+        fetchSignal(ctx),
+      );
       const results: any[] =
         data?.data?.images ?? (Array.isArray(data?.data) ? data.data : []) ?? [];
       if (!Array.isArray(results) || results.length === 0) {

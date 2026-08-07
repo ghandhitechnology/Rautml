@@ -14,7 +14,7 @@
 //   - `max_output_tokens` and `temperature` are rejected — both are omitted.
 //   - reasoning.effort passes through (none…max verified).
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -123,8 +123,10 @@ function readAuthFile(): CodexAuthFile | null {
   }
 }
 
-/** True when Codex CLI credentials exist on this machine (`codex login`). */
+/** True when Codex CLI credentials exist on this machine (`codex login`).
+ *  `RAUTML_CODEX=0` vetoes Codex entirely — everything stays on OpenRouter. */
 export function codexAvailable(): boolean {
+  if (process.env.RAUTML_CODEX === '0') return false;
   // Re-read so a completed `codex login` becomes visible without restarting Rautml.
   cachedAuth = readAuthFile();
   return !!cachedAuth;
@@ -167,7 +169,13 @@ async function refreshTokens(auth: CodexAuthFile): Promise<CodexTokens> {
   };
   const next: CodexAuthFile = { ...auth, tokens, last_refresh: new Date().toISOString() };
   try {
-    writeFileSync(authPath(), JSON.stringify(next, null, 2));
+    // auth.json is shared with the Codex CLI, and a rotated refresh token
+    // invalidates the previous one — a truncated or non-atomic write can
+    // lock both Rautml and the CLI out. Write-then-rename, owner-only.
+    const file = authPath();
+    const tmp = `${file}.tmp`;
+    writeFileSync(tmp, JSON.stringify(next, null, 2), { mode: 0o600 });
+    renameSync(tmp, file);
   } catch {
     // Persisting is best-effort; the in-memory tokens still work this process.
   }
@@ -500,10 +508,15 @@ export async function codexStreamChat(options: StreamChatOptions): Promise<Strea
         });
       }
 
+      // Text without response.completed is kept (retrying would duplicate
+      // visible output) but flagged as possibly cut off, like openrouter.ts.
+      const truncated = !completed && content.length > 0;
+
       return {
         content,
         toolCalls,
         finishReason: toolCalls.length > 0 ? 'tool_calls' : 'stop',
+        ...(truncated ? { truncated } : {}),
       };
     } catch (err) {
       if (isAbortError(err)) throw err;

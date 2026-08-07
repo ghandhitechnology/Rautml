@@ -146,8 +146,14 @@ export function deleteChat(id: string): void {
     db.exec('ROLLBACK');
     throw err;
   }
-  rmSync(path.join(WORKSPACES_DIR, id), { recursive: true, force: true });
-  rmSync(path.join(SOURCES_DIR, id), { recursive: true, force: true });
+  // The rows are already gone; clearing the files on disk is best-effort — a
+  // cleanup failure must not fail the request after the commit succeeded.
+  try {
+    rmSync(path.join(WORKSPACES_DIR, id), { recursive: true, force: true });
+    rmSync(path.join(SOURCES_DIR, id), { recursive: true, force: true });
+  } catch (err) {
+    console.warn(`[repo] chat ${id}: on-disk cleanup failed`, (err as Error)?.message ?? err);
+  }
 }
 
 export function touchChat(id: string): void {
@@ -237,11 +243,25 @@ export function appendModelTurn(chatId: string, thread: Thread, turn: any): void
   );
 }
 
+/** Parses each row's json, skipping (and logging) a corrupt row instead of throwing. */
+function parseTurnRows(rows: any[], chatId: string, thread: Thread): any[] {
+  const turns: any[] = [];
+  for (const row of rows) {
+    try {
+      turns.push(JSON.parse(row.json));
+    } catch {
+      // A corrupt turn must not poison the whole transcript.
+      console.warn(`[repo] skipping corrupt model_turns row (chat ${chatId}, thread ${thread})`);
+    }
+  }
+  return turns;
+}
+
 export function listModelTurns(chatId: string, thread: Thread): any[] {
   const rows = db
     .prepare(`SELECT json FROM model_turns WHERE chat_id = ? AND thread = ? ORDER BY seq ASC`)
     .all(chatId, thread) as any[];
-  return rows.map((r) => JSON.parse(r.json));
+  return parseTurnRows(rows, chatId, thread);
 }
 
 /** Turns up to (and including) a watermark seq — a point-in-time transcript. */
@@ -251,7 +271,7 @@ export function listModelTurnsUpTo(chatId: string, thread: Thread, maxSeq: numbe
       `SELECT json FROM model_turns WHERE chat_id = ? AND thread = ? AND seq <= ? ORDER BY seq ASC`,
     )
     .all(chatId, thread, maxSeq) as any[];
-  return rows.map((r) => JSON.parse(r.json));
+  return parseTurnRows(rows, chatId, thread);
 }
 
 /** The highest turn seq on a thread right now (0 when the thread is empty). */
@@ -292,6 +312,39 @@ export function setRunStatus(runId: string, status: Run['status'], error?: strin
     finishedAt,
     runId,
   );
+}
+
+/**
+ * Stamps a run with the provider selection it was admitted without. startRun
+ * inserts the row synchronously (to win the admission race) and only then
+ * awaits the model resolution.
+ */
+export function setRunSelection(
+  runId: string,
+  selection: { providerId?: string; model?: string; effort?: string; elaboration?: ElaborationLevel },
+): void {
+  db.prepare(`UPDATE runs SET provider = ?, model = ?, effort = ?, elaboration = ? WHERE id = ?`).run(
+    selection.providerId ?? null,
+    selection.model ?? null,
+    selection.effort ?? null,
+    selection.elaboration ?? null,
+    runId,
+  );
+}
+
+/**
+ * Boot-time recovery for rows whose liveness lived in process memory: a
+ * restart strands runs mid-'running' and messages mid-'streaming'. Stranded
+ * runs become 'error' (a parked 'awaiting_input' run survives reboots by
+ * design and is left alone); stranded messages keep their partial content but
+ * stop pretending to be live. Returns how many rows of each were reaped.
+ */
+export function reapStaleRuns(): { runs: number; messages: number } {
+  const runs = db
+    .prepare(`UPDATE runs SET status = 'error', finished_at = ? WHERE status = 'running'`)
+    .run(Date.now());
+  const messages = db.prepare(`UPDATE messages SET status = 'error' WHERE status = 'streaming'`).run();
+  return { runs: Number(runs.changes), messages: Number(messages.changes) };
 }
 
 export function getActiveRun(chatId: string, thread: Thread): Run | undefined {
@@ -348,10 +401,17 @@ export function listEventsAfter(chatId: string, afterSeq: number): ChatEvent[] {
   const rows = db
     .prepare(`SELECT seq, type, payload, created_at FROM tool_events WHERE chat_id = ? AND seq > ? ORDER BY seq ASC`)
     .all(chatId, afterSeq) as any[];
-  return rows.map((row) => {
-    const parsed = JSON.parse(row.payload);
-    return { seq: row.seq, chatId, thread: parsed.thread as Thread, type: row.type, data: parsed.data, at: row.created_at };
-  });
+  const events: ChatEvent[] = [];
+  for (const row of rows) {
+    try {
+      const parsed = JSON.parse(row.payload);
+      events.push({ seq: row.seq, chatId, thread: parsed.thread as Thread, type: row.type, data: parsed.data, at: row.created_at });
+    } catch {
+      // A corrupt event row must not break replay for everything after it.
+      console.warn(`[repo] skipping corrupt tool_events row (chat ${chatId}, seq ${row.seq})`);
+    }
+  }
+  return events;
 }
 
 // ---------------------------------------------------------------------------
@@ -369,12 +429,20 @@ export function createAsset(input: {
 }): Asset {
   const id = randomUUID();
   const now = Date.now();
-  db.prepare(
-    `INSERT INTO assets (id, chat_id, message_id, title, rel_path, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-  ).run(id, input.chatId, input.messageId, input.title, input.relPath, now);
-  db.prepare(
-    `INSERT INTO asset_versions (id, asset_id, version, html, created_at) VALUES (?, ?, 1, ?, ?)`,
-  ).run(randomUUID(), id, input.html, now);
+  // Asset + first version are one unit — never persist one without the other.
+  db.exec('BEGIN');
+  try {
+    db.prepare(
+      `INSERT INTO assets (id, chat_id, message_id, title, rel_path, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(id, input.chatId, input.messageId, input.title, input.relPath, now);
+    db.prepare(
+      `INSERT INTO asset_versions (id, asset_id, version, html, created_at) VALUES (?, ?, 1, ?, ?)`,
+    ).run(randomUUID(), id, input.html, now);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
   return {
     id,
     chatId: input.chatId,
@@ -562,9 +630,15 @@ export function createPendingInput(input: {
   thread: Thread;
   question: string;
   options: string[];
+  /** The parked tool call this question answers (engine-driven asks only). */
+  toolCallId?: string;
 }): PendingInput {
   const id = randomUUID();
-  const payload = JSON.stringify({ question: input.question, options: input.options });
+  const payload = JSON.stringify({
+    question: input.question,
+    options: input.options,
+    ...(input.toolCallId ? { toolCallId: input.toolCallId } : {}),
+  });
   db.prepare(
     `INSERT INTO pending_inputs (id, run_id, chat_id, thread, payload, resolved) VALUES (?, ?, ?, ?, ?, 0)`,
   ).run(id, input.runId, input.chatId, input.thread, payload);
@@ -578,13 +652,71 @@ export function resolvePendingInput(id: string, value: string): void {
   db.prepare(`UPDATE pending_inputs SET payload = ?, resolved = 1 WHERE id = ?`).run(payload, id);
 }
 
+/**
+ * Clears every unanswered question of a run that will never resume (stopped),
+ * so answer chips can't linger and 409 on tap. Returns the resolved row ids
+ * so the caller can notify subscribers.
+ */
+export function resolvePendingInputsForRun(runId: string): string[] {
+  const rows = db
+    .prepare(`SELECT id FROM pending_inputs WHERE run_id = ? AND resolved = 0`)
+    .all(runId) as any[];
+  if (rows.length === 0) return [];
+  db.prepare(`UPDATE pending_inputs SET resolved = 1 WHERE run_id = ? AND resolved = 0`).run(runId);
+  return rows.map((row) => row.id as string);
+}
+
 export function getUnresolvedInput(chatId: string): PendingInput | undefined {
-  const row = db
-    .prepare(`SELECT * FROM pending_inputs WHERE chat_id = ? AND resolved = 0 ORDER BY rowid DESC LIMIT 1`)
-    .get(chatId) as any;
+  const rows = db
+    .prepare(`SELECT * FROM pending_inputs WHERE chat_id = ? AND resolved = 0 ORDER BY rowid DESC`)
+    .all(chatId) as any[];
+  for (const row of rows) {
+    try {
+      const parsed = JSON.parse(row.payload);
+      return { id: row.id, question: parsed.question, options: parsed.options };
+    } catch {
+      // A corrupt row is skipped — an older unresolved question may still stand.
+      console.warn(`[repo] skipping corrupt pending_inputs row ${row.id}`);
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Full by-id lookup for resumeRun: carries run_id / thread / the parked
+ * tool_call_id, which the narrower PendingInput view omits. The payload stays
+ * JSON-compatible with getUnresolvedInput().
+ */
+export interface PendingInputRow {
+  id: string;
+  runId: string;
+  chatId: string;
+  thread: Thread;
+  question: string;
+  options: string[];
+  toolCallId: string;
+  resolved: boolean;
+}
+
+export function getPendingInput(id: string): PendingInputRow | undefined {
+  const row = db.prepare(`SELECT * FROM pending_inputs WHERE id = ?`).get(id) as any;
   if (!row) return undefined;
-  const parsed = JSON.parse(row.payload);
-  return { id: row.id, question: parsed.question, options: parsed.options };
+  let parsed: any = {};
+  try {
+    parsed = JSON.parse(row.payload ?? '{}');
+  } catch {
+    parsed = {};
+  }
+  return {
+    id: row.id,
+    runId: row.run_id,
+    chatId: row.chat_id,
+    thread: (row.thread as Thread) ?? 'main',
+    question: typeof parsed.question === 'string' ? parsed.question : '',
+    options: Array.isArray(parsed.options) ? parsed.options.map(String) : [],
+    toolCallId: typeof parsed.toolCallId === 'string' ? parsed.toolCallId : '',
+    resolved: !!row.resolved,
+  };
 }
 
 // ---------------------------------------------------------------------------

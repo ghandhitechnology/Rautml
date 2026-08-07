@@ -3,9 +3,11 @@
  * While the run is alive the strip is open and rows stream in as tool.start /
  * tool.end land (height animates to a measured content height, rows fade+rise).
  * When the run finishes it collapses itself to "Worked for 12s · 5 steps";
- * clicking the header re-expands it and that choice sticks. */
+ * clicking the header re-expands it and that choice sticks.
+ * Memoized: the store patches the timeline object only on run events, so the
+ * 16ms message.delta flushes pass through without re-rendering the strip. */
 
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { EASE } from '../../lib/motion'
 import { cx, formatDuration } from '../../lib/utils'
@@ -317,7 +319,7 @@ export interface ActivityTimelineProps {
   className?: string
 }
 
-export function ActivityTimeline({
+export const ActivityTimeline = memo(function ActivityTimeline({
   timeline,
   compact = false,
   defaultExpanded,
@@ -446,6 +448,6 @@ export function ActivityTimeline({
       </motion.div>
     </section>
   )
-}
+})
 
 export default ActivityTimeline

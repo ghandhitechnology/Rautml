@@ -46,6 +46,11 @@ function resolveSource(chatId: string, ref: string): Source | string {
   return `No source named "${ref}". Available:\n${sources.map(describe).join('\n')}`;
 }
 
+/** Coerce a model-supplied count: non-finite input (NaN, Infinity, strings) falls back to the default. */
+function finiteOrDefault(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
 const list_sources: ToolDef = {
   name: 'list_sources',
   description:
@@ -81,7 +86,10 @@ const search_sources: ToolDef = {
     const sources = repo.listSources(ctx.chatId);
     if (!sources.length) return 'This chat has no local sources yet.';
 
-    const topK = Math.max(1, Math.min(Math.floor(args?.top_k ?? DEFAULT_TOP_K), MAX_TOP_K));
+    const topK = Math.max(
+      1,
+      Math.min(Math.floor(finiteOrDefault(args?.top_k, DEFAULT_TOP_K)), MAX_TOP_K),
+    );
     const hits = await searchChunks(ctx.chatId, query, topK);
     if (!hits.length) {
       const pending = sources.filter((source) => source.status === 'processing');
@@ -126,10 +134,10 @@ const read_source: ToolDef = {
       return `"${resolved.name}" has no extracted text (${resolved.error ?? 'extraction failed'}). The raw file is still stored, but it cannot be read as text.`;
     }
 
-    const offset = Math.max(0, Math.floor(args?.offset ?? 0));
+    const offset = Math.max(0, Math.floor(finiteOrDefault(args?.offset, 0)));
     const length = Math.max(
       1,
-      Math.min(Math.floor(args?.length ?? DEFAULT_READ_LENGTH), MAX_READ_LENGTH),
+      Math.min(Math.floor(finiteOrDefault(args?.length, DEFAULT_READ_LENGTH)), MAX_READ_LENGTH),
     );
     if (offset >= resolved.textChars) {
       return `Offset ${offset} is past the end — "${resolved.name}" has ${resolved.textChars} characters of text.`;

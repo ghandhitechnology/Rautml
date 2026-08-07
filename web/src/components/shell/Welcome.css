@@ -45,7 +45,12 @@
   margin-top: var(--sp-8);
 }
 
-.rml-welcome__hints li {
+/* The chip is the button inside the li — the hover-lift was always meant as an
+ * affordance, so the whole pill is clickable and keyboard-focusable. */
+.rml-welcome__hints button {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
   padding: 9px var(--sp-4);
   border: 1px solid var(--border);
   border-radius: var(--r-pill);
@@ -60,8 +65,26 @@
     transform var(--dur-fast) var(--ease);
 }
 
-.rml-welcome__hints li:hover {
+.rml-welcome__hints button:hover {
   color: var(--text);
   border-color: color-mix(in srgb, var(--accent) 36%, var(--border));
   transform: translateY(-1px);
+}
+
+.rml-welcome__hints button:active {
+  transform: translateY(0);
+}
+
+.rml-welcome__hint-arrow {
+  flex: 0 0 auto;
+  rotate: -90deg;
+  opacity: 0;
+  color: var(--accent-hover);
+  transition: opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+}
+
+.rml-welcome__hints button:hover .rml-welcome__hint-arrow,
+.rml-welcome__hints button:focus-visible .rml-welcome__hint-arrow {
+  opacity: 1;
+  transform: translateX(2px);
 }

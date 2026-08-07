@@ -67,12 +67,26 @@ html[data-desktop='electron'] .rml-shell.is-sidebar-animating {
   transition: none;
 }
 
-/* Live resizing must track the pointer exactly. The track remains a fixed pixel
-   width while the main column and any generated HTML reflow continuously. */
+/* Live resizing must track the pointer exactly without re-laying out the main
+ * column (or a generated document's iframe) per pointermove: the track holds
+ * the drag's starting width while Layout.tsx stretches the sidebar over it and
+ * translates/scales the main surface, committing the real track once on
+ * pointer-up. The stretched panel has to paint above the main column it
+ * overlaps for the duration of the drag. */
 .rml-shell.is-sidebar-resizing {
   transition: none;
   cursor: col-resize;
   user-select: none;
+}
+
+.rml-shell.is-sidebar-resizing .rml-shell__sidebar {
+  position: relative;
+  z-index: 195;
+}
+
+.rml-shell.is-sidebar-resizing .rml-shell__main {
+  will-change: transform;
+  backface-visibility: hidden;
 }
 
 /* Out of the grid for the length of the slide: the panel travels as one rigid
@@ -260,8 +274,10 @@ html[data-desktop='electron'] .rml-shell.is-settings-open .rml-titlebar-controls
   outline: none;
 }
 
+/* The handle line follows the dragged width (--sidebar-drag-x, written per rAF
+ * frame), not the committed track, which only changes on pointer-up. */
 .rml-shell.is-sidebar-resizing .rml-shell__sidebar-resizer::after {
-  left: calc(var(--sidebar-track) - 1px);
+  left: calc(var(--sidebar-drag-x, var(--sidebar-track)) - 1px);
 }
 
 .rml-shell.is-sidebar-collapsed .rml-shell__sidebar-resizer,
@@ -689,13 +705,13 @@ html[data-desktop='electron'] .rml-shell.is-sidebar-collapsed .rml-topbar {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  border: 1px solid color-mix(in srgb, #d68a3a 38%, var(--border));
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border));
   border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--surface) 96%, transparent);
   box-shadow: var(--shadow-lg);
   backdrop-filter: blur(18px);
 }
-.rml-provider-warning__icon { display: grid; place-items: center; width: 22px; height: 22px; flex: 0 0 auto; border-radius: 50%; background: color-mix(in srgb, #d68a3a 18%, transparent); color: #c27327; font-weight: 700; }
+.rml-provider-warning__icon { display: grid; place-items: center; width: 22px; height: 22px; flex: 0 0 auto; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 700; }
 .rml-provider-warning__copy { min-width: 0; flex: 1; display: grid; gap: 1px; }
 .rml-provider-warning__copy strong { font-size: var(--fs-xs); color: var(--text); }
 .rml-provider-warning__copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: 11px; }
