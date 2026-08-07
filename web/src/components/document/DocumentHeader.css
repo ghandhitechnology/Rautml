@@ -146,9 +146,14 @@ html[data-desktop='electron'] .rml-shell.is-sidebar-animating .rml-dochead__bar 
     transform var(--dur-fast) var(--ease);
 }
 
-.rml-dochead__btn:hover {
+.rml-dochead__btn:hover,
+.rml-dochead__btn.is-open {
   background: var(--hover);
   color: var(--text);
+}
+
+.rml-dochead__btn:disabled {
+  cursor: wait;
 }
 
 .rml-dochead__btn:active {
@@ -168,6 +173,98 @@ html[data-desktop='electron'] .rml-shell.is-sidebar-animating .rml-dochead__bar 
   position: absolute;
   display: grid;
   place-items: center;
+}
+
+.rml-dochead__download {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.rml-dochead__download-spinner {
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid color-mix(in srgb, currentColor 28%, transparent);
+  border-top-color: currentColor;
+  border-radius: var(--r-pill);
+  animation: rml-dochead-spin 0.7s linear infinite;
+}
+
+@keyframes rml-dochead-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.rml-dochead__download-menu {
+  position: absolute;
+  top: calc(100% + 9px);
+  right: 0;
+  z-index: 4;
+  width: 220px;
+  padding: var(--sp-1);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-md);
+  background: var(--glass);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--shadow-lg);
+  transform-origin: top right;
+}
+
+.rml-dochead__download-item {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  min-height: 40px;
+  padding: 6px var(--sp-2) 6px 6px;
+  border-radius: var(--r-sm);
+  color: var(--text);
+  text-align: left;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.rml-dochead__download-item:hover:not(:disabled),
+.rml-dochead__download-item:focus-visible {
+  background: var(--hover);
+}
+
+.rml-dochead__download-item:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.rml-dochead__download-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+
+.rml-dochead__download-item:hover:not(:disabled) .rml-dochead__download-icon,
+.rml-dochead__download-item:focus-visible .rml-dochead__download-icon {
+  color: var(--accent-hover);
+}
+
+.rml-dochead__download-label {
+  min-width: 0;
+  font-size: var(--fs-sm);
+  font-weight: 550;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.rml-dochead__download-ext {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .rml-dochead__history.is-on {

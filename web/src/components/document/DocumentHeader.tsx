@@ -2,14 +2,19 @@
  *
  * A slim glass bar hovering over the top of the page: history toggle, the asset's name in
  * Lora (doubling as the asset switcher when the chat has more than one), the version picker,
- * download-HTML / open-in-new-tab, and the theme toggle (document mode hides the shell topbar,
+ * download options / open-in-new-tab, and the theme toggle (document mode hides the shell topbar,
  * so this bar carries it). Quiet by default, legible on any document underneath it.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import type { Asset } from '../../lib/types'
-import { downloadHtmlFile, htmlDownloadFilename } from '../../lib/downloads'
+import {
+  downloadHtmlFile,
+  downloadPdfFile,
+  htmlDownloadFilename,
+  pdfDownloadFilename,
+} from '../../lib/downloads'
 import { cx, relativeTime } from '../../lib/utils'
 import { EASE } from '../../lib/motion'
 import { Icon } from '../chat/icons'
@@ -36,6 +41,186 @@ export interface DocumentHeaderProps {
 }
 
 const DOWNLOAD_STATE_MS = 1600
+
+type DownloadFormat = 'html' | 'pdf'
+type DownloadStatus = 'idle' | 'working' | 'done' | 'failed'
+
+function DownloadMenu({
+  title,
+  version,
+  getHtml,
+}: {
+  title: string | undefined
+  version: number
+  getHtml: () => Promise<string>
+}) {
+  const [open, setOpen] = useState(false)
+  const [format, setFormat] = useState<DownloadFormat>('html')
+  const [status, setStatus] = useState<DownloadStatus>('idle')
+  const rootRef = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const firstItemRef = useRef<HTMLButtonElement>(null)
+  const timer = useRef<number | undefined>(undefined)
+  const pdfAvailable = Boolean(window.rautmlDesktop?.renderPdf)
+
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+
+  useEffect(() => {
+    if (!open) return
+    const focusFrame = window.requestAnimationFrame(() => firstItemRef.current?.focus())
+    const onPointer = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.stopPropagation()
+      setOpen(false)
+      buttonRef.current?.focus()
+    }
+    window.addEventListener('pointerdown', onPointer)
+    window.addEventListener('keydown', onKey, true)
+    return () => {
+      window.cancelAnimationFrame(focusFrame)
+      window.removeEventListener('pointerdown', onPointer)
+      window.removeEventListener('keydown', onKey, true)
+    }
+  }, [open])
+
+  const download = useCallback(
+    async (nextFormat: DownloadFormat) => {
+      window.clearTimeout(timer.current)
+      setOpen(false)
+      setFormat(nextFormat)
+      setStatus('working')
+      try {
+        const html = await getHtml()
+        if (nextFormat === 'html') {
+          downloadHtmlFile(html, htmlDownloadFilename(title, version))
+        } else {
+          const renderPdf = window.rautmlDesktop?.renderPdf
+          if (!renderPdf) throw new Error('PDF export requires the desktop app.')
+          const pdf = await renderPdf(html)
+          downloadPdfFile(pdf, pdfDownloadFilename(title, version))
+        }
+        setStatus('done')
+      } catch {
+        setStatus('failed')
+      }
+      timer.current = window.setTimeout(() => setStatus('idle'), DOWNLOAD_STATE_MS)
+    },
+    [getHtml, title, version],
+  )
+
+  const label =
+    status === 'working'
+      ? `Preparing ${format.toUpperCase()}`
+      : status === 'done'
+        ? `${format.toUpperCase()} downloaded`
+        : status === 'failed'
+          ? `${format.toUpperCase()} download failed`
+          : 'Download document'
+
+  return (
+    <div className="rml-dochead__download" ref={rootRef}>
+      <button
+        ref={buttonRef}
+        type="button"
+        className={cx(
+          'rml-dochead__btn',
+          open && 'is-open',
+          status === 'done' && 'is-downloaded',
+          status === 'failed' && 'is-failed',
+        )}
+        onClick={() => setOpen((value) => !value)}
+        disabled={status === 'working'}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={label}
+        title={`${label} · 다운로드`}
+      >
+        <AnimatePresence initial={false} mode="popLayout">
+          <motion.span
+            key={status}
+            className="rml-dochead__glyph"
+            initial={{ opacity: 0, scale: 0.6 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.6 }}
+            transition={{ duration: 0.2, ease: EASE }}
+          >
+            {status === 'working' ? (
+              <span className="rml-dochead__download-spinner" aria-hidden="true" />
+            ) : (
+              <Icon
+                name={status === 'done' ? 'check' : status === 'failed' ? 'cross' : 'download'}
+                size={15}
+              />
+            )}
+          </motion.span>
+        </AnimatePresence>
+      </button>
+
+      <span className="rml-sr-only" aria-live="polite">
+        {status === 'idle' ? '' : label}
+      </span>
+
+      <AnimatePresence>
+        {open ? (
+          <motion.div
+            className="rml-dochead__download-menu"
+            role="menu"
+            aria-label="Download document as"
+            initial={{ opacity: 0, y: -6, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -4, scale: 0.98 }}
+            transition={{ duration: 0.2, ease: EASE }}
+            onKeyDown={(event) => {
+              if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+              event.preventDefault()
+              const items = Array.from(
+                event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                  '[role="menuitem"]:not(:disabled)',
+                ),
+              )
+              const index = items.indexOf(document.activeElement as HTMLButtonElement)
+              const direction = event.key === 'ArrowDown' ? 1 : -1
+              items[(index + direction + items.length) % items.length]?.focus()
+            }}
+          >
+            <button
+              ref={firstItemRef}
+              type="button"
+              className="rml-dochead__download-item"
+              role="menuitem"
+              onClick={() => void download('html')}
+            >
+              <span className="rml-dochead__download-icon" aria-hidden="true">
+                <Icon name="code" size={15} />
+              </span>
+              <span className="rml-dochead__download-label">Download HTML</span>
+              <span className="rml-dochead__download-ext">.html</span>
+            </button>
+            <button
+              type="button"
+              className="rml-dochead__download-item"
+              role="menuitem"
+              disabled={!pdfAvailable}
+              title={pdfAvailable ? undefined : 'PDF export is available in the desktop app'}
+              onClick={() => void download('pdf')}
+            >
+              <span className="rml-dochead__download-icon" aria-hidden="true">
+                <Icon name="file" size={15} />
+              </span>
+              <span className="rml-dochead__download-label">Download PDF</span>
+              <span className="rml-dochead__download-ext">
+                {pdfAvailable ? '.pdf' : 'Desktop only'}
+              </span>
+            </button>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </div>
+  )
+}
 
 /* ---------------------------------------------------------------- switcher */
 
@@ -143,29 +328,6 @@ export function DocumentHeader({
   reconnecting = false,
   className,
 }: DocumentHeaderProps) {
-  const [downloaded, setDownloaded] = useState(false)
-  const [downloadFailed, setDownloadFailed] = useState(false)
-  const timer = useRef<number | undefined>(undefined)
-
-  useEffect(() => () => window.clearTimeout(timer.current), [])
-
-  const downloadHtml = useCallback(async () => {
-    window.clearTimeout(timer.current)
-    setDownloadFailed(false)
-    try {
-      const html = await getHtml()
-      downloadHtmlFile(html, htmlDownloadFilename(asset.title, version))
-      setDownloaded(true)
-    } catch {
-      setDownloadFailed(true)
-      setDownloaded(true) // the button still resolves, just in the failed voice
-    }
-    timer.current = window.setTimeout(() => {
-      setDownloaded(false)
-      setDownloadFailed(false)
-    }, DOWNLOAD_STATE_MS)
-  }, [asset.title, getHtml, version])
-
   const latest = Math.max(1, asset.latestVersion || 1)
 
   return (
@@ -216,40 +378,7 @@ export function DocumentHeader({
           {/* Local sources sits immediately left of the download icon. */}
           <LocalSources className="rml-dochead__sources" />
 
-          <button
-            type="button"
-            className={cx(
-              'rml-dochead__btn',
-              downloaded && (downloadFailed ? 'is-failed' : 'is-downloaded'),
-            )}
-            onClick={downloadHtml}
-            aria-label={
-              downloadFailed ? 'Download failed' : downloaded ? 'HTML downloaded' : 'Download HTML'
-            }
-            title={
-              downloadFailed
-                ? '다운로드 실패 · Download failed'
-                : downloaded
-                  ? '다운로드됨 · Downloaded'
-                  : 'HTML 다운로드 · Download HTML'
-            }
-          >
-            <AnimatePresence initial={false} mode="popLayout">
-              <motion.span
-                key={downloaded ? 'done' : 'download'}
-                className="rml-dochead__glyph"
-                initial={{ opacity: 0, scale: 0.6 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.6 }}
-                transition={{ duration: 0.2, ease: EASE }}
-              >
-                <Icon
-                  name={downloaded ? (downloadFailed ? 'cross' : 'check') : 'download'}
-                  size={15}
-                />
-              </motion.span>
-            </AnimatePresence>
-          </button>
+          <DownloadMenu title={asset.title} version={version} getHtml={getHtml} />
 
           <a
             className="rml-dochead__btn"

@@ -1,12 +1,14 @@
 import { execFileSync } from 'node:child_process'
 import { createServer } from 'node:net'
 import { copyFileSync, cpSync, existsSync, mkdirSync } from 'node:fs'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   app,
   BrowserWindow,
   dialog,
+  ipcMain,
   Menu,
   nativeTheme,
   session,
@@ -24,9 +26,74 @@ const expectedEngineStops = new WeakSet()
 let engineIdleTimer = null
 
 const ENGINE_IDLE_CHECK_MS = 30_000
+const MAX_PDF_HTML_BYTES = 50 * 1024 * 1024
 const RELEASES_URL = 'https://github.com/ghandhitechnology/Rautml/releases/latest'
 
 app.setName('Rautml')
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function renderDocumentPdf(html) {
+  const tempDirectory = await mkdtemp(path.join(app.getPath('temp'), 'rautml-pdf-'))
+  const htmlPath = path.join(tempDirectory, 'document.html')
+  const printWindow = new BrowserWindow({
+    show: false,
+    width: 1280,
+    height: 960,
+    backgroundColor: '#ffffff',
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+    },
+  })
+
+  printWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+
+  try {
+    await writeFile(htmlPath, html, 'utf8')
+    await printWindow.loadFile(htmlPath)
+
+    const resourcesReady = printWindow.webContents.executeJavaScript(`
+      Promise.all([
+        document.fonts?.ready ?? Promise.resolve(),
+        Promise.all(Array.from(document.images, (image) => {
+          if (image.complete) return Promise.resolve()
+          return new Promise((resolve) => {
+            image.addEventListener('load', resolve, { once: true })
+            image.addEventListener('error', resolve, { once: true })
+            window.setTimeout(resolve, 4000)
+          })
+        })),
+      ])
+    `)
+    await Promise.race([resourcesReady.catch(() => undefined), delay(5000)])
+
+    const pdf = await printWindow.webContents.printToPDF({
+      pageSize: 'A4',
+      preferCSSPageSize: true,
+      printBackground: true,
+    })
+    return Uint8Array.from(pdf).buffer
+  } finally {
+    if (!printWindow.isDestroyed()) printWindow.destroy()
+    await rm(tempDirectory, { recursive: true, force: true })
+  }
+}
+
+ipcMain.handle('rautml:render-pdf', (event, html) => {
+  if (!mainWindow || event.sender !== mainWindow.webContents) {
+    throw new Error('PDF export is only available from the Rautml window.')
+  }
+  if (typeof html !== 'string' || Buffer.byteLength(html, 'utf8') > MAX_PDF_HTML_BYTES) {
+    throw new Error('This document is too large to export as a PDF.')
+  }
+  return renderDocumentPdf(html)
+})
 
 function loginShellEnvironment() {
   if (process.platform !== 'darwin') return {}
