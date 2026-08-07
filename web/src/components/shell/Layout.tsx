@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react'
 import { flushSync } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useChatMeta, useConnection, useForkOpen, useOnBlankChat, useProviderAlert, useSettingsOpen, useStore, useStoreError } from '../../state/store'
@@ -13,7 +21,31 @@ import TypewriterText from './TypewriterText'
 import './Layout.css'
 
 const SIDEBAR_COLLAPSED_KEY = 'rautml.sidebarCollapsed'
+const SIDEBAR_WIDTH_KEY = 'rautml.sidebarWidthPx'
 const SIDEBAR_TRANSITION_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
+const SIDEBAR_MIN_SCREEN_RATIO = 0.14
+const SIDEBAR_MAX_SCREEN_RATIO = 0.3
+const SIDEBAR_COLLAPSE_RATIO = 0.5
+const SIDEBAR_DEFAULT_PX = 260
+
+type ShellStyle = CSSProperties & { '--sidebar-w': string }
+
+interface SidebarWidthBounds {
+  min: number
+  max: number
+}
+
+function readSidebarWidthBounds(): SidebarWidthBounds {
+  const expandedWindowWidth = window.screen.availWidth || window.screen.width || window.innerWidth
+  return {
+    min: Math.round(expandedWindowWidth * SIDEBAR_MIN_SCREEN_RATIO),
+    max: Math.round(expandedWindowWidth * SIDEBAR_MAX_SCREEN_RATIO),
+  }
+}
+
+function clampSidebarWidth(width: number, bounds: SidebarWidthBounds): number {
+  return Math.min(bounds.max, Math.max(bounds.min, width))
+}
 
 /* Collapsing commits the grid in a single layout pass and lets the rendered
  * surfaces carry the motion (FLIP). Most surfaces only need translation. The
@@ -47,6 +79,17 @@ function readSidebarCollapsed(): boolean {
   } catch {
     return false
   }
+}
+
+function readSidebarWidth(bounds: SidebarWidthBounds): number {
+  try {
+    const stored = Number.parseFloat(localStorage.getItem(SIDEBAR_WIDTH_KEY) ?? '')
+    if (Number.isFinite(stored)) return clampSidebarWidth(stored, bounds)
+  } catch {
+    /* private mode — fall back to the original 260px visual width */
+  }
+
+  return clampSidebarWidth(SIDEBAR_DEFAULT_PX, bounds)
 }
 
 export interface LayoutProps {
@@ -94,10 +137,15 @@ export function Layout({
   const reconnectProvider = useStore((s) => s.reconnectProvider)
   const openSettings = useStore((s) => s.openSettings)
   const settingsOpen = useSettingsOpen()
+  const sidebarWidthBounds = useRef(readSidebarWidthBounds()).current
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed)
+  const [sidebarWidth, setSidebarWidth] = useState(() => readSidebarWidth(sidebarWidthBounds))
+  const [sidebarResizing, setSidebarResizing] = useState(false)
   const [sidebarAnimating, setSidebarAnimating] = useState(false)
   const shellRef = useRef<HTMLDivElement>(null)
   const sidebarRef = useRef<HTMLElement>(null)
+  const sidebarWidthRef = useRef(sidebarWidth)
+  const sidebarResizeActive = useRef(false)
   const sidebarTransitionActive = useRef(false)
   const sidebarAnimations = useRef<Animation[]>([])
 
@@ -240,6 +288,69 @@ export function Layout({
     void Promise.allSettled(animations.map((animation) => animation.finished)).then(settle)
   }
 
+  const setDesktopSidebarWidth = (width: number, persist = false) => {
+    const next = clampSidebarWidth(width, sidebarWidthBounds)
+    sidebarWidthRef.current = next
+    setSidebarWidth(next)
+    if (!persist) return
+    try {
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(next))
+    } catch {
+      /* private mode — the width lasts for this session */
+    }
+  }
+
+  const finishSidebarResize = (target: HTMLDivElement, pointerId: number) => {
+    if (!sidebarResizeActive.current) return
+    sidebarResizeActive.current = false
+    setSidebarResizing(false)
+    if (target.hasPointerCapture(pointerId)) target.releasePointerCapture(pointerId)
+    setDesktopSidebarWidth(sidebarWidthRef.current, true)
+  }
+
+  const onSidebarResizeStart = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || sidebarCollapsed || sidebarTransitionActive.current) return
+    event.preventDefault()
+    sidebarResizeActive.current = true
+    setSidebarResizing(true)
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  const onSidebarResizeMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!sidebarResizeActive.current) return
+    const shell = shellRef.current
+    if (!shell) return
+    const bounds = shell.getBoundingClientRect()
+    const pointerX = event.clientX - bounds.left
+
+    /* Once the pointer crosses halfway through the minimum-width sidebar, the
+     * drag becomes an intentional collapse gesture rather than a resize. */
+    if (pointerX <= sidebarWidthBounds.min * SIDEBAR_COLLAPSE_RATIO) {
+      finishSidebarResize(event.currentTarget, event.pointerId)
+      setDesktopSidebarCollapsed(true)
+      return
+    }
+
+    setDesktopSidebarWidth(pointerX)
+  }
+
+  const onSidebarResizeEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
+    finishSidebarResize(event.currentTarget, event.pointerId)
+  }
+
+  const onSidebarResizeKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (sidebarCollapsed) return
+    const step = event.shiftKey ? 40 : 8
+    let next: number | null = null
+    if (event.key === 'ArrowLeft') next = sidebarWidthRef.current - step
+    if (event.key === 'ArrowRight') next = sidebarWidthRef.current + step
+    if (event.key === 'Home') next = sidebarWidthBounds.min
+    if (event.key === 'End') next = sidebarWidthBounds.max
+    if (next === null) return
+    event.preventDefault()
+    setDesktopSidebarWidth(next, true)
+  }
+
   /* Small screens collapse the sidebar into an off-canvas drawer. The state is
    * harmless on desktop: the drawer classes only take effect under 640px. */
   const [navOpen, setNavOpen] = useState(false)
@@ -273,9 +384,11 @@ export function Layout({
         navOpen && 'is-nav-open',
         sidebarCollapsed && 'is-sidebar-collapsed',
         sidebarAnimating && 'is-sidebar-animating',
+        sidebarResizing && 'is-sidebar-resizing',
         settingsOpen && 'is-settings-open',
         className,
       )}
+      style={{ '--sidebar-w': `${sidebarWidth}px` } as ShellStyle}
     >
       <div className="rml-desktop-drag" aria-hidden="true" />
       {/* Sits in the titlebar strip beside the traffic lights and stays there in
@@ -325,7 +438,7 @@ export function Layout({
           ) : null}
         </AnimatePresence>
       </nav>
-      <aside ref={sidebarRef} className="rml-shell__sidebar">
+      <aside id="rautml-sidebar" ref={sidebarRef} className="rml-shell__sidebar">
         {sidebar ?? (
           <ChatListSidebar
             collapsed={sidebarCollapsed && !sidebarAnimating}
@@ -333,6 +446,25 @@ export function Layout({
           />
         )}
       </aside>
+      <div
+        className="rml-shell__sidebar-resizer"
+        role="separator"
+        aria-label="Resize conversation sidebar"
+        aria-controls="rautml-sidebar"
+        aria-orientation="vertical"
+        aria-valuemin={sidebarWidthBounds.min}
+        aria-valuemax={sidebarWidthBounds.max}
+        aria-valuenow={Math.round(sidebarWidth)}
+        aria-valuetext={`${Math.round(sidebarWidth)} pixels`}
+        tabIndex={0}
+        title="Drag to resize. Drag halfway across the sidebar to collapse."
+        onPointerDown={onSidebarResizeStart}
+        onPointerMove={onSidebarResizeMove}
+        onPointerUp={onSidebarResizeEnd}
+        onPointerCancel={onSidebarResizeEnd}
+        onLostPointerCapture={onSidebarResizeEnd}
+        onKeyDown={onSidebarResizeKeyDown}
+      />
 
       {navOpen ? (
         <button

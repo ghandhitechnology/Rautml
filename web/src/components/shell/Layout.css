@@ -1,5 +1,6 @@
 .rml-shell {
   --sidebar-track: var(--sidebar-w);
+  position: relative;
   display: grid;
   grid-template-columns: var(--sidebar-track) minmax(0, 1fr) 0px;
   /* Pin the single row to the viewport: an auto row grows with column content
@@ -56,6 +57,14 @@ html[data-desktop='electron'] .rml-shell.is-sidebar-collapsed {
    the track must not interpolate underneath them. */
 html[data-desktop='electron'] .rml-shell.is-sidebar-animating {
   transition: none;
+}
+
+/* Live resizing must track the pointer exactly. The track remains a fixed pixel
+   width while the main column and any generated HTML reflow continuously. */
+.rml-shell.is-sidebar-resizing {
+  transition: none;
+  cursor: col-resize;
+  user-select: none;
 }
 
 /* Out of the grid for the length of the slide: the panel travels as one rigid
@@ -166,6 +175,58 @@ html[data-desktop='electron'] .rml-shell.is-settings-open .rml-titlebar-controls
   min-width: 0;
   height: 100%;
   overflow: hidden;
+}
+
+.rml-shell__sidebar-resizer {
+  position: absolute;
+  inset: 0 auto 0 calc(var(--sidebar-track) - 5px);
+  z-index: 196;
+  width: 10px;
+  cursor: col-resize;
+  touch-action: none;
+  -webkit-app-region: no-drag;
+}
+
+.rml-shell__sidebar-resizer::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 4px;
+  width: 2px;
+  background: transparent;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+.rml-shell__sidebar-resizer:hover::after,
+.rml-shell__sidebar-resizer:focus-visible::after,
+.rml-shell.is-sidebar-resizing .rml-shell__sidebar-resizer::after {
+  background: color-mix(in srgb, var(--accent) 72%, transparent);
+}
+
+.rml-shell__sidebar-resizer:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* During a drag the hit area covers the whole window. This keeps pointer events
+   in the shell even while crossing a generated document's iframe. */
+.rml-shell.is-sidebar-resizing .rml-shell__sidebar-resizer {
+  position: fixed;
+  inset: 0;
+  width: auto;
+  outline: none;
+}
+
+.rml-shell.is-sidebar-resizing .rml-shell__sidebar-resizer::after {
+  left: calc(var(--sidebar-track) - 1px);
+}
+
+.rml-shell.is-sidebar-collapsed .rml-shell__sidebar-resizer,
+.rml-shell.is-sidebar-animating .rml-shell__sidebar-resizer {
+  display: none;
+}
+
+html[data-desktop='electron'] .rml-shell__sidebar-resizer {
+  top: 28px;
 }
 
 /* -------------------------------------------------------------- main column */
@@ -402,9 +463,6 @@ html[data-desktop='electron'] .rml-shell.is-sidebar-collapsed .rml-topbar {
 }
 
 @media (max-width: 860px) {
-  .rml-shell {
-    --sidebar-w: 216px;
-  }
   .rml-shell__scroll,
   .rml-shell__dock {
     padding-inline: var(--sp-4);
@@ -426,6 +484,10 @@ html[data-desktop='electron'] .rml-shell.is-sidebar-collapsed .rml-topbar {
   .rml-shell,
   .rml-shell.is-fork-open {
     grid-template-columns: 0 minmax(0, 1fr) 0;
+  }
+
+  .rml-shell__sidebar-resizer {
+    display: none;
   }
 
   /* the fixed drawer and fork leave the grid flow — pin main to the fluid track */
