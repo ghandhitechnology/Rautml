@@ -208,14 +208,52 @@ html[data-desktop='electron'] .rml-sidebar__toggle {
 }
 
 .rml-chatrow__title {
+  display: block;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--fs-sm);
   line-height: 1.45;
   color: var(--text-muted);
   transition: color var(--dur-fast) var(--ease);
   word-break: keep-all;
+}
+
+.rml-chatrow__title-track {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transform: translateX(0);
+}
+
+.rml-chatrow__title.is-overflowing:hover .rml-chatrow__title-track,
+.rml-chatrow:focus-visible .rml-chatrow__title.is-overflowing .rml-chatrow__title-track {
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+  animation: rml-chat-title-scroll var(--rml-chat-title-duration) ease-in-out 0.35s infinite
+    alternate;
+  will-change: transform;
+}
+
+@keyframes rml-chat-title-scroll {
+  0%,
+  12% {
+    transform: translateX(0);
+  }
+
+  88%,
+  100% {
+    transform: translateX(var(--rml-chat-title-distance));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rml-chatrow__title-track {
+    animation: none !important;
+  }
 }
 
 .rml-chatrow:hover .rml-chatrow__title,

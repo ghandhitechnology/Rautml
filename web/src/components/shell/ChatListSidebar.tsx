@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useActiveChatId, useChats, useOnBlankChat, useStore } from '../../state/store'
 import { absoluteTime, cx, relativeTime } from '../../lib/utils'
@@ -13,6 +13,44 @@ export interface ChatListSidebarProps {
   /** Desktop compact-rail state. Mobile always renders the full drawer. */
   collapsed?: boolean
   onCollapsedChange?: (collapsed: boolean) => void
+}
+
+function HoverScrollTitle({ text }: { text: string }) {
+  const viewportRef = useRef<HTMLSpanElement>(null)
+  const trackRef = useRef<HTMLSpanElement>(null)
+  const [overflow, setOverflow] = useState(0)
+
+  useEffect(() => {
+    const viewport = viewportRef.current
+    const track = trackRef.current
+    if (!viewport || !track) return
+
+    const measure = () => {
+      const nextOverflow = Math.max(0, Math.ceil(track.scrollWidth - viewport.clientWidth))
+      setOverflow((current) => (current === nextOverflow ? current : nextOverflow))
+    }
+    const observer = new ResizeObserver(measure)
+    observer.observe(viewport)
+    observer.observe(track)
+    measure()
+    return () => observer.disconnect()
+  }, [text])
+
+  const style = {
+    '--rml-chat-title-distance': `-${overflow}px`,
+    '--rml-chat-title-duration': `${Math.min(10, Math.max(3.2, overflow / 30 + 2.4))}s`,
+  } as CSSProperties
+
+  return (
+    <span
+      ref={viewportRef}
+      className={cx('rml-chatrow__title', overflow > 0 && 'is-overflowing')}
+    >
+      <span ref={trackRef} className="rml-chatrow__title-track" style={style}>
+        <TypewriterText text={text} />
+      </span>
+    </span>
+  )
 }
 
 export function ChatListSidebar({
@@ -185,9 +223,7 @@ export function ChatListSidebar({
                     }}
                   >
                     <span className="rml-chatrow__body">
-                      <span className="rml-chatrow__title">
-                        <TypewriterText text={chat.title || 'New chat'} />
-                      </span>
+                      <HoverScrollTitle text={chat.title || 'New chat'} />
                       <span className="rml-chatrow__time" title={absoluteTime(chat.updatedAt)}>
                         {relativeTime(chat.updatedAt)}
                       </span>
