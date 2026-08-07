@@ -20,9 +20,11 @@ export const KEEP_MOUNTED_MARGIN = 2400
 export function useNearViewport<T extends HTMLElement>(
   margin: number = KEEP_MOUNTED_MARGIN,
 ): readonly [(node: T | null) => void, boolean] {
-  // Assume visible until proven otherwise — a first paint that mounts nothing
-  // would report a zero height and collapse the thread.
-  const [near, setNear] = useState(true)
+  // Assume far until the observer says otherwise: a long chat's first paint
+  // would otherwise mount every iframe at once. Anything genuinely near shows
+  // up in the observer's first callback, which fires right after attach, and
+  // the host keeps its placeholder height either way so the thread can't collapse.
+  const [near, setNear] = useState(false)
   const node = useRef<T | null>(null)
   const observer = useRef<IntersectionObserver | null>(null)
 
@@ -36,7 +38,12 @@ export function useNearViewport<T extends HTMLElement>(
       observer.current?.disconnect()
       observer.current = null
       node.current = next
-      if (!next || typeof IntersectionObserver === 'undefined') return
+      if (!next) return
+      if (typeof IntersectionObserver === 'undefined') {
+        // No way to observe → keep the old always-mounted behavior.
+        setNear(true)
+        return
+      }
       const io = new IntersectionObserver(
         ([entry]) => {
           if (entry) setNear(entry.isIntersecting)

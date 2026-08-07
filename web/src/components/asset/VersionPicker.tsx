@@ -63,7 +63,7 @@ export function VersionPicker({
   return (
     <div
       className={cx('rml-vpick', pulsing && 'is-pulsing', disabled && 'is-disabled', className)}
-      role="tablist"
+      role="group"
       aria-label="Asset version"
     >
       <div className="rml-vpick__list" ref={listRef}>
@@ -73,8 +73,7 @@ export function VersionPicker({
             <button
               key={v}
               type="button"
-              role="tab"
-              aria-selected={active}
+              aria-pressed={active}
               data-active={active}
               className={cx('rml-vpick__seg', active && 'is-active')}
               onClick={() => !active && onChange(v)}

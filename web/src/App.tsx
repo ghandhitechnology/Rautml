@@ -89,6 +89,35 @@ export default function App() {
     [newChat, sendMessage],
   )
 
+  /* Global shortcuts: ⌘N new chat, ⌘⇧F toggle the fork panel. Inert while
+   * settings covers the shell, and never steal keystrokes bound for a field. */
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!e.metaKey || e.ctrlKey || e.altKey) return
+      const target = e.target as HTMLElement | null
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return
+      }
+      const key = e.key.toLowerCase()
+      const newChatShortcut = key === 'n' && !e.shiftKey
+      const forkShortcut = key === 'f' && e.shiftKey
+      if (!newChatShortcut && !forkShortcut) return
+      const state = useStore.getState()
+      if (state.settingsOpen) return
+      e.preventDefault()
+      if (newChatShortcut) void state.newChat()
+      else state.toggleFork()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
   return (
     <>
     <Layout
@@ -125,7 +154,7 @@ export default function App() {
           {activeChatId ? (
             <ChatThread renderAssets={(messageId) => <AssetsForMessage messageId={messageId} />} />
           ) : (
-            <Welcome />
+            <Welcome onSuggestion={sendIntoNewChat} />
           )}
         </div>
       )}

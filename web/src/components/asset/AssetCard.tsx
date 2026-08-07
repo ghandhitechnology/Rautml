@@ -3,9 +3,13 @@
  * It blooms: the timeline runs while the model writes the file, then the card expands out of the
  * message (scale 0.96 → 1, a few px of rise, origin top) on a settling spring. Header carries the
  * Lora title, the version pill, open-in-new-tab and copy-HTML.
+ *
+ * Wrapped in memo: the thread re-renders on every streamed token, but the store only
+ * swaps an asset object's identity when that asset changes, so the card (and the live
+ * iframe subtree under it) re-renders solely on its own updates.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { assetUrl, fetchAssetHtml } from '../../lib/api'
 import type { Asset } from '../../lib/types'
@@ -25,7 +29,7 @@ export interface AssetCardProps {
 const EXPAND_SPRING = { type: 'spring' as const, stiffness: 300, damping: 30, mass: 0.85 }
 const COPIED_MS = 1600
 
-export function AssetCard({ asset, autoExpandAnimation = true, className }: AssetCardProps) {
+export const AssetCard = memo(function AssetCard({ asset, autoExpandAnimation = true, className }: AssetCardProps) {
   const reduceMotion = useReducedMotion()
   const latest = Math.max(1, asset.latestVersion || 1)
   const [version, setVersion] = useState(latest)
@@ -156,6 +160,6 @@ export function AssetCard({ asset, autoExpandAnimation = true, className }: Asse
       />
     </motion.section>
   )
-}
+})
 
 export default AssetCard

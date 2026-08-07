@@ -43,9 +43,28 @@ export function SettingsPage() {
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [open, closeSettings])
 
-  // Move focus into the page so keyboard users are not left behind in the chat.
+  // Move focus into the page so keyboard users are not left behind in the chat,
+  // and hand it back to the invoking button on close — otherwise it drops to body.
+  const invokerRef = useRef<HTMLElement | null>(null)
   useEffect(() => {
-    if (open) closeRef.current?.focus()
+    if (open) {
+      invokerRef.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null
+      closeRef.current?.focus()
+      return
+    }
+    const invoker = invokerRef.current
+    invokerRef.current = null
+    if (!invoker) return
+    // The shell drops `inert` on this same flip; wait a frame so the invoker is
+    // focusable again no matter which component's effect runs first.
+    requestAnimationFrame(() => {
+      if (useStore.getState().settingsOpen) return // reopened within the frame
+      const target = invoker.isConnected
+        ? invoker
+        : document.querySelector<HTMLElement>('[data-settings-button]')
+      target?.focus()
+    })
   }, [open])
 
   // Each section starts at the top rather than inheriting the last one's scroll.

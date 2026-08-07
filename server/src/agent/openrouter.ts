@@ -60,6 +60,12 @@ export interface StreamResult {
   content: string;
   toolCalls: ToolCall[];
   finishReason: string | null;
+  /**
+   * True when the stream ended without a finish signal after emitting text:
+   * the content is real but possibly cut off. Never retried (the text is
+   * already visible) — the caller decides how to surface the partial answer.
+   */
+  truncated?: boolean;
 }
 
 export interface StreamChatOptions {
@@ -444,9 +450,12 @@ export async function streamChat(options: StreamChatOptions): Promise<StreamResu
           });
         }
       }
+      // Text without a finish_reason is kept (retrying would duplicate visible
+      // output) but flagged so the caller can tell the answer may be cut off.
+      const truncated = !finishReason && content.length > 0;
       if (!finishReason && toolCalls.length > 0) finishReason = 'tool_calls';
 
-      return { content, toolCalls, finishReason };
+      return { content, toolCalls, finishReason, ...(truncated ? { truncated } : {}) };
     } catch (err) {
       if (isAbortError(err)) throw err;
       lastError = err;

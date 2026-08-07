@@ -4,11 +4,18 @@
  * cards → input chips. Assets are injected by the assembler through
  * `renderAssets` so this file never reaches into components/asset.
  *
+ * Render path: the store flushes stream deltas every 16ms and each flush clones
+ * the thread's message array, so the thread subscribes to narrow slices and
+ * every turn row is a memo() — an unchanged turn skips the render, extras
+ * included. Turns carry their own per-message subscriptions (widgets, files,
+ * the run's timeline) so a delta on one turn re-renders that turn only.
+ *
  * Scrolling: the shell owns the scroll container (.rml-shell__scroll), so the
  * thread finds its scrollable ancestor, pins to the bottom while you are there,
  * and offers a "jump to latest" pill the moment you scroll away. */
 
 import {
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -21,7 +28,16 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { EASE } from '../../lib/motion'
 import { cx } from '../../lib/utils'
 import type { InputRequest, Message, Thread } from '../../lib/types'
-import { useActiveChat, useStore } from '../../state/store'
+import {
+  activeChatState,
+  useInputRequests,
+  useMessages,
+  usePresentedFiles,
+  useStore,
+  useTimeline,
+  useTimelines,
+  useWidgets,
+} from '../../state/store'
 import MessageBubble from './MessageBubble'
 import ActivityTimeline from './ActivityTimeline'
 import InputChips from './InputChips'
@@ -31,6 +47,7 @@ import { Icon } from './icons'
 import './ChatThread.css'
 
 const BOTTOM_SLACK = 96
+const EMPTY_RUN_ORDER: string[] = []
 
 /* ------------------------------------------------------------------ scroll */
 
@@ -59,6 +76,97 @@ function jumpToBottom(scroller: HTMLElement, smooth: boolean) {
   scroller.scrollTop = scroller.scrollHeight
   scroller.style.scrollBehavior = prev
 }
+
+/* --------------------------------------------------------------------- turn */
+
+// User turns are keyed positionally: the store swaps the optimistic `local-…`
+// id for the server's on message.start, and an id-based key would
+// unmount/remount the bubble mid-animation.
+function turnKey(message: Message, index: number): string {
+  return message.role === 'user' ? `u${index}` : message.id
+}
+
+interface TurnProps {
+  message: Message
+  thread: Thread
+  /** The run's timeline + input chips hang off the run's last message. */
+  isAnchor: boolean
+  /** Play the entrance animation — false for history that predates this mount. */
+  animate: boolean
+  /** The thread's input requests (stable identity between input events). */
+  requests: InputRequest[]
+  compact: boolean
+  chatId: string
+  renderAssets?: (messageId: string) => ReactNode
+}
+
+/* One turn row. Memoized: an unchanged message object means the whole row —
+ * bubble, timeline, widgets, cards — survives a delta flush untouched. */
+const Turn = memo(function Turn({
+  message,
+  thread,
+  isAnchor,
+  animate,
+  requests,
+  compact,
+  chatId,
+  renderAssets,
+}: TurnProps) {
+  const widgets = useWidgets(message.id)
+  const files = usePresentedFiles(message.id)
+  const timeline = useTimeline(isAnchor ? message.runId : undefined)
+  const thinking = useStore(
+    (s) =>
+      message.role === 'assistant' &&
+      message.runId != null &&
+      activeChatState(s)?.activeRun[thread]?.id === message.runId,
+  )
+
+  const chips = useMemo(
+    () => (isAnchor && message.runId ? requests.filter((r) => r.runId === message.runId) : []),
+    [requests, isAnchor, message.runId],
+  )
+  const assets = useMemo(
+    () => (message.role === 'assistant' ? renderAssets?.(message.id) : null),
+    [renderAssets, message.id, message.role],
+  )
+
+  // Kept referentially stable across re-renders whose trigger (a timeline step,
+  // a delta) changed nothing below the bubble — MessageBubble's memo depends on it.
+  const extras = useMemo(() => {
+    const hasTimeline = isAnchor && !!timeline
+    if (!hasTimeline && chips.length === 0 && widgets.length === 0 && !assets && files.length === 0) {
+      return null
+    }
+    return (
+      <>
+        {hasTimeline ? <ActivityTimeline timeline={timeline} compact={compact} /> : null}
+        {chips.map((r) => (
+          <InputChips key={r.id} request={r} compact={compact} />
+        ))}
+        {widgets.map((html, i) => (
+          <WidgetCard key={`${message.id}-w${i}`} html={html} compact={compact} />
+        ))}
+        {assets}
+        {files.length ? <FileCards files={files} chatId={chatId} compact={compact} /> : null}
+      </>
+    )
+  }, [isAnchor, timeline, chips, widgets, assets, files, compact, chatId, message.id])
+
+  return (
+    <motion.div
+      className="rml-thread__turn"
+      initial={animate ? { opacity: 0, y: 10 } : false}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.32, ease: EASE }}
+    >
+      <MessageBubble message={message} compact={compact} thinking={thinking}>
+        {extras}
+      </MessageBubble>
+    </motion.div>
+  )
+})
 
 /* ------------------------------------------------------------- empty state */
 
@@ -128,15 +236,34 @@ export function ChatThread({
   compact = false,
   className,
 }: ChatThreadProps) {
-  const state = useActiveChat()
+  const chatId = useStore((s) => activeChatState(s)?.chat.id ?? null)
+  const loading = useStore((s) => activeChatState(s)?.loading ?? false)
+  const messages = useMessages(thread)
+  const requests = useInputRequests(thread)
+  const timelines = useTimelines()
+  const runOrder = useStore((s) => activeChatState(s)?.runOrder ?? EMPTY_RUN_ORDER)
   const rootRef = useRef<HTMLDivElement | null>(null)
   const [scroller, setScroller] = useState<HTMLElement | null>(null)
   const atBottom = useRef(true)
   const [showJump, setShowJump] = useState(false)
 
-  const chatId = state?.chat.id ?? null
-  const messages: Message[] = state?.messages[thread] ?? []
-  const requests: InputRequest[] = state?.inputRequests[thread] ?? []
+  /* Entrance animations belong to turns that arrive live. Hydrated history
+   * must not replay them, so the keys present on the first settled render of
+   * each chat are seeded as "already seen"; switching chats re-seeds, and so
+   * does the render that flips `loading` off — hydrate() lands the history in
+   * the same update. */
+  const seeded = useRef<{ chatId: string | null; fresh: boolean; keys: Set<string> }>({
+    chatId: null,
+    fresh: true,
+    keys: new Set(),
+  })
+  if (seeded.current.chatId !== chatId || seeded.current.fresh || loading) {
+    seeded.current = {
+      chatId,
+      fresh: loading,
+      keys: new Set(messages.map((m, i) => turnKey(m, i))),
+    }
+  }
 
   useLayoutEffect(() => {
     setScroller(resolveScroller(rootRef.current))
@@ -189,51 +316,25 @@ export function ChatThread({
     return map
   }, [messages])
 
-  const requestsByRun = useMemo(() => {
-    const map = new Map<string, InputRequest[]>()
-    const orphans: InputRequest[] = []
-    for (const r of requests) {
-      if (r.runId && anchorByRun.has(r.runId)) {
-        const list = map.get(r.runId) ?? []
-        list.push(r)
-        map.set(r.runId, list)
-      } else {
-        orphans.push(r)
-      }
-    }
-    return { map, orphans }
-  }, [requests, anchorByRun])
+  /* Requests whose run has no anchor message render loose, under the list. */
+  const orphanRequests = useMemo(
+    () => requests.filter((r) => !r.runId || !anchorByRun.has(r.runId)),
+    [requests, anchorByRun],
+  )
 
   const orphanRuns = useMemo(() => {
-    if (!state) return []
-    return state.runOrder.filter((runId) => {
-      const t = state.timelines[runId]
+    return runOrder.filter((runId) => {
+      const t = timelines[runId]
       if (!t || t.thread !== thread || anchorByRun.has(runId)) return false
       // A live run shows even with no steps yet — that window is exactly when
       // the reader most needs to see that something is happening.
       return t.items.length > 0 || t.status === 'running' || t.status === 'awaiting_input'
     })
-  }, [state, thread, anchorByRun])
+  }, [runOrder, timelines, thread, anchorByRun])
 
-  if (!state) return null
+  if (!chatId) return null
 
   const isEmpty = messages.length === 0 && orphanRuns.length === 0
-  const activeRunId = state.activeRun[thread]?.id ?? null
-
-  const runExtras = (runId: string | undefined) => {
-    if (!runId) return null
-    const timeline = state.timelines[runId]
-    const chips = requestsByRun.map.get(runId) ?? []
-    if (!timeline && chips.length === 0) return null
-    return (
-      <>
-        {timeline ? <ActivityTimeline timeline={timeline} compact={compact} /> : null}
-        {chips.map((r) => (
-          <InputChips key={r.id} request={r} compact={compact} />
-        ))}
-      </>
-    )
-  }
 
   return (
     <div
@@ -248,63 +349,33 @@ export function ChatThread({
           emptyState
         )
       ) : (
-        <div className="rml-thread__list" key={chatId ?? 'none'}>
+        <div className="rml-thread__list" key={chatId}>
           <AnimatePresence initial={false}>
             {messages.map((message, index) => {
-              // User turns are keyed positionally: the store swaps the optimistic
-              // `local-…` id for the server's on message.start, and an id-based key
-              // would unmount/remount the bubble mid-animation.
-              const key = message.role === 'user' ? `u${index}` : message.id
-              const isAnchor = !!message.runId && anchorByRun.get(message.runId) === message.id
-              const widgets = state.widgets[message.id] ?? []
-              const files = state.files[message.id] ?? []
-              const assets = message.role === 'assistant' ? renderAssets?.(message.id) : null
-              const extras = (
-                <>
-                  {isAnchor ? runExtras(message.runId) : null}
-                  {widgets.map((html, i) => (
-                    <WidgetCard key={`${message.id}-w${i}`} html={html} compact={compact} />
-                  ))}
-                  {assets}
-                  {files.length ? (
-                    <FileCards files={files} chatId={state.chat.id} compact={compact} />
-                  ) : null}
-                </>
-              )
-              const hasExtras =
-                (isAnchor && (state.timelines[message.runId!] || requestsByRun.map.has(message.runId!))) ||
-                widgets.length > 0 ||
-                files.length > 0 ||
-                !!assets
-
+              const key = turnKey(message, index)
               return (
-                <motion.div
+                <Turn
                   key={key}
-                  className="rml-thread__turn"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.32, ease: EASE }}
-                >
-                  <MessageBubble
-                    message={message}
-                    compact={compact}
-                    thinking={message.runId === activeRunId && message.role === 'assistant'}
-                  >
-                    {hasExtras ? extras : null}
-                  </MessageBubble>
-                </motion.div>
+                  message={message}
+                  thread={thread}
+                  isAnchor={!!message.runId && anchorByRun.get(message.runId) === message.id}
+                  animate={!seeded.current.keys.has(key)}
+                  requests={requests}
+                  compact={compact}
+                  chatId={chatId}
+                  renderAssets={renderAssets}
+                />
               )
             })}
           </AnimatePresence>
 
           {orphanRuns.map((runId) => (
             <div className="rml-thread__turn" key={`run-${runId}`}>
-              <ActivityTimeline timeline={state.timelines[runId]} compact={compact} />
+              <ActivityTimeline timeline={timelines[runId]} compact={compact} />
             </div>
           ))}
 
-          {requestsByRun.orphans.map((r) => (
+          {orphanRequests.map((r) => (
             <div className="rml-thread__turn" key={`req-${r.id}`}>
               <InputChips request={r} compact={compact} />
             </div>

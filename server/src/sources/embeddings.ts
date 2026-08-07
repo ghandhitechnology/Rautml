@@ -17,10 +17,15 @@ const EMBED_INPUT_CHAR_CAP = 2000;
 const BATCH_SIZE = 8;
 const PIPE_IDLE_MS = 90_000;
 
+/** A failed model load is retried after this backoff instead of never. */
+const PIPE_RETRY_MS = 60_000;
+
 let pipePromise: Promise<FeatureExtractionPipeline | null> | null = null;
 let pipe: FeatureExtractionPipeline | null = null;
 let pipeIdleTimer: ReturnType<typeof setTimeout> | null = null;
 let activeUses = 0;
+/** Timestamp of the last failed load attempt; 0 = no failure awaiting retry. */
+let pipeLoadFailedAt = 0;
 
 function clearPipeIdleTimer(): void {
   if (!pipeIdleTimer) return;
@@ -46,7 +51,14 @@ function schedulePipeDisposal(): void {
 
 function getPipe(): Promise<FeatureExtractionPipeline | null> {
   clearPipeIdleTimer();
+  // A failed load used to stick for the process lifetime. Retry after a
+  // backoff instead — first-run downloads fail transiently (offline, proxy
+  // hiccup) and often succeed later.
+  if (pipePromise && pipeLoadFailedAt && Date.now() - pipeLoadFailedAt >= PIPE_RETRY_MS) {
+    pipePromise = null;
+  }
   if (!pipePromise) {
+    pipeLoadFailedAt = 0; // re-armed by the catch below if this attempt fails
     pipePromise = (async () => {
       try {
         const { pipeline, env } = await import('@huggingface/transformers');
@@ -57,6 +69,7 @@ function getPipe(): Promise<FeatureExtractionPipeline | null> {
         console.log(`[sources] embedding model ready: ${MODEL_ID}`);
         return pipe;
       } catch (err) {
+        pipeLoadFailedAt = Date.now();
         console.error(
           `[sources] embedding model unavailable (${(err as Error)?.message}); semantic search falls back to keyword scoring`,
         );

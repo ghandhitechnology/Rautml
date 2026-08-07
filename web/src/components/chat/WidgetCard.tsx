@@ -1,75 +1,84 @@
 /* `visualize_show_widget` → a small inline visual rendered in its own document.
  *
- * The html goes into an <iframe srcdoc> with no sandbox attribute (full JS, by
- * design — same posture as AssetFrame) which also guarantees the widget's CSS
- * can never leak into the app. A tiny injected script reports its own height
- * back over postMessage so the frame hugs its content, capped at 400px. */
+ * The html goes into a sandboxed <iframe srcdoc> (full JS, by design — same
+ * posture as AssetFrame) which also guarantees the widget's CSS can never leak
+ * into the app. A tiny injected script reports its own height back over
+ * postMessage so the frame hugs its content, capped at 400px.
+ *
+ * Theming follows the live-stamp pattern (lib/frameTheme.ts): both palettes are
+ * baked into the document keyed off [data-theme], the attr is set before first
+ * paint, and toggles are stamped over postMessage — so a theme switch never
+ * reloads the iframe or loses the widget's state. */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { EASE } from '../../lib/motion'
 import { cx, uid } from '../../lib/utils'
-import { useTheme } from '../../state/store'
+import type { ThemeName } from '../../lib/types'
+import { stampFrameTheme, withThemeAttr } from '../../lib/frameTheme'
+import { useStore, useTheme } from '../../state/store'
 import { useNearViewport } from '../../lib/useNearViewport'
 import './WidgetCard.css'
 
 const MAX_HEIGHT = 400
 const MIN_HEIGHT = 60
 
-interface ThemeVars {
+interface Palette {
   text: string
   muted: string
   accent: string
   border: string
   surface2: string
-  scheme: 'light' | 'dark'
 }
 
-/** Read the live token values so the widget document matches the app's theme. */
-function useThemeVars(): ThemeVars {
-  const theme = useTheme()
-  return useMemo(() => {
-    const fallback: ThemeVars =
-      theme === 'dark'
-        ? {
-            text: '#f5f4ee',
-            muted: '#a8a69e',
-            accent: '#d97757',
-            border: '#3f3e3a',
-            surface2: '#3a3a37',
-            scheme: 'dark',
-          }
-        : {
-            text: '#1f1e1d',
-            muted: '#73726c',
-            accent: '#d97757',
-            border: '#e8e6dc',
-            surface2: '#f0eee6',
-            scheme: 'light',
-          }
-    if (typeof document === 'undefined') return fallback
-    const cs = getComputedStyle(document.documentElement)
-    const read = (name: string, dflt: string) => cs.getPropertyValue(name).trim() || dflt
-    return {
-      text: read('--text', fallback.text),
-      muted: read('--text-muted', fallback.muted),
-      accent: read('--accent', fallback.accent),
-      border: read('--border', fallback.border),
-      surface2: read('--surface-2', fallback.surface2),
-      scheme: theme === 'dark' ? 'dark' : 'light',
-    }
-  }, [theme])
+/* Baked fallbacks mirror the design tokens; the active scheme's values are
+ * re-read live from the document so token tweaks still reach widgets. */
+const LIGHT: Palette = {
+  text: '#1f1e1d',
+  muted: '#73726c',
+  accent: '#d97757',
+  border: '#e8e6dc',
+  surface2: '#f0eee6',
+}
+const DARK: Palette = {
+  text: '#f5f4ee',
+  muted: '#a8a69e',
+  accent: '#d97757',
+  border: '#3f3e3a',
+  surface2: '#3a3a37',
 }
 
-function baseStyle(v: ThemeVars): string {
+/** Both schemes' token values — live for the active one, baked for the other. */
+function readPalettes(): { light: Palette; dark: Palette } {
+  if (typeof document === 'undefined') return { light: LIGHT, dark: DARK }
+  const dark = useStore.getState().theme === 'dark'
+  const fallback = dark ? DARK : LIGHT
+  const cs = getComputedStyle(document.documentElement)
+  const read = (name: string, dflt: string) => cs.getPropertyValue(name).trim() || dflt
+  const active: Palette = {
+    text: read('--text', fallback.text),
+    muted: read('--text-muted', fallback.muted),
+    accent: read('--accent', fallback.accent),
+    border: read('--border', fallback.border),
+    surface2: read('--surface-2', fallback.surface2),
+  }
+  return dark ? { light: LIGHT, dark: active } : { light: active, dark: DARK }
+}
+
+/* Both palettes ride in the document, so the postMessage stamp flips
+ * [data-theme] and every var() below follows without a reload. */
+function baseStyle(p: { light: Palette; dark: Palette }): string {
+  const vars = (v: Palette) =>
+    `--text:${v.text};--muted:${v.muted};--accent:${v.accent};--border:${v.border};--surface-2:${v.surface2}`
   return `<style>
-:root{color-scheme:${v.scheme};--text:${v.text};--muted:${v.muted};--accent:${v.accent};--border:${v.border};--surface-2:${v.surface2}}
+:root{color-scheme:light;${vars(p.light)}}
+:root[data-theme="dark"]{color-scheme:dark;${vars(p.dark)}}
 html,body{margin:0;padding:0;background:transparent}
-body{font-family:Pretendard,-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;font-size:14px;line-height:1.6;color:${v.text};-webkit-font-smoothing:antialiased;overflow-x:auto;overflow-y:hidden}
+body{font-family:Pretendard,-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;font-size:14px;line-height:1.6;color:var(--text);-webkit-font-smoothing:antialiased;overflow-x:auto;overflow-y:hidden}
 *{box-sizing:border-box}
-a{color:${v.accent}}
+a{color:var(--accent)}
 ::-webkit-scrollbar{width:9px;height:9px}
-::-webkit-scrollbar-thumb{background:${v.border};border-radius:99px}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:99px}
 ::-webkit-scrollbar-track{background:transparent}
 </style>`
 }
@@ -103,14 +112,19 @@ window.addEventListener('load',send);document.addEventListener('DOMContentLoaded
 }
 
 /** Splice the base style into <head> and the reporter before </body>. */
-function buildSrcDoc(html: string, id: string, vars: ThemeVars): string {
-  const style = baseStyle(vars)
+function buildSrcDoc(html: string, id: string, theme: ThemeName): string {
+  const style = baseStyle(readPalettes())
   const script = heightScript(id)
   let out = html
 
+  // Fragments get a real shell: the theme attr + bridge need an <html> element.
+  if (!/<html[^>]*>/i.test(out)) out = `<html><head></head><body>${out}</body></html>`
+  // Theme attr goes in before first paint so the widget never flashes the wrong
+  // scheme; live toggles are stamped into the open document by the injected bridge.
+  out = withThemeAttr(out, theme)
+
   if (/<head[^>]*>/i.test(out)) out = out.replace(/<head[^>]*>/i, (m) => `${m}${style}`)
-  else if (/<html[^>]*>/i.test(out)) out = out.replace(/<html[^>]*>/i, (m) => `${m}<head>${style}</head>`)
-  else out = `${style}${out}`
+  else out = out.replace(/<html[^>]*>/i, (m) => `${m}<head>${style}</head>`)
 
   if (/<\/body>/i.test(out)) out = out.replace(/<\/body>/i, `${script}</body>`)
   else out = `${out}${script}`
@@ -125,15 +139,22 @@ export interface WidgetCardProps {
   className?: string
 }
 
-export function WidgetCard({ html, compact = false, className }: WidgetCardProps) {
+export const WidgetCard = memo(function WidgetCard({ html, compact = false, className }: WidgetCardProps) {
   const [hostRef, near] = useNearViewport<HTMLDivElement>()
   const frameRef = useRef<HTMLIFrameElement | null>(null)
   const idRef = useRef<string>(uid('w-'))
-  const vars = useThemeVars()
+  const theme = useTheme()
   const [height, setHeight] = useState(MIN_HEIGHT)
   const [ready, setReady] = useState(false)
 
-  const srcDoc = useMemo(() => buildSrcDoc(html, idRef.current, vars), [html, vars])
+  // Built once per html: the document carries both palettes, so a theme toggle
+  // is a stamp (below), not a reload — the widget keeps its state.
+  const srcDoc = useMemo(() => buildSrcDoc(html, idRef.current, useStore.getState().theme), [html])
+
+  /* keep the live document on the app's theme (widgets honour [data-theme]) */
+  useEffect(() => {
+    stampFrameTheme(frameRef.current, theme)
+  }, [theme])
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -172,6 +193,9 @@ export function WidgetCard({ html, compact = false, className }: WidgetCardProps
           loading="lazy"
           scrolling="no"
           style={{ height: `${height}px` }}
+          /* A toggle between srcDoc build and frame load would otherwise be lost —
+           * the document comes up with the build-time attr. */
+          onLoad={(e) => stampFrameTheme(e.currentTarget, useStore.getState().theme)}
         />
       ) : (
         /* Released while far offscreen — hold the measured height so the thread
@@ -180,6 +204,6 @@ export function WidgetCard({ html, compact = false, className }: WidgetCardProps
       )}
     </motion.div>
   )
-}
+})
 
 export default WidgetCard

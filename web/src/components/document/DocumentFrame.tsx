@@ -141,7 +141,13 @@ export function DocumentFrame({
   const marks = useQuestionedMarks(assetId)
   const marksRef = useRef(marks)
   marksRef.current = marks
+  // Streaming fork tokens rebuild this array every flush; re-marking the frames
+  // on content that didn't change makes them redo the same DOM work per token.
+  const postedMarks = useRef('')
   useEffect(() => {
+    const serialized = JSON.stringify(marks)
+    if (serialized === postedMarks.current) return
+    postedMarks.current = serialized
     for (const el of frames.current.values()) postFrameMarks(el, marks)
   }, [marks, layers])
 

@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -18,13 +18,9 @@ mkdirSync(DATA_DIR, { recursive: true });
 mkdirSync(WORKSPACES_DIR, { recursive: true });
 mkdirSync(SOURCES_DIR, { recursive: true });
 
-export const db = new DatabaseSync(DB_PATH);
-
-db.exec('PRAGMA journal_mode = WAL;');
-
 // Full schema DDL per CONTRACT.md — idempotent (CREATE TABLE/INDEX IF NOT EXISTS)
 // so this can safely run on every boot.
-db.exec(`
+const SCHEMA_DDL = `
 CREATE TABLE IF NOT EXISTS chats (
   id TEXT PRIMARY KEY,
   title TEXT,
@@ -131,7 +127,7 @@ CREATE TABLE IF NOT EXISTS source_chunks (
 -- Indices for the access patterns repo.ts needs. Additive only, no schema
 -- deviation (all columns above match CONTRACT.md verbatim).
 CREATE INDEX IF NOT EXISTS idx_messages_chat_thread ON messages (chat_id, thread, created_at);
-CREATE INDEX IF NOT EXISTS idx_model_turns_chat_thread_seq ON model_turns (chat_id, thread, seq);
+CREATE INDEX IF NOT EXISTS idx_model_turns_chat_thread ON model_turns (chat_id, thread, seq);
 CREATE INDEX IF NOT EXISTS idx_runs_chat_thread_status ON runs (chat_id, thread, status);
 CREATE INDEX IF NOT EXISTS idx_tool_events_chat_seq ON tool_events (chat_id, seq);
 CREATE INDEX IF NOT EXISTS idx_assets_chat ON assets (chat_id);
@@ -149,38 +145,96 @@ CREATE TABLE IF NOT EXISTS settings (
 CREATE INDEX IF NOT EXISTS idx_sources_chat ON sources (chat_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_source_chunks_source ON source_chunks (source_id, seq);
 CREATE INDEX IF NOT EXISTS idx_source_chunks_chat ON source_chunks (chat_id);
-`);
+`;
 
-// Migration: runs remember which model + reasoning effort + elaboration level
-// they were started with, so a parked run resumes on the same settings after a
-// server restart.
-{
-  const runCols = (db.prepare(`PRAGMA table_info(runs)`).all() as { name: string }[]).map(
-    (c) => c.name,
-  );
-  if (!runCols.includes('model')) db.exec(`ALTER TABLE runs ADD COLUMN model TEXT`);
-  if (!runCols.includes('provider')) db.exec(`ALTER TABLE runs ADD COLUMN provider TEXT`);
-  if (!runCols.includes('effort')) db.exec(`ALTER TABLE runs ADD COLUMN effort TEXT`);
-  if (!runCols.includes('elaboration')) db.exec(`ALTER TABLE runs ADD COLUMN elaboration TEXT`);
-  // Main-thread turn watermark: for a main run, the last main turn seq that
-  // existed before the run appended anything; for a fork run, the main seq it
-  // is allowed to read. Lets forks build context from the last *completed*
-  // main state instead of a mid-generation transcript.
-  if (!runCols.includes('context_seq')) db.exec(`ALTER TABLE runs ADD COLUMN context_seq INTEGER`);
+/** Column-level migrations, additive only; safe to run on every boot. */
+function applyMigrations(database: DatabaseSync): void {
+  // Migration: runs remember which model + reasoning effort + elaboration level
+  // they were started with, so a parked run resumes on the same settings after a
+  // server restart.
+  {
+    const runCols = (
+      database.prepare(`PRAGMA table_info(runs)`).all() as { name: string }[]
+    ).map((c) => c.name);
+    if (!runCols.includes('model')) database.exec(`ALTER TABLE runs ADD COLUMN model TEXT`);
+    if (!runCols.includes('provider')) database.exec(`ALTER TABLE runs ADD COLUMN provider TEXT`);
+    if (!runCols.includes('effort')) database.exec(`ALTER TABLE runs ADD COLUMN effort TEXT`);
+    if (!runCols.includes('elaboration'))
+      database.exec(`ALTER TABLE runs ADD COLUMN elaboration TEXT`);
+    // Main-thread turn watermark: for a main run, the last main turn seq that
+    // existed before the run appended anything; for a fork run, the main seq it
+    // is allowed to read. Lets forks build context from the last *completed*
+    // main state instead of a mid-generation transcript.
+    if (!runCols.includes('context_seq'))
+      database.exec(`ALTER TABLE runs ADD COLUMN context_seq INTEGER`);
+  }
+
+  // Migration: structured follow-up context is stored with the visible user
+  // message while the canonical model turn receives a context-enriched prompt.
+  {
+    const messageCols = (
+      database.prepare(`PRAGMA table_info(messages)`).all() as { name: string }[]
+    ).map((c) => c.name);
+    if (!messageCols.includes('attachments')) {
+      database.exec(`ALTER TABLE messages ADD COLUMN attachments TEXT`);
+    }
+    // Uploaded files sent with a message — JSON array of source ids, so the
+    // thread can render file chips on the user bubble.
+    if (!messageCols.includes('source_ids')) {
+      database.exec(`ALTER TABLE messages ADD COLUMN source_ids TEXT`);
+    }
+  }
 }
 
-// Migration: structured follow-up context is stored with the visible user
-// message while the canonical model turn receives a context-enriched prompt.
-{
-  const messageCols = (db.prepare(`PRAGMA table_info(messages)`).all() as { name: string }[]).map(
-    (c) => c.name,
-  );
-  if (!messageCols.includes('attachments')) {
-    db.exec(`ALTER TABLE messages ADD COLUMN attachments TEXT`);
-  }
-  // Uploaded files sent with a message — JSON array of source ids, so the
-  // thread can render file chips on the user bubble.
-  if (!messageCols.includes('source_ids')) {
-    db.exec(`ALTER TABLE messages ADD COLUMN source_ids TEXT`);
+/**
+ * Opens the database and applies pragmas + schema + migrations. Kept separate
+ * from boot so a corrupt file can be quarantined and retried fresh.
+ */
+function openDatabase(): DatabaseSync {
+  const database = new DatabaseSync(DB_PATH);
+  try {
+    database.exec('PRAGMA journal_mode = WAL;');
+    // Wait up to 5s on a locked database instead of failing immediately —
+    // two Rautml processes can briefly overlap during a desktop restart.
+    database.exec('PRAGMA busy_timeout = 5000;');
+    database.exec(SCHEMA_DDL);
+    applyMigrations(database);
+    return database;
+  } catch (err) {
+    try {
+      database.close();
+    } catch {
+      /* the handle may already be unusable */
+    }
+    throw err;
   }
 }
+
+/**
+ * Boots the database. A corrupt file (unclean shutdown, disk hiccup) would
+ * otherwise make every launch fail before the UI can explain anything:
+ * quarantine the file and its WAL sidecars, then start fresh — loudly.
+ */
+function bootDatabase(): DatabaseSync {
+  try {
+    return openDatabase();
+  } catch (err) {
+    console.error(
+      `[db] failed to open ${DB_PATH} — moving it aside and starting with a fresh database`,
+      err,
+    );
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    for (const suffix of ['', '-wal', '-shm']) {
+      const file = `${DB_PATH}${suffix}`;
+      try {
+        if (existsSync(file)) renameSync(file, `${file}.corrupt-${stamp}`);
+      } catch (renameErr) {
+        console.error(`[db] could not move ${file} aside`, renameErr);
+      }
+    }
+    // A second failure here (permissions, full disk) is genuinely fatal.
+    return openDatabase();
+  }
+}
+
+export const db = bootDatabase();

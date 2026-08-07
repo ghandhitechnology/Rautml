@@ -185,7 +185,7 @@ export function ForkThread({ empty, className }: ForkThreadProps) {
   useEffect(() => {
     if (!forkFocus) return
     const { messageId } = forkFocus
-    window.setTimeout(() => {
+    const id = window.setTimeout(() => {
       const container = scrollRef.current
       const target = container?.querySelector<HTMLElement>(`[data-fork-msg="${messageId}"]`)
       if (container && target) {
@@ -205,6 +205,7 @@ export function ForkThread({ empty, className }: ForkThreadProps) {
       }
       useStore.getState().clearForkFocus()
     }, 260)
+    return () => window.clearTimeout(id)
   }, [forkFocus])
 
   // Content can also grow without a store update (timeline rows expanding,

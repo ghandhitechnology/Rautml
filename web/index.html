@@ -2,7 +2,35 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- script-src allows 'unsafe-inline' because generated-asset srcdoc iframes
+         inherit the parent CSP and run inline scripts; the boot script below is
+         inline for the same reason, so this meta works in dev and in the build. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'"
+    />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Stamp [data-theme] before first paint so there is no flash of the wrong
+         palette. Mirrors initTheme() in src/state/store.ts — keep the storage
+         key and values in sync with it. -->
+    <script>
+      ;(function () {
+        var theme = null
+        try {
+          var stored = localStorage.getItem('rautml.theme')
+          if (stored === 'light' || stored === 'dark') theme = stored
+        } catch (e) {
+          /* private mode — fall through to the system preference */
+        }
+        if (!theme) {
+          theme =
+            typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches
+              ? 'dark'
+              : 'light'
+        }
+        document.documentElement.dataset.theme = theme
+      })()
+    </script>
     <title>Rautml</title>
   </head>
   <body>

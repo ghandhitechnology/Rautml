@@ -1,9 +1,36 @@
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
+import { createServer, type ServerResponse } from 'node:http';
 import { after, before, describe, it } from 'node:test';
 import { streamChat } from './openrouter.js';
-import { discoverProviders, reconnectCommand, resolveProviderSelection } from './providers.js';
+import {
+  DEFAULT_MODEL_ID,
+  defaultModelId,
+  discoverProviders,
+  invalidateProviderCache,
+  providerConnected,
+  reconnectCommand,
+  resolveProviderSelection,
+} from './providers.js';
+import { resolveSubagentProvider, resolveTitleSelection } from './llm.js';
 import * as repo from '../repo.js';
+
+/** Runs `fn` with the given env vars overridden, restoring them afterwards. */
+async function withEnv<T>(patch: Record<string, string | undefined>, fn: () => T | Promise<T>): Promise<T> {
+  const saved = new Map<string, string | undefined>();
+  for (const key of Object.keys(patch)) saved.set(key, process.env[key]);
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  try {
+    return await fn();
+  } finally {
+    for (const [key, value] of saved) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
 
 describe('local provider discovery', () => {
   it('keeps Go and Zen as separate catalogs with globally unique selections', async () => {
@@ -40,6 +67,60 @@ describe('local provider discovery', () => {
   });
 });
 
+describe('default model selection', () => {
+  it('returns the catalog default when its provider is connected', async () => {
+    const providers = await discoverProviders(true);
+    const home = providers.find((p) => p.models.some((m) => m.id === DEFAULT_MODEL_ID));
+    if (home?.authStatus !== 'connected') return; // no connected Codex on this machine
+    assert.equal(await defaultModelId(), DEFAULT_MODEL_ID);
+  });
+
+  it('skips a disconnected catalog default for the first connected provider', async () => {
+    await withEnv({ RAUTML_CODEX: '0' }, async () => {
+      const providers = await discoverProviders(true);
+      assert.notEqual(providers.find((p) => p.id === 'codex')?.authStatus, 'connected');
+      const firstConnected = providers.find((p) => p.authStatus === 'connected' && p.models.length);
+      const id = await defaultModelId();
+      if (firstConnected) {
+        assert.equal(id, firstConnected.models[0]!.id);
+        assert.notEqual(id, DEFAULT_MODEL_ID);
+      } else {
+        // Nobody connected: the legacy fallback chain still applies.
+        assert.equal(id, providers.find((p) => p.models.length)?.models[0]?.id ?? DEFAULT_MODEL_ID);
+      }
+    });
+    invalidateProviderCache();
+  });
+});
+
+describe('title and subagent routing', () => {
+  it('prefers the Codex route for titling when Codex is connected', () => {
+    if (!providerConnected('codex')) return; // no Codex auth on this machine
+    assert.deepEqual(resolveTitleSelection(), { model: 'openai/gpt-5.6-luna' });
+  });
+
+  it('falls back to the OpenRouter route when Codex is vetoed', async () => {
+    await withEnv({ RAUTML_CODEX: '0', OPENROUTER_API_KEY: 'sk-or-test' }, () => {
+      assert.deepEqual(resolveTitleSelection(), { model: 'openai/gpt-5.6-luna', providerId: 'openrouter' });
+    });
+  });
+
+  it('returns null when neither titling route is connected', async () => {
+    await withEnv({ RAUTML_CODEX: '0', OPENROUTER_API_KEY: undefined }, () => {
+      assert.equal(resolveTitleSelection(), null);
+    });
+  });
+
+  it('routes subagents through OpenRouter exactly when it is connected', async () => {
+    await withEnv({ OPENROUTER_API_KEY: 'sk-or-test' }, () => {
+      assert.equal(resolveSubagentProvider('x-ai/grok-4.5'), 'openrouter');
+    });
+    await withEnv({ OPENROUTER_API_KEY: undefined }, () => {
+      assert.equal(resolveSubagentProvider('x-ai/grok-4.5'), undefined);
+    });
+  });
+});
+
 describe('run persistence', () => {
   it('round-trips the exact provider and model independently', () => {
     const chat = repo.createChat();
@@ -60,14 +141,19 @@ describe('OpenAI-compatible provider transport', () => {
   let close: (() => Promise<void>) | undefined;
   let received: any;
 
+  const defaultReply = (res: ServerResponse) => {
+    res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+    res.end('data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
+  };
+  let reply = defaultReply;
+
   before(async () => {
     const server = createServer((req, res) => {
       let body = '';
       req.on('data', (chunk) => { body += chunk; });
       req.on('end', () => {
         received = JSON.parse(body);
-        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
-        res.end('data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
+        reply(res);
       });
     });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -94,8 +180,56 @@ describe('OpenAI-compatible provider transport', () => {
       },
     });
     assert.equal(result.content, 'ok');
+    assert.equal(result.truncated, undefined);
     assert.equal(streamed, 'ok');
     assert.equal(received.model, 'catalog-model');
     assert.deepEqual(received.reasoning, { effort: 'high' });
+  });
+
+  it('flags text that arrived without a finish_reason as truncated instead of failing', async () => {
+    reply = (res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.end('data: {"choices":[{"delta":{"content":"partial"}}]}\n\ndata: [DONE]\n\n');
+    };
+    try {
+      const result = await streamChat({
+        model: 'namespace/catalog-model',
+        messages: [{ role: 'user', content: 'hello' }],
+        transport: {
+          endpoint,
+          name: 'Mock provider',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test' },
+        },
+      });
+      assert.equal(result.content, 'partial');
+      assert.equal(result.finishReason, null);
+      assert.equal(result.truncated, true);
+    } finally {
+      reply = defaultReply;
+    }
+  });
+
+  it('still rejects a stream that ends with nothing at all', async () => {
+    reply = (res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.end('data: [DONE]\n\n');
+    };
+    try {
+      await assert.rejects(
+        streamChat({
+          model: 'namespace/catalog-model',
+          messages: [{ role: 'user', content: 'hello' }],
+          maxRetries: 1,
+          transport: {
+            endpoint,
+            name: 'Mock provider',
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test' },
+          },
+        }),
+        /no finish_reason/,
+      );
+    } finally {
+      reply = defaultReply;
+    }
   });
 });

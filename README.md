@@ -5,6 +5,11 @@ GPT-5.6-sol researches it (web/image search, page reads, bash) and builds a rich
 HTML document that takes over the chat view. Small follow-up questions live in a forked side
 chat (the coral ball) so the page never gets buried.
 
+> **macOS install:** Rautml is currently ad-hoc signed, so Gatekeeper blocks the first launch —
+> right-click the app and choose **Open** (or open it once, then **System Settings → Privacy &
+> Security → Open Anyway**). This is the documented workaround until Developer ID signing +
+> notarization lands.
+
 ## macOS app
 
 The Electron build keeps the local Express engine and all existing model, source, document,
@@ -46,8 +51,8 @@ open /Applications/Rautml.app
 Only use that command for a build downloaded from this repository. Each release includes
 `SHA256SUMS.txt` so the downloaded installer can be checked before opening it.
 
-Automatic in-place updates can be added later, but macOS requires those builds to be signed and
-notarized with an Apple Developer ID.
+Packaged builds now auto-update via GitHub Releases — the app checks for a newer release and updates
+in place, so the manual download-and-replace flow above is only a fallback.
 
 ## Web development
 

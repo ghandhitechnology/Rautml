@@ -1,10 +1,13 @@
 import { motion } from 'framer-motion'
 import { EASE } from '../../lib/motion'
+import { Icon } from '../chat/icons'
 import './Welcome.css'
 
 export interface WelcomeProps {
   /** Optional line under the heading. */
   subtitle?: string
+  /** Send a hint chip into a fresh chat (the flow App owns while no chat is open). */
+  onSuggestion: (text: string) => void | Promise<void>
 }
 
 const SUGGESTIONS = [
@@ -14,7 +17,7 @@ const SUGGESTIONS = [
 ]
 
 /** Shell-level empty state, shown before a chat is open. */
-export function Welcome({ subtitle }: WelcomeProps) {
+export function Welcome({ subtitle, onSuggestion }: WelcomeProps) {
   return (
     <div className="rml-welcome">
       <motion.div
@@ -37,7 +40,10 @@ export function Welcome({ subtitle }: WelcomeProps) {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.36, ease: EASE, delay: 0.08 + i * 0.06 }}
             >
-              {s}
+              <button type="button" onClick={() => void onSuggestion(s)}>
+                <span>{s}</span>
+                <Icon name="arrowDown" size={14} className="rml-welcome__hint-arrow" />
+              </button>
             </motion.li>
           ))}
         </ul>

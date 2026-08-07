@@ -4,8 +4,10 @@
   font-size: 13.5px;
   line-height: 1.66;
   color: var(--text);
+  /* Korean splits mid-word under the default break rules; keep words whole and
+     let overflow-wrap stay the escape hatch for genuinely unbreakable runs. */
   overflow-wrap: anywhere;
-  word-break: break-word;
+  word-break: keep-all;
 }
 
 .rml-forkmd > *:first-child {

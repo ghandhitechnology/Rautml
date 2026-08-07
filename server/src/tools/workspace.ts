@@ -1,6 +1,6 @@
 // bash_tool, create_file, str_replace, view, present_files — CONTRACT.md tools 4–8,
 // plus the "Asset protocol" interception on create_file/str_replace for assets/*.html.
-import { exec } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -15,6 +15,8 @@ import type { ToolCtx, ToolDef } from '../types.js';
 
 const BASH_TIMEOUT_MS = 60_000;
 const OUTPUT_CAP = 50_000;
+/** Per-stream accumulation ceiling; the combined output is still capped at OUTPUT_CAP. */
+const BUFFER_CAP = 1_000_000;
 const IMAGE_EXT_RE = /\.(png|jpe?g|gif|bmp|webp|ico|svg|tiff?|avif|heic)$/i;
 const ASSET_PATH_RE = /^assets\/[^/]+\.html$/i;
 
@@ -77,27 +79,75 @@ function interceptAssetWrite(ctx: ToolCtx, rel: string, html: string): void {
 // bash_tool
 // ---------------------------------------------------------------------------
 
-function runBash(command: string, cwd: string): Promise<string> {
+function runBash(command: string, cwd: string, signal?: AbortSignal): Promise<string> {
   return new Promise((resolve) => {
-    exec(
-      command,
-      { cwd, timeout: BASH_TIMEOUT_MS, maxBuffer: 20 * 1024 * 1024, shell: '/bin/bash' },
-      (err, stdout, stderr) => {
-        let out = '';
-        if (stdout) out += stdout;
-        if (stderr) out += (out ? '\n' : '') + stderr;
-        if (!out && err) {
-          out = err.message;
-        }
-        if (err && (err as any).killed && (err as any).signal) {
-          out += `${out ? '\n' : ''}[process terminated: ${(err as any).signal} — likely timed out after 60s]`;
-        }
-        if (out.length > OUTPUT_CAP) {
-          out = out.slice(0, OUTPUT_CAP) + '\n[...output truncated at 50000 chars...]';
-        }
-        resolve(out || '(no output)');
-      },
-    );
+    if (signal?.aborted) {
+      resolve('[process terminated: run stopped before start]');
+      return;
+    }
+    // detached: the shell leads its own process group, so a timeout or a
+    // stopped run kills the whole group (negative pid) — pipelines and
+    // backgrounded children would otherwise outlive the shell.
+    const child = spawn(command, {
+      cwd,
+      shell: '/bin/bash',
+      detached: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    let timedOut = false;
+    let aborted = false;
+
+    const killGroup = () => {
+      if (child.pid == null) return;
+      try {
+        process.kill(-child.pid, 'SIGKILL');
+      } catch {
+        // process group already gone
+      }
+    };
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      let out = '';
+      if (stdout) out += stdout;
+      if (stderr) out += (out ? '\n' : '') + stderr;
+      if (timedOut) out += `${out ? '\n' : ''}[process terminated: SIGKILL — timed out after 60s]`;
+      else if (aborted) out += `${out ? '\n' : ''}[process terminated: SIGKILL — run stopped]`;
+      if (out.length > OUTPUT_CAP) {
+        out = out.slice(0, OUTPUT_CAP) + '\n[...output truncated at 50000 chars...]';
+      }
+      resolve(out || '(no output)');
+    };
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killGroup();
+    }, BASH_TIMEOUT_MS);
+
+    const onAbort = () => {
+      aborted = true;
+      killGroup();
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+
+    child.stdout?.on('data', (chunk: Buffer) => {
+      if (stdout.length < BUFFER_CAP) stdout += chunk.toString('utf8');
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      if (stderr.length < BUFFER_CAP) stderr += chunk.toString('utf8');
+    });
+    child.on('error', (err) => {
+      if (!stdout && !stderr) stderr = err.message;
+      finish();
+    });
+    child.on('close', finish);
   });
 }
 
@@ -117,7 +167,7 @@ const bash_tool: ToolDef = {
     try {
       const command = typeof args?.command === 'string' ? args.command : '';
       if (!command.trim()) return 'ERROR: command must be a non-empty string';
-      return await runBash(command, ctx.workspaceDir);
+      return await runBash(command, ctx.workspaceDir, ctx.signal);
     } catch (err: any) {
       return `ERROR: ${err?.message ?? String(err)}`;
     }

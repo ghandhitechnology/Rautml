@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Starting Rautml…</title>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #faf9f5;
+        color: #2a2926;
+        font-family: ui-serif, "New York", Georgia, "Times New Roman", serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      main {
+        max-width: 26rem;
+        padding: 2rem;
+        text-align: center;
+      }
+      .pulse {
+        width: 10px;
+        height: 10px;
+        margin: 0 auto 1.75rem;
+        border-radius: 999px;
+        background: #d97757;
+        animation: pulse 1.6s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 0.35;
+          transform: scale(0.85);
+        }
+        50% {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+      h1 {
+        font-size: 1.625rem;
+        font-weight: 500;
+        letter-spacing: 0.01em;
+      }
+      #status {
+        margin-top: 0.75rem;
+        color: #75736d;
+        font-family: ui-sans-serif, -apple-system, "Helvetica Neue", sans-serif;
+        font-size: 0.875rem;
+      }
+      #error {
+        margin-top: 1.25rem;
+        padding: 0.75rem 1rem;
+        border: 1px solid #ece9e2;
+        border-radius: 10px;
+        background: #f4f2ec;
+        color: #8a4a32;
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        font-size: 0.75rem;
+        line-height: 1.5;
+        text-align: left;
+        word-break: break-word;
+      }
+      #retry {
+        margin-top: 1.5rem;
+        padding: 0.5rem 1.5rem;
+        border: none;
+        border-radius: 999px;
+        background: #d97757;
+        color: #fffdf9;
+        font-family: ui-sans-serif, -apple-system, "Helvetica Neue", sans-serif;
+        font-size: 0.875rem;
+        font-weight: 500;
+        cursor: pointer;
+      }
+      #retry:hover {
+        background: #c96442;
+      }
+      #retry:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="pulse" aria-hidden="true"></div>
+      <h1>Starting Rautml…</h1>
+      <p id="status">Warming up the local research engine.</p>
+      <p id="error" hidden></p>
+      <button id="retry" type="button" hidden>Retry</button>
+    </main>
+    <script>
+      ;(function () {
+        const status = document.getElementById('status')
+        const errorBox = document.getElementById('error')
+        const retryButton = document.getElementById('retry')
+
+        function showError(message) {
+          status.textContent = 'The local engine could not be started.'
+          errorBox.textContent = message
+          errorBox.hidden = false
+          retryButton.hidden = false
+        }
+
+        // The main process reloads this page with ?error=<message> when boot fails.
+        const bootError = new URLSearchParams(window.location.search).get('error')
+        if (bootError) showError(bootError)
+
+        retryButton.addEventListener('click', () => {
+          const desktop = window.rautmlDesktop
+          if (!desktop || typeof desktop.retryBoot !== 'function') {
+            showError('Retry is unavailable in this build.')
+            return
+          }
+          retryButton.disabled = true
+          errorBox.hidden = true
+          status.textContent = 'Retrying…'
+          desktop.retryBoot().then(
+            (result) => {
+              retryButton.disabled = false
+              if (result && result.ok) {
+                status.textContent = 'Engine ready — loading Rautml…'
+              } else {
+                showError((result && result.error) || 'The engine could not be started.')
+              }
+            },
+            (error) => {
+              retryButton.disabled = false
+              showError(error && error.message ? error.message : String(error))
+            },
+          )
+        })
+      })()
+    </script>
+  </body>
+</html>

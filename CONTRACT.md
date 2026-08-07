@@ -53,7 +53,7 @@ settings→components/settings.
 
 ## Environment
 
-- `OPENROUTER_API_KEY`, `FIRECRAWL_API_KEY` in `/Users/pyu/projects/hobbies/Rautml/.env` (already present).
+- `OPENROUTER_API_KEY`, `FIRECRAWL_API_KEY` in the repo-root `.env` (gitignored, already present).
   `BROWSERBASE_API_KEY` / `BROWSERBASE_PROJECT_ID` are stored for upcoming browser tooling; nothing reads
   them yet. All four are editable in-app under Settings → API keys, which rewrites that same file
   (`RAUTML_ENV_PATH`, `<userData>/.env` under Electron) and updates `process.env` live. Every consumer
@@ -76,9 +76,16 @@ settings→components/settings.
   - `openai/gpt-5.6-sol` / `-terra` / `-luna` — none | low | medium | high | xhigh | max (default medium)
   - `x-ai/grok-4.5` — low | medium | high (default high)
   - `deepseek/deepseek-v4-flash-0731` — low | high | max (default high)
-- Firecrawl: `https://api.firecrawl.dev/v1/search` (web + images sources), `https://api.firecrawl.dev/v1/scrape` (formats:["markdown"]).
+- Firecrawl: web search via `https://api.firecrawl.dev/v1/search`; image search via
+  `https://api.firecrawl.dev/v2/search` — v1/search's schema rejects the `sources` param (hard 400:
+  unrecognized_keys), while v2 accepts `sources:["images"]` and returns `data.images[]`; page reads via
+  `https://api.firecrawl.dev/v1/scrape` (formats:["markdown"]).
 
 ## Database (SQLite via built-in `node:sqlite` `DatabaseSync` — NOT better-sqlite3; Node 26, WAL)
+
+Boot sets `PRAGMA busy_timeout` alongside WAL. If the database file is corrupt and fails to open,
+boot quarantines it — renamed to `rautml.db.corrupt-<timestamp>` next to the original — and starts
+with a fresh database so the app always comes up.
 
 ```sql
 chats(id TEXT PK, title TEXT, created_at INTEGER, updated_at INTEGER);
@@ -93,6 +100,8 @@ runs(id TEXT PK, chat_id TEXT, thread TEXT,
      error TEXT, created_at INTEGER, finished_at INTEGER,
      model TEXT, effort TEXT, elaboration TEXT);  -- selection the run was started with (resume reuses it)
 -- every SSE event persisted here; seq monotonic per chat (for replay)
+-- run_id is always stored NULL (publishers don't supply one); thread rides inside the opaque
+-- payload blob (payload = JSON.stringify({ thread, data })) — see repo.ts insertEvent
 tool_events(id INTEGER PK AUTOINCREMENT, chat_id TEXT, run_id TEXT, seq INTEGER,
             type TEXT, payload TEXT, created_at INTEGER);
 assets(id TEXT PK, chat_id TEXT, message_id TEXT, title TEXT, rel_path TEXT, created_at INTEGER);
@@ -120,11 +129,20 @@ settings(key TEXT PK, value TEXT, updated_at INTEGER);
 - `GET  /api/chats/:id` → `{ chat, messages, assets: AssetWithVersions[], events: ChatEvent[], pendingInput: PendingInput|null, activeRun: Run|null }`
 - `POST /api/chats/:id/retitle` → `{ title: string, changed: boolean }` (GPT-5.6 Luna at effort `none`; invoked when leaving a chat that changed since its initial title)
 - `POST /api/chats/:id/messages` `{ content: string, thread: 'main'|'fork', model?: string, effort?: string, elaboration?: 'undergraduate'|'bachelors'|'doctor', attachments?: FollowUpAttachment[] }` → `{ runId }` (attachments are supported on the fork thread; 409 if a run is active; 400 on invalid selections)
-- `GET  /api/models` → `{ models: ModelInfo[], defaultModelId: string }` (the selectable catalog)
+- `GET  /api/models` → `{ models: ModelInfo[], providers: ProviderInfo[], defaultModelId: string }`
+  (the selectable catalog plus per-provider discovery state; `?refresh=1` re-runs discovery)
+- `GET  /api/health` → `{ ok: true, busy: boolean }` — liveness probe for smoke tests; `busy` is
+  true while a run is active or source indexing is in flight
+- `POST /api/providers/:id/reconnect` → `{ launched: boolean, command: string }` — loopback-gated;
+  opens the provider's CLI login in Terminal (macOS only)
 - `POST /api/chats/:id/input` `{ pendingInputId, value: string }` → resumes paused run
-- `POST /api/chats/:id/stop` → stops active run(s)
+- `POST /api/chats/:id/stop` `{ thread?: 'main'|'fork' }` → `{ stopped: string[] }` — stops the chat's
+  active run(s); when `thread` is given, only runs on that thread are stopped (a fork stop no longer
+  kills main runs)
 - `GET  /api/chats/:id/events?after=<seq>` → SSE stream (replays persisted events with seq > after, then live)
 - `GET  /api/assets/:assetId/:version` → `text/html` (the version's html; version 'latest' allowed)
+- `GET  /api/chats/:id/files/*` → workspace file download (backs present_files cards; the path must
+  resolve inside the chat's workspace)
 - `POST /api/chats/:id/sources` → multipart (`files` field) upload into the chat's local sources.
   400MB per file, unlimited files per request/chat. Allowed: pdf csv docx pptx md markdown tex hwp hwpx.
   Returns `{ sources: Source[], rejected: [{name, error}] }`; indexing runs in the background
@@ -152,7 +170,8 @@ stored on the message row; `GET /api/chats/:id` includes `sources: Source[]` in 
 
 ## SSE events (ChatEvent)
 
-`{ seq: number, chatId: string, thread: 'main'|'fork', type: string, data: any }`
+`{ seq: number, chatId: string, thread: 'main'|'fork', type: string, data: any, at: number }`
+(`at` is epoch ms when the event was recorded — the UI computes real durations from it after replay.)
 Types (data shape):
 - `run.status` `{ runId, status }`
 - `run.phase` `{ runId, phase, label }` — what the run is doing between visible events.
@@ -173,6 +192,9 @@ Types (data shape):
 - `files.presented` `{ messageId, files: [{name, relPath, size}] }`
 - `input.request` `{ pendingInputId, question, options: string[] }`
 - `input.resolved` `{ pendingInputId, value }`
+- `provider.error` `{ runId, providerId, message }` — a run errored with a known provider (always when
+  the provider itself was unavailable); `message` is clipped to 300 chars. Lets the UI point at the
+  provider instead of showing a generic failure.
 - `chat.title` `{ title }`
 - `source.added` `{ source: Source }` — a file landed in the chat's local sources (upload accepted)
 - `source.updated` `{ source: Source }` — indexing finished: status flipped to 'ready' or 'error'
@@ -198,9 +220,13 @@ Types (data shape):
   with the full label at execution, execute via registry, emit tool.end, append tool result turn, continue.
   Cap: 120 tool calls per run (env `RAUTML_MAX_TOOL_CALLS`) → inject a final "wrap up now" user-role nudge;
   the iteration safety valve also forces a wrap-up round so a run always ends with a visible answer.
+  The budget survives park/resume cycles: on resume the count is derived from the run's existing tool
+  turns, not reset to 0.
   Retries: 3x exponential backoff on 429/5xx/network; a stream that stalls >120s or ends without a
-  finish_reason counts as a network failure (not a finished answer). A retry closes any provisionally
-  announced tool rows ("Connection dropped — retrying").
+  finish_reason counts as a network failure (not a finished answer) — unless visible text was already
+  emitted: then the retry is skipped and the partial answer is delivered with a `truncated` marker,
+  the engine appending a visible 'response was cut off' notice instead of silently accepting it.
+  A retry closes any provisionally announced tool rows ("Connection dropped — retrying").
 - Run phase: every iteration emits `run.phase` — `connecting` before the request leaves, `thinking`
   once the provider accepts it, then a reasoning headline as reasoning streams (both providers surface
   reasoning deltas; Codex requests `reasoning.summary: auto` and falls back once if the backend rejects
@@ -219,6 +245,9 @@ Types (data shape):
   Luna/`none` refresh over a bounded conversation sample. Navigation never waits; changed titles update
   `chats.title` and emit `chat.title`.
 - Errors: run.status error + message.complete with friendly text; never leave status 'streaming'.
+  On boot the server finalizes crash-orphaned rows left by a previous process: `runs.status='running'`
+  → 'error' and `messages.status='streaming'` → 'error' with the partial content preserved.
+  'awaiting_input' runs are untouched — parked runs are resumable by design.
 
 ## Tools (names/schemas exact; registry order = this order)
 
@@ -233,9 +262,10 @@ Types (data shape):
 9. `visualize_read_me {}` → returns DESIGN_README string (design constraints; model MUST call before first asset)
 10. `visualize_show_widget {html: string}` → emit widget event (inline SVG/HTML mini-visual in chat flow)
 11. `ask_user_input_v0 {question: string, options: string[]}` → pauses run; returns chosen value on resume
-12. `spawn_subagents {tasks: [{title: string, prompt: string, model?: string}]}` → fans research out to 2–5
+12. `spawn_subagents {tasks: [{title: string, prompt: string, model?: string}]}` → fans research out to 1–5
     parallel subagents (src/tools/subagents.ts). Each task becomes an independent mini agentic loop with its own
-    OpenRouter stream and tool calling over the research tools only (`web_search`, `web_fetch`, `image_search`);
+    streamed provider call — resolved through the server's provider resolution (OpenRouter when connected, CLI
+    providers as fallback) — and tool calling over the research tools only (`web_search`, `web_fetch`, `image_search`);
     lifecycle/activity surface as the `subagent.*` SSE events. Allowed models: `x-ai/grok-4.5` (default, at its
     default effort `high`) and `openai/gpt-5.6-luna` (at effort `xhigh`). Budgets: 12 tool calls per subagent, tool results
     truncated at 12k inside the subagent, reports capped at `max(4k, 22k/n)` each. The tool result is the combined
@@ -274,7 +304,7 @@ Workspace = `server/data/workspaces/<chatId>/`, created on chat creation.
 ## System prompt essence (prompts.ts owns the wording)
 
 The model: is "Rautml", researches thoroughly (web_search/web_fetch/image_search) before building; divides
-research bigger than a medium-large task across parallel subagents via spawn_subagents (2–5 self-contained
+research bigger than a medium-large task across parallel subagents via spawn_subagents (1–5 self-contained
 briefs, early, then verifies and synthesizes; Grok 4.5 default, Luna for lighter briefs); confirms
 scope in one short message for large requests then proceeds (no endless clarification); calls visualize_read_me
 before its first asset; writes complete self-contained HTML (inline CSS/JS, no external JS frameworks; Google
@@ -374,14 +404,21 @@ interface Message { id:string; chatId:string; thread:Thread; role:'user'|'assist
   content:string; status:'streaming'|'complete'|'error'; runId?:string;
   attachments?:FollowUpAttachment[]; createdAt:number }
 interface Run { id:string; chatId:string; thread:Thread; status:'running'|'awaiting_input'|'done'|'error'|'stopped';
-  model?:string; effort?:string; elaboration?:ElaborationLevel }
+  model?:string; providerId?:string; effort?:string; elaboration?:ElaborationLevel; contextSeq?:number }
 type ElaborationLevel = 'undergraduate'|'bachelors'|'doctor';
-interface ModelInfo { id:string; name:string; shortName:string; provider:string; description:string;
-  efforts:string[]; defaultEffort:string }
+// Run.providerId: the exact inference provider selected for the run — never silently changed.
+// Run.contextSeq: main-thread turn watermark — a fork's context reads main turns only up to it.
+// ModelInfo.id is the stable UI selection id (`providerId:modelId`); modelId is sent to the provider.
+interface ModelInfo { id:string; modelId:string; providerId:string; name:string; shortName:string;
+  provider:string; description:string; efforts:string[]; defaultEffort:string }
+type ProviderAuthStatus = 'connected'|'disconnected'|'unavailable'|'unknown';
+interface ProviderInfo { id:string; name:string; description:string; cli:string; installed:boolean;
+  authStatus:ProviderAuthStatus; authHint?:string; modelCount:number; models:ModelInfo[] }
 interface Asset { id:string; chatId:string; messageId:string; title:string; latestVersion:number; createdAt:number }
 interface Source { id:string; chatId:string; name:string; ext:string; mime:string; size:number;
   status:'processing'|'ready'|'error'; error?:string; textChars:number; chunkCount:number; createdAt:number }
-interface ChatEvent { seq:number; chatId:string; thread:Thread; type:string; data:any }
+// ChatEvent.at: epoch ms when the event was recorded — lets the UI compute real durations after replay.
+interface ChatEvent { seq:number; chatId:string; thread:Thread; type:string; data:any; at:number }
 interface PendingInput { id:string; question:string; options:string[] }
 // settings — `masked` is the last four characters; the secret itself never leaves the server.
 interface ApiKeyStatus { name:string; label:string; hint:string; optional:boolean; set:boolean;
