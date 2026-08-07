@@ -17,7 +17,8 @@
   display: none;
 }
 
-.rml-titlebar-controls {
+.rml-titlebar-controls,
+.rml-shell__sidebar-peek-trigger {
   display: none;
 }
 
@@ -42,6 +43,13 @@ html[data-desktop='electron'] [role='button'] {
 
 .rml-shell.is-fork-open {
   grid-template-columns: var(--sidebar-track) minmax(0, 1fr) var(--fork-w);
+}
+
+/* Electron composites both structural rails with FLIP in Layout.tsx. Letting
+   CSS interpolate the grid as well makes the iframe reflow every frame and is
+   the source of the faint whole-window flicker during panel expansion. */
+html[data-desktop='electron'] .rml-shell {
+  transition: none;
 }
 
 .rml-shell.is-sidebar-collapsed {
@@ -78,27 +86,63 @@ html[data-desktop='electron'] .rml-shell.is-sidebar-animating .rml-shell__sideba
   width: var(--sidebar-w);
   overflow: hidden;
   pointer-events: none;
-  will-change: transform;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+}
+
+/* A hover preview is an overlay, not a layout state: the generated document or
+   thread keeps its full collapsed width while the conversation list visits from
+   the screen edge. Persistently opening it still uses the FLIP path above. */
+html[data-desktop='electron'] .rml-shell.is-sidebar-collapsed:not(.is-sidebar-animating) .rml-shell__sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 190;
+  width: var(--sidebar-w);
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate3d(-100%, 0, 0);
+  box-shadow: none;
+  /* Leaving should feel responsive; the visiting state below deliberately uses
+     the slower layout timing for a calmer arrival. */
+  transition:
+    transform var(--dur) var(--ease),
+    opacity var(--dur-fast) var(--ease),
+    box-shadow var(--dur) var(--ease);
+}
+
+html[data-desktop='electron'] .rml-shell.is-sidebar-collapsed.is-sidebar-peeking .rml-shell__sidebar {
+  pointer-events: auto;
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+  box-shadow: var(--shadow-lg);
+  transition-duration: var(--dur-slow), var(--dur), var(--dur-slow);
 }
 
 /* FLIP surfaces can overhang the committed column while they travel. Clip them
-   to it so the document never bleeds over the fork panel. The document frame
-   animates its own width in Layout.tsx to keep its right edge pinned. */
+   to it so the document never bleeds over the fork panel. Wide document surfaces
+   use compositor scaling in Layout.tsx to keep their right edge pinned. */
 html[data-desktop='electron'] .rml-shell.is-sidebar-animating .rml-shell__main {
   overflow: hidden;
 }
 
-html[data-desktop='electron'] .rml-shell.is-sidebar-animating :is(
-  .rml-docframe,
-  .rml-dochead__bar,
-  .rml-dock,
+/* Promote exactly the surfaces Layout.tsx animates. Nested promoted layers were
+   repainting out of phase with the iframe in Electron, which read as a faint
+   whole-window flash even though every individual transition looked correct. */
+html[data-desktop='electron'] .rml-shell.is-document.is-sidebar-animating :is(
+  .rml-shell__main,
+  .rml-dochead__bar
+),
+html[data-desktop='electron'] .rml-shell.is-sidebar-animating:not(.is-document) :is(
   .rml-slot--ball,
   .rml-topbar__lead,
+  .rml-topbar__actions,
   .rml-thread,
   .rml-welcome__inner,
   .rml-composer
 ) {
   will-change: transform;
+  backface-visibility: hidden;
 }
 
 /* Parked next to the native traffic lights: the 32px buttons centre on y=24 with
@@ -227,6 +271,27 @@ html[data-desktop='electron'] .rml-shell.is-settings-open .rml-titlebar-controls
 
 html[data-desktop='electron'] .rml-shell__sidebar-resizer {
   top: 28px;
+}
+
+html[data-desktop='electron'] .rml-shell__main {
+  backface-visibility: hidden;
+}
+
+html[data-desktop='electron'] .rml-shell__fork {
+  transition: none;
+}
+
+/* Deliberately narrow and invisible: it catches an intentional edge dwell
+   without stealing ordinary pointer movement near the app's content. */
+@media (min-width: 641px) and (hover: hover) and (pointer: fine) {
+  html[data-desktop='electron'] .rml-shell.is-sidebar-collapsed:not(.is-sidebar-animating):not(.is-settings-open) .rml-shell__sidebar-peek-trigger {
+    position: fixed;
+    inset: 28px auto 0 0;
+    z-index: 197;
+    display: block;
+    width: var(--sp-2);
+    -webkit-app-region: no-drag;
+  }
 }
 
 /* -------------------------------------------------------------- main column */
