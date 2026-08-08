@@ -208,6 +208,7 @@ html[data-desktop='electron'] .rml-sidebar__toggle {
 }
 
 .rml-chatrow__title {
+  --rml-chat-title-gap: 24px;
   display: block;
   overflow: hidden;
   white-space: nowrap;
@@ -219,7 +220,8 @@ html[data-desktop='electron'] .rml-sidebar__toggle {
 }
 
 .rml-chatrow__title-track {
-  display: block;
+  display: flex;
+  gap: var(--rml-chat-title-gap);
   width: max-content;
   max-width: 100%;
   overflow: hidden;
@@ -228,24 +230,39 @@ html[data-desktop='electron'] .rml-sidebar__toggle {
   transform: translateX(0);
 }
 
+.rml-chatrow__title-copy {
+  display: block;
+  flex: 0 0 auto;
+}
+
+.rml-chatrow__title-track .rml-chatrow__title-copy:first-child {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .rml-chatrow__title.is-overflowing:hover .rml-chatrow__title-track,
 .rml-chatrow:focus-visible .rml-chatrow__title.is-overflowing .rml-chatrow__title-track {
   max-width: none;
   overflow: visible;
   text-overflow: clip;
-  animation: rml-chat-title-scroll var(--rml-chat-title-duration) ease-in-out 0.35s infinite
-    alternate;
+  animation: rml-chat-title-scroll var(--rml-chat-title-duration) linear 0.35s infinite;
   will-change: transform;
 }
 
+.rml-chatrow__title.is-overflowing:hover .rml-chatrow__title-copy,
+.rml-chatrow:focus-visible .rml-chatrow__title.is-overflowing .rml-chatrow__title-copy {
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+}
+
 @keyframes rml-chat-title-scroll {
-  0%,
-  12% {
+  from {
     transform: translateX(0);
   }
 
-  88%,
-  100% {
+  to {
     transform: translateX(var(--rml-chat-title-distance));
   }
 }

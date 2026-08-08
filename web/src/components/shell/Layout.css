@@ -117,12 +117,12 @@ html[data-desktop='electron'] .rml-shell.is-sidebar-collapsed:not(.is-sidebar-an
   opacity: 0;
   transform: translate3d(-100%, 0, 0);
   box-shadow: none;
-  /* Leaving should feel responsive; the visiting state below deliberately uses
-     the slower layout timing for a calmer arrival. */
+  /* Fade the temporary panel before it retreats. The short transform delay makes
+     the exit legible instead of letting the full-width slide swallow the fade. */
   transition:
-    transform var(--dur) var(--ease),
-    opacity var(--dur-fast) var(--ease),
-    box-shadow var(--dur) var(--ease);
+    transform var(--dur) var(--ease) 80ms,
+    opacity 160ms var(--ease),
+    box-shadow 160ms var(--ease);
 }
 
 html[data-desktop='electron'] .rml-shell.is-sidebar-collapsed.is-sidebar-peeking .rml-shell__sidebar {
@@ -131,6 +131,7 @@ html[data-desktop='electron'] .rml-shell.is-sidebar-collapsed.is-sidebar-peeking
   transform: translate3d(0, 0, 0);
   box-shadow: var(--shadow-lg);
   transition-duration: var(--dur-slow), var(--dur), var(--dur-slow);
+  transition-delay: 0ms;
 }
 
 /* FLIP surfaces can overhang the committed column while they travel. Clip them

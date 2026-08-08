@@ -17,28 +17,31 @@ export interface ChatListSidebarProps {
 
 function HoverScrollTitle({ text }: { text: string }) {
   const viewportRef = useRef<HTMLSpanElement>(null)
-  const trackRef = useRef<HTMLSpanElement>(null)
+  const titleRef = useRef<HTMLSpanElement>(null)
   const [overflow, setOverflow] = useState(0)
+  const [cycleDistance, setCycleDistance] = useState(0)
 
   useEffect(() => {
     const viewport = viewportRef.current
-    const track = trackRef.current
-    if (!viewport || !track) return
+    const title = titleRef.current
+    if (!viewport || !title) return
 
     const measure = () => {
-      const nextOverflow = Math.max(0, Math.ceil(track.scrollWidth - viewport.clientWidth))
+      const titleWidth = Math.ceil(title.scrollWidth)
+      const nextOverflow = Math.max(0, titleWidth - viewport.clientWidth)
       setOverflow((current) => (current === nextOverflow ? current : nextOverflow))
+      setCycleDistance((current) => (current === titleWidth ? current : titleWidth))
     }
     const observer = new ResizeObserver(measure)
     observer.observe(viewport)
-    observer.observe(track)
+    observer.observe(title)
     measure()
     return () => observer.disconnect()
   }, [text])
 
   const style = {
-    '--rml-chat-title-distance': `-${overflow}px`,
-    '--rml-chat-title-duration': `${Math.min(10, Math.max(3.2, overflow / 30 + 2.4))}s`,
+    '--rml-chat-title-distance': `calc(-${cycleDistance}px - var(--rml-chat-title-gap))`,
+    '--rml-chat-title-duration': `${Math.min(14, Math.max(5, cycleDistance / 32))}s`,
   } as CSSProperties
 
   return (
@@ -46,8 +49,15 @@ function HoverScrollTitle({ text }: { text: string }) {
       ref={viewportRef}
       className={cx('rml-chatrow__title', overflow > 0 && 'is-overflowing')}
     >
-      <span ref={trackRef} className="rml-chatrow__title-track" style={style}>
-        <TypewriterText text={text} />
+      <span className="rml-chatrow__title-track" style={style}>
+        <span ref={titleRef} className="rml-chatrow__title-copy">
+          <TypewriterText text={text} />
+        </span>
+        {overflow > 0 ? (
+          <span className="rml-chatrow__title-copy" aria-hidden="true">
+            {text}
+          </span>
+        ) : null}
       </span>
     </span>
   )
