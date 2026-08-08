@@ -11,6 +11,7 @@ import type {
   ElaborationLevel,
   Message,
   PendingInput,
+  Project,
   Run,
   Source,
   Thread,
@@ -21,7 +22,17 @@ import type {
 // ---------------------------------------------------------------------------
 
 function rowToChat(row: any): Chat {
-  return { id: row.id, title: row.title, createdAt: row.created_at, updatedAt: row.updated_at };
+  return {
+    id: row.id,
+    title: row.title,
+    projectId: row.project_id ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToProject(row: any): Project {
+  return { id: row.id, name: row.name, createdAt: row.created_at, updatedAt: row.updated_at };
 }
 
 function rowToMessage(row: any): Message {
@@ -99,21 +110,46 @@ function rowToAsset(row: any): Asset {
 }
 
 // ---------------------------------------------------------------------------
-// chats
+// projects + chats
 // ---------------------------------------------------------------------------
 
-export function createChat(): Chat {
+export function createProject(name: string): Project {
   const id = randomUUID();
   const now = Date.now();
-  db.prepare(`INSERT INTO chats (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)`).run(
+  db.prepare(`INSERT INTO projects (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)`).run(
+    id,
+    name,
+    now,
+    now,
+  );
+  return { id, name, createdAt: now, updatedAt: now };
+}
+
+export function listProjects(): Project[] {
+  const rows = db.prepare(`SELECT * FROM projects ORDER BY created_at DESC`).all() as any[];
+  return rows.map(rowToProject);
+}
+
+export function getProject(id: string): Project | undefined {
+  const row = db.prepare(`SELECT * FROM projects WHERE id = ?`).get(id) as any;
+  return row ? rowToProject(row) : undefined;
+}
+
+export function createChat(projectId: string | null = null): Chat {
+  const id = randomUUID();
+  const now = Date.now();
+  db.prepare(
+    `INSERT INTO chats (id, title, project_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+  ).run(
     id,
     'New chat',
+    projectId,
     now,
     now,
   );
   // Workspace = server/data/workspaces/<chatId>/, created on chat creation.
   mkdirSync(path.join(WORKSPACES_DIR, id), { recursive: true });
-  return { id, title: 'New chat', createdAt: now, updatedAt: now };
+  return { id, title: 'New chat', projectId, createdAt: now, updatedAt: now };
 }
 
 export function listChats(): Chat[] {
@@ -124,6 +160,11 @@ export function listChats(): Chat[] {
 export function getChat(id: string): Chat | undefined {
   const row = db.prepare(`SELECT * FROM chats WHERE id = ?`).get(id) as any;
   return row ? rowToChat(row) : undefined;
+}
+
+export function setChatProject(id: string, projectId: string | null): Chat | undefined {
+  db.prepare(`UPDATE chats SET project_id = ? WHERE id = ?`).run(projectId, id);
+  return getChat(id);
 }
 
 export function deleteChat(id: string): void {

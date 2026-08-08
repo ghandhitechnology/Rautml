@@ -6,8 +6,11 @@
 //   GET    /api/settings                  → { keys, personalization }          (loopback only)
 //   PUT    /api/settings/keys             → { keys }                           (loopback only)
 //   PUT    /api/settings/personalization  → { personalization }                (loopback only)
+//   GET    /api/projects                  → Project[]
+//   POST   /api/projects                  → Project
 //   GET    /api/chats                     → Chat[] (desc by updated_at)
 //   POST   /api/chats                     → Chat
+//   PATCH  /api/chats/:id/project         → Chat
 //   DELETE /api/chats/:id                 → { ok: true }
 //   GET    /api/chats/:id                 → { chat, messages, assets, events, pendingInput, activeRun, sources }
 //   POST   /api/chats/:id/retitle         → { title, changed } using GPT-5.6 Luna
@@ -241,12 +244,39 @@ router.put('/settings/personalization', (req: Request, res: Response) => {
 // chats
 // ---------------------------------------------------------------------------
 
+router.get('/projects', (_req: Request, res: Response) => {
+  res.json(repo.listProjects());
+});
+
+router.post('/projects', (req: Request, res: Response) => {
+  const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+  if (!name) return fail(res, 400, 'Project name is required');
+  if (name.length > 80) return fail(res, 400, 'Project name must be 80 characters or fewer');
+  res.json(repo.createProject(name));
+});
+
 router.get('/chats', (_req: Request, res: Response) => {
   res.json(repo.listChats());
 });
 
-router.post('/chats', (_req: Request, res: Response) => {
-  res.json(repo.createChat());
+router.post('/chats', (req: Request, res: Response) => {
+  const projectId = req.body?.projectId;
+  if (projectId != null && typeof projectId !== 'string') {
+    return fail(res, 400, 'projectId must be a string or null');
+  }
+  if (projectId && !repo.getProject(projectId)) return fail(res, 404, 'Project not found');
+  res.json(repo.createChat(projectId || null));
+});
+
+router.patch('/chats/:id/project', (req: Request, res: Response) => {
+  const chatId = param(req, 'id');
+  if (!repo.getChat(chatId)) return fail(res, 404, 'Chat not found');
+  const projectId = req.body?.projectId;
+  if (projectId !== null && typeof projectId !== 'string') {
+    return fail(res, 400, 'projectId must be a string or null');
+  }
+  if (projectId && !repo.getProject(projectId)) return fail(res, 404, 'Project not found');
+  res.json(repo.setChatProject(chatId, projectId || null));
 });
 
 router.delete('/chats/:id', (req: Request, res: Response) => {

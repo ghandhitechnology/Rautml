@@ -33,6 +33,7 @@ import type {
   ModelInfo,
   Personalization,
   ProviderInfo,
+  Project,
   ProviderErrorEvent,
   PendingInput,
   SettingsSection,
@@ -117,6 +118,7 @@ export interface StagedUpload {
 export interface StoreState {
   /* chat list */
   chats: Chat[]
+  projects: Project[]
   chatsLoading: boolean
   activeChatId: string | null
   byChat: Record<string, ChatState>
@@ -190,7 +192,9 @@ export interface StoreState {
   setForkEffort: (effort: string) => void
   setElaboration: (level: ElaborationLevel) => void
   loadChats: () => Promise<void>
-  newChat: () => Promise<Chat | null>
+  newChat: (projectId?: string | null) => Promise<Chat | null>
+  createProject: (name: string) => Promise<Project | null>
+  moveChatToProject: (chatId: string, projectId: string | null) => Promise<void>
   /** Drop the untouched draft chat (list + server). No-op if it was typed into. */
   discardDraft: () => void
   removeChat: (chatId: string) => Promise<void>
@@ -1256,6 +1260,7 @@ if (typeof window !== 'undefined') {
 
 export const useStore = create<StoreState>()((set, get) => ({
   chats: [],
+  projects: [],
   chatsLoading: false,
   activeChatId: null,
   byChat: {},
@@ -1503,10 +1508,56 @@ export const useStore = create<StoreState>()((set, get) => ({
   loadChats: async () => {
     set({ chatsLoading: true })
     try {
-      const chats = await api.listChats()
-      set({ chats, chatsLoading: false, error: null })
+      const [chats, projects] = await Promise.all([api.listChats(), api.listProjects()])
+      set({ chats, projects, chatsLoading: false, error: null })
     } catch (err) {
       set({ chatsLoading: false, error: errorMessage(err) })
+    }
+  },
+
+  createProject: async (name) => {
+    const trimmed = name.trim()
+    if (!trimmed) return null
+    try {
+      const project = await api.createProject(trimmed)
+      set((s) => ({ projects: [project, ...s.projects], error: null }))
+      return project
+    } catch (err) {
+      set({ error: errorMessage(err) })
+      return null
+    }
+  },
+
+  moveChatToProject: async (chatId, projectId) => {
+    const previous = get().chats.find((chat) => chat.id === chatId)
+    if (!previous || previous.projectId === projectId) return
+    const patchChat = (chat: Chat) => (chat.id === chatId ? { ...chat, projectId } : chat)
+    set((s) => ({
+      chats: s.chats.map(patchChat),
+      byChat: s.byChat[chatId]
+        ? {
+            ...s.byChat,
+            [chatId]: { ...s.byChat[chatId], chat: patchChat(s.byChat[chatId].chat) },
+          }
+        : s.byChat,
+      error: null,
+    }))
+    try {
+      const chat = await api.moveChatToProject(chatId, projectId)
+      set((s) => ({
+        chats: s.chats.map((item) => (item.id === chatId ? chat : item)),
+        byChat: s.byChat[chatId]
+          ? { ...s.byChat, [chatId]: { ...s.byChat[chatId], chat } }
+          : s.byChat,
+      }))
+    } catch (err) {
+      set((s) => ({
+        chats: s.chats.map((item) => (item.id === chatId ? previous : item)),
+        byChat: s.byChat[chatId]
+          ? { ...s.byChat, [chatId]: { ...s.byChat[chatId], chat: previous } }
+          : s.byChat,
+        error: errorMessage(err),
+      }))
     }
   },
 
@@ -1553,22 +1604,28 @@ export const useStore = create<StoreState>()((set, get) => ({
     }
   },
 
-  newChat: async () => {
+  newChat: async (projectId = null) => {
     // A draft is untouched and already on screen by construction — hand it back.
     const draftChatId = get().draftChatId
-    if (draftChatId) return get().chats.find((c) => c.id === draftChatId) ?? null
+    if (draftChatId) {
+      const draft = get().chats.find((c) => c.id === draftChatId) ?? null
+      if (draft && draft.projectId !== projectId) await get().moveChatToProject(draft.id, projectId)
+      return get().chats.find((c) => c.id === draftChatId) ?? null
+    }
     // Rapid clicks: the first create is still in flight, don't start a second.
     if (creatingChat) return null
     // Sitting in a blank chat from an earlier session? That *is* the new chat.
     const activeChatId = get().activeChatId
     if (activeChatId && isUntouched(get().byChat[activeChatId])) {
       set({ draftChatId: activeChatId })
+      const active = get().chats.find((c) => c.id === activeChatId)
+      if (active && active.projectId !== projectId) await get().moveChatToProject(active.id, projectId)
       return get().chats.find((c) => c.id === activeChatId) ?? null
     }
 
     creatingChat = true
     try {
-      const chat = await api.createChat()
+      const chat = await api.createChat(projectId)
       set((s) => ({
         chats: [chat, ...s.chats.filter((c) => c.id !== chat.id)],
         draftChatId: chat.id,
@@ -1655,7 +1712,13 @@ export const useStore = create<StoreState>()((set, get) => ({
         [chatId]: {
           ...(s.byChat[chatId] ??
             emptyChatState(
-              known ?? { id: chatId, title: 'New chat', createdAt: Date.now(), updatedAt: Date.now() },
+              known ?? {
+                id: chatId,
+                title: 'New chat',
+                projectId: null,
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+              },
             )),
           loading: true,
           error: null,
@@ -2137,6 +2200,7 @@ export function activeChatState(state: StoreState): ChatState | null {
 }
 
 export const useChats = () => useStore((s) => s.chats)
+export const useProjects = () => useStore((s) => s.projects)
 
 /** The open chat is a blank one — "New chat" has nothing left to create. */
 export const useOnBlankChat = () =>

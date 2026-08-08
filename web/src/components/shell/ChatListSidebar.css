@@ -92,14 +92,22 @@ html[data-desktop='electron'] .rml-sidebar__toggle {
   stroke-linejoin: round;
 }
 
-/* --------------------------------------------------------------- new chat */
+/* ---------------------------------------------------------- primary actions */
+
+.rml-sidebar__actions {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: calc(100% - var(--sp-2));
+  margin: 0 var(--sp-1) var(--sp-3);
+}
 
 .rml-newchat {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  width: calc(100% - var(--sp-2));
-  margin: 0 var(--sp-1) var(--sp-4);
+  width: 100%;
   padding: 9px var(--sp-3);
   border-radius: var(--r-md);
   background: var(--surface);
@@ -145,6 +153,128 @@ html[data-desktop='electron'] .rml-sidebar__toggle {
   cursor: default;
 }
 
+.rml-newproject {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 7px var(--sp-3);
+  border-radius: var(--r-md);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.rml-newproject:hover,
+.rml-newproject[aria-expanded='true'] {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.rml-newproject:active {
+  transform: scale(0.99);
+}
+
+.rml-newproject > svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.55;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.rml-project-composer {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  padding: 4px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  transform-origin: top center;
+}
+
+.rml-project-composer:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent), var(--shadow-sm);
+}
+
+.rml-project-composer input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px 0 10px;
+  color: var(--text);
+  font-size: var(--fs-sm);
+  background: transparent;
+  outline: none;
+}
+
+.rml-project-composer input::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+.rml-project-composer > button {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease),
+    opacity var(--dur-fast) var(--ease);
+}
+
+.rml-project-composer > button:hover:not(:disabled) {
+  background: var(--accent-hover);
+  transform: translateY(-1px);
+}
+
+.rml-project-composer > button:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.rml-project-composer > button:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+
+.rml-project-composer svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.rml-project-composer__spinner {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid color-mix(in srgb, currentColor 32%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: rml-project-spin 0.7s linear infinite;
+}
+
+@keyframes rml-project-spin {
+  to { transform: rotate(360deg); }
+}
+
 /* -------------------------------------------------------------- chat list */
 
 .rml-chatlist {
@@ -162,17 +292,238 @@ html[data-desktop='electron'] .rml-sidebar__toggle {
   gap: 2px;
 }
 
+.rml-chatlist__section {
+  border-radius: var(--r-md);
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+.rml-chatlist__section--unfiled {
+  margin-top: var(--sp-4);
+}
+
+.rml-chatlist__section.is-drop-target {
+  background: color-mix(in srgb, var(--accent-soft) 72%, transparent);
+}
+
+.rml-chatlist__label {
+  margin: 0 var(--sp-2) 5px;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.rml-project-list {
+  gap: 1px !important;
+}
+
+.rml-project {
+  min-width: 0;
+}
+
+.rml-project__head {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  border-radius: var(--r-md);
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
+}
+
+.rml-project__head:hover {
+  background: var(--hover);
+}
+
+.rml-project__head.is-drop-target {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 48%, transparent);
+}
+
+.rml-project__toggle {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 4px 0 6px;
+  color: var(--text);
+  text-align: left;
+}
+
+.rml-project__chevron {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform var(--dur) var(--ease);
+}
+
+.rml-project__toggle[aria-expanded='true'] .rml-project__chevron {
+  transform: rotate(90deg);
+}
+
+.rml-project__folder {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  fill: color-mix(in srgb, var(--accent-soft) 65%, transparent);
+  stroke: color-mix(in srgb, var(--accent) 72%, var(--text-muted));
+  stroke-width: 1.45;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.rml-project__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: 560;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rml-project__count {
+  flex: 0 0 auto;
+  min-width: 17px;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.rml-project__newchat {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-right: 4px;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  opacity: 0;
+  transition:
+    opacity var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.rml-project__head:hover .rml-project__newchat,
+.rml-project__head:focus-within .rml-project__newchat {
+  opacity: 1;
+}
+
+.rml-project__newchat:hover:not(:disabled) {
+  background: var(--pressed);
+  color: var(--accent-hover);
+  transform: translateY(-1px);
+}
+
+.rml-project__newchat:disabled {
+  opacity: 0.28;
+  cursor: default;
+}
+
+.rml-project__newchat svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.rml-project__body {
+  overflow: hidden;
+}
+
+.rml-chatrow-wrap--nested {
+  margin-left: 13px;
+}
+
+.rml-project__empty {
+  width: calc(100% - 28px);
+  margin: 2px 4px 5px 24px;
+  padding: 7px 9px;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+  text-align: left;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+
+.rml-project__empty:hover,
+.rml-project__empty.is-drop-target {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+  background: color-mix(in srgb, var(--accent-soft) 50%, transparent);
+  color: var(--text);
+}
+
 .rml-chatrow {
   position: relative;
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  padding: 8px var(--sp-2) 8px var(--sp-3);
+  padding: 8px var(--sp-2) 8px 20px;
   border-radius: var(--r-md);
   cursor: pointer;
   transition:
     background-color var(--dur-fast) var(--ease),
     color var(--dur-fast) var(--ease);
+}
+
+.rml-chatrow__open {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  color: inherit;
+  text-align: left;
+}
+
+.rml-chatrow.is-dragging {
+  cursor: grabbing;
+}
+
+.rml-chatrow__drag {
+  position: absolute;
+  left: 5px;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 12px;
+  height: 16px;
+  color: var(--text-muted);
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity var(--dur-fast) var(--ease);
+  pointer-events: none;
+}
+
+.rml-chatrow__drag svg {
+  width: 12px;
+  height: 12px;
+  fill: currentColor;
+}
+
+.rml-chatrow:hover .rml-chatrow__drag,
+.rml-chatrow__open:focus-visible .rml-chatrow__drag,
+.rml-chatrow.is-dragging .rml-chatrow__drag {
+  opacity: 0.72;
 }
 
 .rml-chatrow:hover {
@@ -306,6 +657,61 @@ html[data-desktop='electron'] .rml-sidebar__toggle {
     color var(--dur-fast) var(--ease);
 }
 
+.rml-chatrow__move {
+  position: relative;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  opacity: 0;
+  transform: scale(0.9);
+  transition:
+    opacity var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.rml-chatrow__move > svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.rml-chatrow__move select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.rml-chatrow:hover .rml-chatrow__move,
+.rml-chatrow:focus-within .rml-chatrow__move {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.rml-chatrow__move:hover,
+.rml-chatrow__move:focus-within {
+  background: var(--pressed);
+  color: var(--accent-hover);
+}
+
+.rml-chatrow__move:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .rml-chatrow__delete svg {
   width: 15px;
   height: 15px;
@@ -323,9 +729,34 @@ html[data-desktop='electron'] .rml-sidebar__toggle {
   transform: scale(1);
 }
 
+.rml-unfiled-drop {
+  width: calc(100% - var(--sp-2));
+  margin: var(--sp-3) var(--sp-1) 0;
+  padding: 9px;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-md);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.rml-unfiled-drop.is-drop-target {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
 /* no hover on touch — the active row keeps its delete reachable */
 @media (hover: none) {
   .rml-chatrow.is-active .rml-chatrow__delete {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .rml-chatrow__move {
     opacity: 1;
     transform: scale(1);
   }
@@ -384,13 +815,21 @@ html[data-desktop='electron'] .rml-sidebar.is-collapsed .rml-sidebar__head {
 }
 
 .rml-sidebar.is-collapsed .rml-brand,
-.rml-sidebar.is-collapsed .rml-chatlist {
+.rml-sidebar.is-collapsed .rml-chatlist,
+.rml-sidebar.is-collapsed .rml-newproject,
+.rml-sidebar.is-collapsed .rml-project-composer {
   display: none;
 }
 
 .rml-sidebar.is-collapsed .rml-sidebar__toggle {
   width: 32px;
   height: 32px;
+}
+
+.rml-sidebar.is-collapsed .rml-sidebar__actions {
+  align-items: center;
+  width: 32px;
+  margin-inline: auto;
 }
 
 .rml-sidebar.is-collapsed .rml-newchat {
@@ -437,7 +876,7 @@ html[data-desktop='electron'] .rml-sidebar.is-collapsed .rml-sidebar__head {
     justify-content: flex-start;
     width: calc(100% - var(--sp-2));
     height: auto;
-    margin: 0 var(--sp-1) var(--sp-4);
+    margin: 0;
     padding: 9px var(--sp-3);
   }
 
@@ -447,5 +886,31 @@ html[data-desktop='electron'] .rml-sidebar.is-collapsed .rml-sidebar__head {
 
   .rml-sidebar.is-collapsed .rml-chatlist {
     display: block;
+  }
+
+  .rml-sidebar.is-collapsed .rml-sidebar__actions {
+    align-items: stretch;
+    width: calc(100% - var(--sp-2));
+    margin: 0 var(--sp-1) var(--sp-3);
+  }
+
+  .rml-sidebar.is-collapsed .rml-newproject {
+    display: flex;
+  }
+
+  .rml-sidebar.is-collapsed .rml-project-composer {
+    display: flex;
+  }
+}
+
+@media (hover: none) {
+  .rml-project__newchat {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rml-project-composer__spinner {
+    animation-duration: 1.4s;
   }
 }

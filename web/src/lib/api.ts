@@ -8,6 +8,7 @@ import type {
   FollowUpAttachment,
   ModelInfo,
   Personalization,
+  Project,
   ProviderInfo,
   SettingsPayload,
   Source,
@@ -70,9 +71,27 @@ export function listChats(): Promise<Chat[]> {
   return request<Chat[]>('/chats')
 }
 
+/** GET /api/projects → Project[] (newest first) */
+export function listProjects(): Promise<Project[]> {
+  return request<Project[]>('/projects')
+}
+
+/** POST /api/projects → Project */
+export function createProject(name: string): Promise<Project> {
+  return request<Project>('/projects', { method: 'POST', body: JSON.stringify({ name }) })
+}
+
 /** POST /api/chats → Chat */
-export function createChat(): Promise<Chat> {
-  return request<Chat>('/chats', { method: 'POST', body: JSON.stringify({}) })
+export function createChat(projectId: string | null = null): Promise<Chat> {
+  return request<Chat>('/chats', { method: 'POST', body: JSON.stringify({ projectId }) })
+}
+
+/** PATCH /api/chats/:id/project → Chat */
+export function moveChatToProject(chatId: string, projectId: string | null): Promise<Chat> {
+  return request<Chat>(`/chats/${encodeURIComponent(chatId)}/project`, {
+    method: 'PATCH',
+    body: JSON.stringify({ projectId }),
+  })
 }
 
 /** DELETE /api/chats/:id */

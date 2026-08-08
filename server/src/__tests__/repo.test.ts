@@ -7,6 +7,29 @@ import * as sse from '../sse.js';
 // NOTE: test files run in parallel processes against the shared dev database,
 // so global-sweep counts (reapStaleRuns) are asserted with >=, never exactly.
 
+describe('projects', () => {
+  it('creates projects and moves chats in and out without changing chat recency', () => {
+    const project = repo.createProject('Research backlog');
+    const chat = repo.createChat(project.id);
+    try {
+      assert.equal(repo.getProject(project.id)?.name, 'Research backlog');
+      assert.ok(repo.listProjects().some((item) => item.id === project.id));
+      assert.equal(repo.getChat(chat.id)?.projectId, project.id);
+
+      const movedOut = repo.setChatProject(chat.id, null);
+      assert.equal(movedOut?.projectId, null);
+      assert.equal(movedOut?.updatedAt, chat.updatedAt);
+
+      const movedBack = repo.setChatProject(chat.id, project.id);
+      assert.equal(movedBack?.projectId, project.id);
+      assert.equal(movedBack?.updatedAt, chat.updatedAt);
+    } finally {
+      repo.deleteChat(chat.id);
+      db.prepare(`DELETE FROM projects WHERE id = ?`).run(project.id);
+    }
+  });
+});
+
 describe('boot reaper', () => {
   it('errors stranded running runs + streaming messages, spares parked runs', () => {
     const chat = repo.createChat();
