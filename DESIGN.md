@@ -210,6 +210,7 @@ Signature geometry details: the user bubble notches its bottom-right corner (16p
 
 ### Navigation
 - **Sidebar:** Linen column, hairline right border. Chat rows are 12px-radius ghosts: muted text warming to ink on hover, active row raised on Paper with a 2.5px coral rail on its left edge; delete affordance appears only on hover and arms to full coral. Empty state: dashed hairline card with serif title.
+- **Projects:** “New project” sits directly below New chat as the quieter, borderless action and reveals a compact Paper naming pill with resting elevation. Project headers use a neutral chevron, coral-tinted folder glyph, chat count, and a hover/focus plus action for creating directly inside. Chats have one home: a project chat is nested only under its folder, never duplicated in the unfiled list. Drag-and-drop is the fast path; every chat row also exposes a native move selector on hover, focus, and touch for keyboard-accessible organization.
 
 ### Glass Chrome (signature)
 The document-mode furniture: a pill header bar (title in serif, live status dot, version picker, icon tools) and a footer dock (response sheet, activity strip, composer) — all `--glass` translucency, 18px backdrop blur, hairline glass borders, floating over the generated page. A scrim gradient grounds the header. On charcoal, glass gains a lit edge.

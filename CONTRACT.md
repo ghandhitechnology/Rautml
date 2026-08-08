@@ -88,7 +88,8 @@ boot quarantines it — renamed to `rautml.db.corrupt-<timestamp>` next to the o
 with a fresh database so the app always comes up.
 
 ```sql
-chats(id TEXT PK, title TEXT, created_at INTEGER, updated_at INTEGER);
+projects(id TEXT PK, name TEXT NOT NULL, created_at INTEGER, updated_at INTEGER);
+chats(id TEXT PK, title TEXT, project_id TEXT NULL, created_at INTEGER, updated_at INTEGER);
 -- thread: 'main' | 'fork'
 messages(id TEXT PK, chat_id TEXT, thread TEXT, role TEXT, content TEXT,
          status TEXT DEFAULT 'complete',  -- 'streaming'|'complete'|'error'
@@ -123,8 +124,11 @@ settings(key TEXT PK, value TEXT, updated_at INTEGER);
 
 ## HTTP API (all JSON under /api)
 
+- `GET  /api/projects` → `Project[]` (newest first)
+- `POST /api/projects` `{ name: string }` → `Project`
 - `GET  /api/chats` → `Chat[]` (desc by updated_at)
-- `POST /api/chats` `{}` → `Chat` (title "New chat"; auto-titled after first exchange)
+- `POST /api/chats` `{ projectId?: string|null }` → `Chat` (title "New chat"; auto-titled after first exchange)
+- `PATCH /api/chats/:id/project` `{ projectId: string|null }` → `Chat`
 - `DELETE /api/chats/:id`
 - `GET  /api/chats/:id` → `{ chat, messages, assets: AssetWithVersions[], events: ChatEvent[], pendingInput: PendingInput|null, activeRun: Run|null }`
 - `POST /api/chats/:id/retitle` → `{ title: string, changed: boolean }` (GPT-5.6 Luna at effort `none`; invoked when leaving a chat that changed since its initial title)
@@ -396,7 +400,8 @@ Motion: framer-motion; standard easing `[0.22, 1, 0.36, 1]`; durations 200–450
 
 ```ts
 type Thread = 'main'|'fork';
-interface Chat { id:string; title:string; createdAt:number; updatedAt:number }
+interface Project { id:string; name:string; createdAt:number; updatedAt:number }
+interface Chat { id:string; title:string; projectId:string|null; createdAt:number; updatedAt:number }
 type FollowUpAttachmentKind = 'text'|'diagram';
 interface FollowUpAttachment { id:string; kind:FollowUpAttachmentKind; label:string; preview:string;
   content:string; assetId:string; assetTitle:string; version:number }

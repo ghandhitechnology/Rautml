@@ -21,9 +21,17 @@ mkdirSync(SOURCES_DIR, { recursive: true });
 // Full schema DDL per CONTRACT.md — idempotent (CREATE TABLE/INDEX IF NOT EXISTS)
 // so this can safely run on every boot.
 const SCHEMA_DDL = `
+CREATE TABLE IF NOT EXISTS projects (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  created_at INTEGER,
+  updated_at INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS chats (
   id TEXT PRIMARY KEY,
   title TEXT,
+  project_id TEXT,
   created_at INTEGER,
   updated_at INTEGER
 );
@@ -149,6 +157,18 @@ CREATE INDEX IF NOT EXISTS idx_source_chunks_chat ON source_chunks (chat_id);
 
 /** Column-level migrations, additive only; safe to run on every boot. */
 function applyMigrations(database: DatabaseSync): void {
+  // Migration: chats can be filed into a user-created project. Existing chats
+  // remain unfiled and continue to appear at the top level of the sidebar.
+  {
+    const chatCols = (
+      database.prepare(`PRAGMA table_info(chats)`).all() as { name: string }[]
+    ).map((c) => c.name);
+    if (!chatCols.includes('project_id')) {
+      database.exec(`ALTER TABLE chats ADD COLUMN project_id TEXT`);
+    }
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_chats_project ON chats (project_id, updated_at)`);
+  }
+
   // Migration: runs remember which model + reasoning effort + elaboration level
   // they were started with, so a parked run resumes on the same settings after a
   // server restart.
