@@ -5,10 +5,8 @@ GPT-5.6-sol researches it (web/image search, page reads, bash) and builds a rich
 HTML document that takes over the chat view. Small follow-up questions live in a forked side
 chat (the coral ball) so the page never gets buried.
 
-> **macOS install:** Rautml is currently ad-hoc signed, so Gatekeeper blocks the first launch —
-> right-click the app and choose **Open** (or open it once, then **System Settings → Privacy &
-> Security → Open Anyway**). This is the documented workaround until Developer ID signing +
-> notarization lands.
+> **macOS install:** Release builds are signed with a Developer ID certificate and notarized by
+> Apple, so they open normally through Gatekeeper.
 
 ## macOS app
 
@@ -38,17 +36,9 @@ Use **Rautml → Check for Updates…** to open the latest private release, then
 the app in `/Applications`. GitHub login is required because the repository is private. This manual
 installation path does not require an Apple Developer account or a continuously running server.
 
-Personal builds use a complete ad-hoc macOS signature, but Apple does not trust or notarize that
-signature. On first launch, try opening Rautml once, then open **System Settings → Privacy &
-Security** and choose **Open Anyway**. If Finder specifically says the app is damaged, remove the
-download quarantine after copying this trusted personal build to Applications:
-
-```bash
-xattr -dr com.apple.quarantine /Applications/Rautml.app
-open /Applications/Rautml.app
-```
-
-Only use that command for a build downloaded from this repository. Each release includes
+Release automation expects the Developer ID certificate in `MACOS_CERTIFICATE` (base64 PKCS#12),
+its password in `MACOS_CERTIFICATE_PASSWORD`, and App Store Connect API credentials in
+`APPLE_API_KEY`, `APPLE_API_KEY_ID`, and `APPLE_API_ISSUER`. Each release also includes
 `SHA256SUMS.txt` so the downloaded installer can be checked before opening it.
 
 Packaged builds now auto-update via GitHub Releases — the app checks for a newer release and updates

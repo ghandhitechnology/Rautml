@@ -75,9 +75,11 @@
     "mac": {
       "category": "public.app-category.productivity",
       "icon": "build/icon.icns",
-      "identity": "-",
+      "identity": "TAEWOOK HA (C8M34MMT8W)",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
       "target": [
         "dmg",
         "zip"
