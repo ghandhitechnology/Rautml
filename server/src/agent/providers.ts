@@ -5,6 +5,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import type { ModelInfo, ProviderInfo, ProviderAuthStatus } from '../types.js';
 import type { CompatibleTransport } from './openrouter.js';
+import { fetchWithHeadersTimeout } from './http.js';
 
 const exec = promisify(execFile);
 const HOME = homedir();
@@ -289,7 +290,7 @@ async function freshKimiToken(): Promise<string | null> {
     grant_type: 'refresh_token',
     refresh_token: token.refresh_token,
   });
-  const response = await fetch('https://auth.kimi.com/api/oauth/token', {
+  const response = await fetchWithHeadersTimeout('https://auth.kimi.com/api/oauth/token', {
     method: 'POST', headers: { ...kimiHeaders(), 'Content-Type': 'application/x-www-form-urlencoded' }, body,
   });
   if (!response.ok) throw new ProviderUnavailableError('kimi-code', `Kimi OAuth refresh failed (${response.status}). Run \`kimi login\`.`);

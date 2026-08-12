@@ -32,14 +32,27 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Every request is bounded so a wedged server surfaces an error instead of
+ * leaving the UI on a spinner forever. Callers can override per request via
+ * `init.signal`.
+ */
+const DEFAULT_TIMEOUT_MS = 60_000
+/** Endpoints that await an LLM/provider round-trip inline get a longer leash. */
+const LLM_ROUTE_TIMEOUT_MS = 180_000
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response
   try {
     res = await fetch(`${API_BASE}${path}`, {
       headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
+      signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
       ...init,
     })
   } catch (err) {
+    if (err instanceof DOMException && err.name === 'TimeoutError') {
+      throw new ApiError(0, 'The server took too long to respond. Try again.')
+    }
     throw new ApiError(0, err instanceof Error ? err.message : 'Network error')
   }
 
@@ -111,7 +124,9 @@ export function retitleChat(
 ): Promise<{ title: string; changed: boolean }> {
   return request<{ title: string; changed: boolean }>(
     `/chats/${encodeURIComponent(chatId)}/retitle`,
-    { method: 'POST', keepalive },
+    // The route awaits a full LLM completion inline, so it can legitimately
+    // take minutes on a flaky provider connection.
+    { method: 'POST', keepalive, signal: AbortSignal.timeout(LLM_ROUTE_TIMEOUT_MS) },
   )
 }
 
@@ -135,6 +150,8 @@ export function sendMessage(
 ): Promise<{ runId: string }> {
   return request<{ runId: string }>(`/chats/${encodeURIComponent(chatId)}/messages`, {
     method: 'POST',
+    // The route awaits provider selection (possibly a token refresh) inline.
+    signal: AbortSignal.timeout(LLM_ROUTE_TIMEOUT_MS),
     body: JSON.stringify({ content, thread, ...selection, attachments, sourceIds }),
   })
 }
@@ -258,7 +275,9 @@ export async function fetchAssetHtml(
   assetId: string,
   version: number | 'latest' = 'latest',
 ): Promise<string> {
-  const res = await fetch(assetUrl(assetId, version))
+  const res = await fetch(assetUrl(assetId, version), {
+    signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+  })
   if (!res.ok) throw new ApiError(res.status, `Failed to load asset (${res.status})`)
   return res.text()
 }

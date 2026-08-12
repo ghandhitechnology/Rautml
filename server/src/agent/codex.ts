@@ -27,6 +27,7 @@ import type {
   ToolChoice,
   OpenRouterTool,
 } from './openrouter.js';
+import { fetchWithHeadersTimeout } from './http.js';
 
 /** Override to point at a proxy or a local mock (tests use this). */
 const ENDPOINT =
@@ -142,7 +143,7 @@ function jwtExpMs(token: string): number {
 }
 
 async function refreshTokens(auth: CodexAuthFile): Promise<CodexTokens> {
-  const res = await fetch(TOKEN_ENDPOINT, {
+  const res = await fetchWithHeadersTimeout(TOKEN_ENDPOINT, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -306,7 +307,7 @@ function rejectsSummary(err: unknown): boolean {
 async function postResponses(body: unknown, tokens: CodexTokens, signal?: AbortSignal): Promise<Response> {
   let res: Response;
   try {
-    res = await fetch(ENDPOINT, {
+    res = await fetchWithHeadersTimeout(ENDPOINT, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${tokens.access_token}`,
