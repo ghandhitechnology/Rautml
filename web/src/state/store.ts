@@ -1157,6 +1157,12 @@ const recentChatIds: string[] = []
 /** Guards against a double-click racing two POST /api/chats before either lands. */
 let creatingChat = false
 
+/* In-flight sends per draft slot (`chatId:thread`), in submission order.
+ * Overlapping sends fail in request-completion order, but their text must be
+ * handed back to the composer in the order the user submitted it — so the
+ * restored tail is rebuilt from this list, not appended per catch. */
+const sendOrder = new Map<string, { localId: string; text: string; failed: boolean }[]>()
+
 function rememberChat(chatId: string) {
   const previous = recentChatIds.indexOf(chatId)
   if (previous !== -1) recentChatIds.splice(previous, 1)
@@ -1661,13 +1667,22 @@ export const useStore = create<StoreState>()((set, get) => ({
 
   removeChat: async (chatId) => {
     const wasActive = get().activeChatId === chatId
+    const wasDraft = get().draftChatId === chatId
     if (wasActive) {
       get().clearFollowUpAttachments()
       get().clearStagedUploads()
     }
-    if (get().draftChatId === chatId) set({ draftChatId: null })
+    if (wasDraft) set({ draftChatId: null })
     // optimistic — the row disappears the instant you click.
-    const snapshot = get().chats
+    const chatIndex = get().chats.findIndex((c) => c.id === chatId)
+    const snapshot = {
+      chatRow: chatIndex >= 0 ? get().chats[chatIndex] : undefined,
+      chatIndex,
+      entry: get().byChat[chatId],
+      titleDirty: get().titleDirty[chatId],
+      mainDraft: get().drafts[`${chatId}:main`],
+      forkDraft: get().drafts[`${chatId}:fork`],
+    }
     set((s) => {
       const byChat = { ...s.byChat }
       const titleDirty = { ...s.titleDirty }
@@ -1685,7 +1700,35 @@ export const useStore = create<StoreState>()((set, get) => ({
     try {
       await api.deleteChat(chatId)
     } catch (err) {
-      set({ chats: snapshot, error: errorMessage(err) })
+      // The chat still exists server-side — put back everything the
+      // optimistic removal threw away, drafts included.
+      set((s) => {
+        // Re-insert only the removed row into the *current* list; assigning
+        // the pre-delete array would revert chats created or updated since.
+        const chats = s.chats.filter((c) => c.id !== chatId)
+        if (snapshot.chatRow) {
+          chats.splice(Math.min(snapshot.chatIndex, chats.length), 0, snapshot.chatRow)
+        }
+        return {
+          chats,
+          byChat: snapshot.entry ? { ...s.byChat, [chatId]: snapshot.entry } : s.byChat,
+          titleDirty:
+            snapshot.titleDirty === undefined
+              ? s.titleDirty
+              : { ...s.titleDirty, [chatId]: snapshot.titleDirty },
+          drafts: {
+            ...s.drafts,
+            ...(snapshot.mainDraft !== undefined ? { [`${chatId}:main`]: snapshot.mainDraft } : {}),
+            ...(snapshot.forkDraft !== undefined ? { [`${chatId}:fork`]: snapshot.forkDraft } : {}),
+          },
+          draftChatId: wasDraft ? chatId : s.draftChatId,
+          error: errorMessage(err),
+        }
+      })
+      // The active chat was ejected along with the row; reopening rehydrates
+      // its state and reconnects the event stream. If the user has already
+      // opened another chat, stay out of their way.
+      if (wasActive && !get().activeChatId) void get().openChat(chatId)
     }
   },
 
@@ -1786,6 +1829,10 @@ export const useStore = create<StoreState>()((set, get) => ({
         : []
 
     const localId = uid('local-')
+    const draftKey = `${chatId}:${thread}`
+    const order = sendOrder.get(draftKey) ?? []
+    order.push({ localId, text: trimmed, failed: false })
+    sendOrder.set(draftKey, order)
     const optimistic: Message = {
       id: localId,
       chatId,
@@ -1836,6 +1883,11 @@ export const useStore = create<StoreState>()((set, get) => ({
         context,
         stagedSourceIds,
       )
+      // This send landed; drop it and any previously failed entries (their
+      // text is already back in the draft the user is looking at).
+      const remaining = order.filter((o) => o.localId !== localId && !o.failed)
+      if (remaining.length) sendOrder.set(draftKey, remaining)
+      else sendOrder.delete(draftKey)
       if (stagedSourceIds.length) {
         const sent = new Set(stagedSourceIds)
         set((s) => ({
@@ -1884,10 +1936,35 @@ export const useStore = create<StoreState>()((set, get) => ({
       }
     } catch (err) {
       set((s) => {
+        // A failed send must not eat what was typed: hand the text back to
+        // the composer. Overlapping sends fail in request-completion order,
+        // so rebuild the restored tail from the submission-ordered list —
+        // the draft must read A then B, never B then A.
+        const prevTail = order
+          .filter((o) => o.failed)
+          .map((o) => o.text)
+          .join('\n')
+        const entry = order.find((o) => o.localId === localId)
+        if (entry) entry.failed = true
+        const tail = order
+          .filter((o) => o.failed)
+          .map((o) => o.text)
+          .join('\n')
+        const currentDraft = s.drafts[draftKey] ?? ''
+        // Strip the previously restored tail wherever the user's newer
+        // typing left it — as a suffix or a prefix — so it isn't duplicated.
+        let base = currentDraft
+        if (prevTail) {
+          if (base.endsWith(prevTail)) base = base.slice(0, -prevTail.length).replace(/\n$/, '')
+          else if (base.startsWith(prevTail)) base = base.slice(prevTail.length).replace(/^\n/, '')
+        }
+        const restored = tail ? (base ? `${base}\n${tail}` : tail) : base
+        const drafts = restored ? { ...s.drafts, [draftKey]: restored } : s.drafts
         const current = s.byChat[chatId]
-        if (!current) return { error: errorMessage(err) }
+        if (!current) return { error: errorMessage(err), drafts }
         return {
           error: errorMessage(err),
+          drafts,
           byChat: {
             ...s.byChat,
             [chatId]: {
@@ -1948,6 +2025,7 @@ export const useStore = create<StoreState>()((set, get) => ({
     if (!chatId) return
     const currentChat = get().byChat[chatId]
     const hadInitialExchange = !!currentChat && isAfterInitialExchange(currentChat)
+    const priorPending = currentChat?.pendingInput
     // Lock the chips in immediately; the server echoes input.resolved right after.
     set((s) => {
       const cs = s.byChat[chatId]
@@ -1971,7 +2049,30 @@ export const useStore = create<StoreState>()((set, get) => ({
         set((s) => ({ titleDirty: { ...s.titleDirty, [chatId]: true } }))
       }
     } catch (err) {
-      set({ error: errorMessage(err) })
+      // The answer never reached the server: the run is still parked in
+      // awaiting_input, so unlock the chips again and let the user retry —
+      // otherwise the run stays stuck until a full reload rehydrates it.
+      set((s) => {
+        const cs = s.byChat[chatId]
+        if (!cs) return { error: errorMessage(err) }
+        const unmark = (list: InputRequest[]) =>
+          list.map((r) => (r.id === pendingInputId ? { ...r, resolved: false, value: undefined } : r))
+        return {
+          error: errorMessage(err),
+          byChat: {
+            ...s.byChat,
+            [chatId]: {
+              ...cs,
+              inputRequests: {
+                main: unmark(cs.inputRequests.main),
+                fork: unmark(cs.inputRequests.fork),
+              },
+              pendingInput:
+                cs.pendingInput ?? (priorPending?.id === pendingInputId ? priorPending : null),
+            },
+          },
+        }
+      })
     }
   },
 

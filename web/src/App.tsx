@@ -83,7 +83,9 @@ export default function App() {
   const sendIntoNewChat = useCallback(
     async (content: string) => {
       const chat = await newChat()
-      if (!chat) return
+      // Reject so the composer can hand the text back; newChat has already
+      // surfaced the store error.
+      if (!chat) throw new Error('Chat creation failed')
       await sendMessage('main', content)
     },
     [newChat, sendMessage],
