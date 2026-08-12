@@ -1668,8 +1668,10 @@ export const useStore = create<StoreState>()((set, get) => ({
     }
     if (wasDraft) set({ draftChatId: null })
     // optimistic — the row disappears the instant you click.
+    const chatIndex = get().chats.findIndex((c) => c.id === chatId)
     const snapshot = {
-      chats: get().chats,
+      chatRow: chatIndex >= 0 ? get().chats[chatIndex] : undefined,
+      chatIndex,
       entry: get().byChat[chatId],
       titleDirty: get().titleDirty[chatId],
       mainDraft: get().drafts[`${chatId}:main`],
@@ -1694,24 +1696,33 @@ export const useStore = create<StoreState>()((set, get) => ({
     } catch (err) {
       // The chat still exists server-side — put back everything the
       // optimistic removal threw away, drafts included.
-      set((s) => ({
-        chats: snapshot.chats,
-        byChat: snapshot.entry ? { ...s.byChat, [chatId]: snapshot.entry } : s.byChat,
-        titleDirty:
-          snapshot.titleDirty === undefined
-            ? s.titleDirty
-            : { ...s.titleDirty, [chatId]: snapshot.titleDirty },
-        drafts: {
-          ...s.drafts,
-          ...(snapshot.mainDraft !== undefined ? { [`${chatId}:main`]: snapshot.mainDraft } : {}),
-          ...(snapshot.forkDraft !== undefined ? { [`${chatId}:fork`]: snapshot.forkDraft } : {}),
-        },
-        draftChatId: wasDraft ? chatId : s.draftChatId,
-        error: errorMessage(err),
-      }))
+      set((s) => {
+        // Re-insert only the removed row into the *current* list; assigning
+        // the pre-delete array would revert chats created or updated since.
+        const chats = s.chats.filter((c) => c.id !== chatId)
+        if (snapshot.chatRow) {
+          chats.splice(Math.min(snapshot.chatIndex, chats.length), 0, snapshot.chatRow)
+        }
+        return {
+          chats,
+          byChat: snapshot.entry ? { ...s.byChat, [chatId]: snapshot.entry } : s.byChat,
+          titleDirty:
+            snapshot.titleDirty === undefined
+              ? s.titleDirty
+              : { ...s.titleDirty, [chatId]: snapshot.titleDirty },
+          drafts: {
+            ...s.drafts,
+            ...(snapshot.mainDraft !== undefined ? { [`${chatId}:main`]: snapshot.mainDraft } : {}),
+            ...(snapshot.forkDraft !== undefined ? { [`${chatId}:fork`]: snapshot.forkDraft } : {}),
+          },
+          draftChatId: wasDraft ? chatId : s.draftChatId,
+          error: errorMessage(err),
+        }
+      })
       // The active chat was ejected along with the row; reopening rehydrates
-      // its state and reconnects the event stream.
-      if (wasActive) void get().openChat(chatId)
+      // its state and reconnects the event stream. If the user has already
+      // opened another chat, stay out of their way.
+      if (wasActive && !get().activeChatId) void get().openChat(chatId)
     }
   },
 
@@ -1911,9 +1922,15 @@ export const useStore = create<StoreState>()((set, get) => ({
     } catch (err) {
       set((s) => {
         // A failed send must not eat what was typed: hand the text back to
-        // the composer, unless something newer is already there.
+        // the composer. Two sends can overlap (the composer re-enables while
+        // a POST is in flight), so append rather than skip when the slot is
+        // occupied — no failed message is ever dropped.
         const draftKey = `${chatId}:${thread}`
-        const drafts = s.drafts[draftKey] ? s.drafts : { ...s.drafts, [draftKey]: trimmed }
+        const existing = s.drafts[draftKey]
+        const drafts = {
+          ...s.drafts,
+          [draftKey]: existing ? `${existing}\n${trimmed}` : trimmed,
+        }
         const current = s.byChat[chatId]
         if (!current) return { error: errorMessage(err), drafts }
         return {
