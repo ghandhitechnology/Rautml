@@ -65,6 +65,9 @@ export function extForName(name: string): SupportedExt | null {
 export type ExtractReply = { ok: true; text: string } | { ok: false; error: string };
 
 interface PendingJob {
+  /** The worker this job was posted to — stale events from a retired worker
+   *  must never touch a job owned by its replacement. */
+  owner: Worker;
   resolve: (text: string) => void;
   reject: (err: Error) => void;
 }
@@ -74,6 +77,14 @@ let workerViable = false; // answered at least one job — proven able to start
 let workerUnavailable = false; // never came up — stay in-process from then on
 let activeJob: PendingJob | null = null;
 let extractChain: Promise<void> = Promise.resolve();
+
+/**
+ * A parse that outlives this is treated as stuck in a parser loop: the job is
+ * rejected and the worker retired, so the sequential extraction chain and the
+ * indexer queue behind it are not held forever by one pathological file.
+ * Generous on purpose — near-cap PDFs parse slowly. Lazily overridable (tests).
+ */
+const EXTRACT_JOB_TIMEOUT_MS = 180_000;
 
 /**
  * Extract through the worker, one job at a time (the indexer queue is already
@@ -111,9 +122,33 @@ function runWorkerJob(absPath: string, ext: string): Promise<string> {
     }
     worker = instance;
   }
+  const current = instance;
   return new Promise<string>((resolve, reject) => {
-    activeJob = { resolve, reject };
-    instance.postMessage({ absPath, ext });
+    const parsed = Number(process.env.RAUTML_EXTRACT_TIMEOUT_MS);
+    const timeoutMs = Number.isFinite(parsed) && parsed >= 0 ? parsed : EXTRACT_JOB_TIMEOUT_MS;
+    const timer = setTimeout(() => {
+      // Not the worker's fault — a stuck parse says nothing about its ability
+      // to start, and the in-process fallback would wedge the main thread on
+      // the same file. Just retire the thread; the next job spawns a fresh one.
+      retireWorker(
+        current,
+        new Error(`extraction timed out after ${Math.round(timeoutMs / 1000)}s`),
+        { workerFault: false },
+      );
+    }, timeoutMs);
+    timer.unref?.();
+    activeJob = {
+      owner: current,
+      resolve: (text) => {
+        clearTimeout(timer);
+        resolve(text);
+      },
+      reject: (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    };
+    current.postMessage({ absPath, ext });
   });
 }
 
@@ -131,8 +166,8 @@ function spawnWorker(): Worker {
   const instance = new Worker(workerEntryUrl());
   instance.on('message', (reply: ExtractReply) => {
     const job = activeJob;
+    if (!job || job.owner !== instance) return; // late reply from a retired worker
     activeJob = null;
-    if (!job) return;
     workerViable = true; // any reply — even a parse error — proves the worker runs
     if (reply.ok) job.resolve(reply.text);
     else job.reject(new Error(reply.error));
@@ -147,13 +182,14 @@ function spawnWorker(): Worker {
 }
 
 /** A dead worker rejects its in-flight job; the next job spawns a fresh one. */
-function retireWorker(dead: Worker, err: Error): void {
+function retireWorker(dead: Worker, err: Error, opts?: { workerFault?: boolean }): void {
   if (worker === dead) worker = null;
   void dead.terminate();
+  if (opts?.workerFault !== false && !workerViable) markWorkerUnavailable(err);
   const job = activeJob;
+  if (!job || job.owner !== dead) return; // in-flight job belongs to a newer worker
   activeJob = null;
-  if (!workerViable) markWorkerUnavailable(err);
-  job?.reject(err);
+  job.reject(err);
 }
 
 function markWorkerUnavailable(err: Error): void {

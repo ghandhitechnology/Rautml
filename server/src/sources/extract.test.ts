@@ -37,6 +37,26 @@ describe('extractText worker dispatch', () => {
       assert.equal(await extractText(ok, 'md'), 'still alive');
     });
   });
+
+  it('retires a stuck worker so the queue behind it keeps moving', async () => {
+    await withTempDir(async (dir) => {
+      // A multi-MB read cannot finish within a 1ms budget, so the job
+      // deterministically loses to the timeout — simulating a stuck parse.
+      const big = path.join(dir, 'big.md');
+      const chunk = 'lorem ipsum dolor sit amet\n';
+      await fs.writeFile(big, chunk.repeat(Math.ceil((16 * 1024 * 1024) / chunk.length)));
+      process.env.RAUTML_EXTRACT_TIMEOUT_MS = '1';
+      try {
+        await assert.rejects(extractText(big, 'md'), /timed out/);
+      } finally {
+        delete process.env.RAUTML_EXTRACT_TIMEOUT_MS;
+      }
+      // The wedged worker was retired; the next job runs on a fresh one.
+      const ok = path.join(dir, 'ok.md');
+      await fs.writeFile(ok, 'queue recovered');
+      assert.equal(await extractText(ok, 'md'), 'queue recovered');
+    });
+  });
 });
 
 describe('binary parse byte cap', () => {

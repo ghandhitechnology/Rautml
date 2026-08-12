@@ -20,12 +20,22 @@ const PIPE_IDLE_MS = 90_000;
 /** A failed model load is retried after this backoff instead of never. */
 const PIPE_RETRY_MS = 60_000;
 
+/**
+ * A stalled first-run download (flaky network, dead CDN edge) must not wait
+ * forever: the load promise never settling would freeze the indexing queue
+ * and any run mid-`search_sources`. Fail into the retry backoff — and the
+ * keyword-scoring fallback — instead.
+ */
+const PIPE_LOAD_TIMEOUT_MS = 5 * 60_000;
+
 let pipePromise: Promise<FeatureExtractionPipeline | null> | null = null;
 let pipe: FeatureExtractionPipeline | null = null;
 let pipeIdleTimer: ReturnType<typeof setTimeout> | null = null;
 let activeUses = 0;
 /** Timestamp of the last failed load attempt; 0 = no failure awaiting retry. */
 let pipeLoadFailedAt = 0;
+/** Monotonic id of the latest load attempt; lets a late finisher tell whether a retry superseded it. */
+let loadAttempt = 0;
 
 function clearPipeIdleTimer(): void {
   if (!pipeIdleTimer) return;
@@ -63,9 +73,51 @@ function getPipe(): Promise<FeatureExtractionPipeline | null> {
       try {
         const { pipeline, env } = await import('@huggingface/transformers');
         if (process.env.RAUTML_CACHE_DIR) env.cacheDir = process.env.RAUTML_CACHE_DIR;
-        pipe = (await pipeline('feature-extraction', MODEL_ID, {
+        const loading = pipeline('feature-extraction', MODEL_ID, {
           dtype: 'q8',
-        })) as FeatureExtractionPipeline;
+        }) as Promise<FeatureExtractionPipeline>;
+        // The timeout below abandons the promise, not the work. Keep a
+        // continuation so a late finish is adopted (the retry then skips a
+        // duplicate download) and a superseded duplicate is disposed rather
+        // than leaking its ONNX session. A load superseded by a retry
+        // (attempt !== loadAttempt) is never adopted — installing it would
+        // race the retry's own load into disposing the instance the race
+        // then installs as the active pipeline.
+        const attempt = ++loadAttempt;
+        let raceFinished = false;
+        void loading.then(
+          (instance) => {
+            if (!raceFinished) return; // the race below installs the winner itself
+            if (pipe || attempt !== loadAttempt) {
+              void instance.dispose().catch(() => {});
+              return;
+            }
+            pipe = instance;
+            pipePromise = Promise.resolve(instance);
+            pipeLoadFailedAt = 0;
+            console.log(`[sources] embedding model ready: ${MODEL_ID} (after a slow load)`);
+          },
+          () => {}, // a late failure was already reported by the race below
+        );
+        let loadTimer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          const result = (await Promise.race([
+            loading,
+            new Promise<never>((_, reject) => {
+              loadTimer = setTimeout(
+                () => reject(new Error('model load timed out')),
+                PIPE_LOAD_TIMEOUT_MS,
+              );
+              loadTimer.unref?.();
+            }),
+          ])) as FeatureExtractionPipeline;
+          pipe = result;
+        } finally {
+          // Win or lose, the race has decided: a later settlement of `loading`
+          // is "late" and handled (adopted or disposed) by the continuation.
+          raceFinished = true;
+          if (loadTimer) clearTimeout(loadTimer);
+        }
         console.log(`[sources] embedding model ready: ${MODEL_ID}`);
         return pipe;
       } catch (err) {
