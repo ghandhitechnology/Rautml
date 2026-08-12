@@ -71,10 +71,31 @@ function getPipe(): Promise<FeatureExtractionPipeline | null> {
       try {
         const { pipeline, env } = await import('@huggingface/transformers');
         if (process.env.RAUTML_CACHE_DIR) env.cacheDir = process.env.RAUTML_CACHE_DIR;
+        const loading = pipeline('feature-extraction', MODEL_ID, {
+          dtype: 'q8',
+        }) as Promise<FeatureExtractionPipeline>;
+        // The timeout below abandons the promise, not the work. Keep a
+        // continuation so a late finish is adopted (the retry then skips a
+        // duplicate download) and a superseded duplicate is disposed rather
+        // than leaking its ONNX session.
+        void loading.then(
+          (instance) => {
+            if (pipe === instance) return; // won the race — already installed
+            if (pipe) {
+              void instance.dispose().catch(() => {});
+              return;
+            }
+            pipe = instance;
+            pipePromise = Promise.resolve(instance);
+            pipeLoadFailedAt = 0;
+            console.log(`[sources] embedding model ready: ${MODEL_ID} (after a slow load)`);
+          },
+          () => {}, // a late failure was already reported by the race below
+        );
         let loadTimer: ReturnType<typeof setTimeout> | undefined;
         try {
           pipe = (await Promise.race([
-            pipeline('feature-extraction', MODEL_ID, { dtype: 'q8' }),
+            loading,
             new Promise<never>((_, reject) => {
               loadTimer = setTimeout(
                 () => reject(new Error('model load timed out')),

@@ -635,7 +635,14 @@ export async function startRun(
 
     emit(chatId, thread, 'run.status', { runId: run.id, status: 'running' });
   } catch (err) {
-    repo.setRunStatus(run.id, 'error', (err as Error)?.message ?? String(err));
+    // Best effort: when the failure is SQLite itself, this release write can
+    // fail too — it must not mask the original error (the row is still reaped
+    // by the next boot's reapStaleRuns).
+    try {
+      repo.setRunStatus(run.id, 'error', (err as Error)?.message ?? String(err));
+    } catch {
+      // ignored — see above
+    }
     throw err;
   }
 
