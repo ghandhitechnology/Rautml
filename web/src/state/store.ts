@@ -402,6 +402,13 @@ export function assetsNewestFirst(assets: Asset[]): Asset[] {
   return assets.slice().sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
 }
 
+// Failed sends restore their text into the composer draft. Overlapping sends
+// can reject in any order, so each restored fragment is tagged with its
+// submission sequence and re-sorted on restore — the draft always reads in
+// the order the user hit send, not the order the requests happened to fail.
+let sendSeqCounter = 0
+const failedDraftFragments = new Map<string, Array<{ seq: number; text: string }>>()
+
 function isLive(status: Run['status']): boolean {
   return status === 'running' || status === 'awaiting_input'
 }
@@ -1157,6 +1164,12 @@ const recentChatIds: string[] = []
 /** Guards against a double-click racing two POST /api/chats before either lands. */
 let creatingChat = false
 
+/* In-flight sends per draft slot (`chatId:thread`), in submission order.
+ * Overlapping sends fail in request-completion order, but their text must be
+ * handed back to the composer in the order the user submitted it — so the
+ * restored tail is rebuilt from this list, not appended per catch. */
+const sendOrder = new Map<string, { localId: string; text: string; failed: boolean }[]>()
+
 function rememberChat(chatId: string) {
   const previous = recentChatIds.indexOf(chatId)
   if (previous !== -1) recentChatIds.splice(previous, 1)
@@ -1823,6 +1836,10 @@ export const useStore = create<StoreState>()((set, get) => ({
         : []
 
     const localId = uid('local-')
+    const draftKey = `${chatId}:${thread}`
+    const order = sendOrder.get(draftKey) ?? []
+    order.push({ localId, text: trimmed, failed: false })
+    sendOrder.set(draftKey, order)
     const optimistic: Message = {
       id: localId,
       chatId,
@@ -1873,6 +1890,11 @@ export const useStore = create<StoreState>()((set, get) => ({
         context,
         stagedSourceIds,
       )
+      // This send landed; drop it and any previously failed entries (their
+      // text is already back in the draft the user is looking at).
+      const remaining = order.filter((o) => o.localId !== localId && !o.failed)
+      if (remaining.length) sendOrder.set(draftKey, remaining)
+      else sendOrder.delete(draftKey)
       if (stagedSourceIds.length) {
         const sent = new Set(stagedSourceIds)
         set((s) => ({
@@ -1922,15 +1944,29 @@ export const useStore = create<StoreState>()((set, get) => ({
     } catch (err) {
       set((s) => {
         // A failed send must not eat what was typed: hand the text back to
-        // the composer. Two sends can overlap (the composer re-enables while
-        // a POST is in flight), so append rather than skip when the slot is
-        // occupied — no failed message is ever dropped.
-        const draftKey = `${chatId}:${thread}`
-        const existing = s.drafts[draftKey]
-        const drafts = {
-          ...s.drafts,
-          [draftKey]: existing ? `${existing}\n${trimmed}` : trimmed,
+        // the composer. Overlapping sends fail in request-completion order,
+        // so rebuild the restored tail from the submission-ordered list —
+        // the draft must read A then B, never B then A.
+        const prevTail = order
+          .filter((o) => o.failed)
+          .map((o) => o.text)
+          .join('\n')
+        const entry = order.find((o) => o.localId === localId)
+        if (entry) entry.failed = true
+        const tail = order
+          .filter((o) => o.failed)
+          .map((o) => o.text)
+          .join('\n')
+        const currentDraft = s.drafts[draftKey] ?? ''
+        // Strip the previously restored tail wherever the user's newer
+        // typing left it — as a suffix or a prefix — so it isn't duplicated.
+        let base = currentDraft
+        if (prevTail) {
+          if (base.endsWith(prevTail)) base = base.slice(0, -prevTail.length).replace(/\n$/, '')
+          else if (base.startsWith(prevTail)) base = base.slice(prevTail.length).replace(/^\n/, '')
         }
+        const restored = tail ? (base ? `${base}\n${tail}` : tail) : base
+        const drafts = restored ? { ...s.drafts, [draftKey]: restored } : s.drafts
         const current = s.byChat[chatId]
         if (!current) return { error: errorMessage(err), drafts }
         return {
