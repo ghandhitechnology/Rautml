@@ -20,6 +20,14 @@ const PIPE_IDLE_MS = 90_000;
 /** A failed model load is retried after this backoff instead of never. */
 const PIPE_RETRY_MS = 60_000;
 
+/**
+ * A stalled first-run download (flaky network, dead CDN edge) must not wait
+ * forever: the load promise never settling would freeze the indexing queue
+ * and any run mid-`search_sources`. Fail into the retry backoff — and the
+ * keyword-scoring fallback — instead.
+ */
+const PIPE_LOAD_TIMEOUT_MS = 5 * 60_000;
+
 let pipePromise: Promise<FeatureExtractionPipeline | null> | null = null;
 let pipe: FeatureExtractionPipeline | null = null;
 let pipeIdleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -63,9 +71,21 @@ function getPipe(): Promise<FeatureExtractionPipeline | null> {
       try {
         const { pipeline, env } = await import('@huggingface/transformers');
         if (process.env.RAUTML_CACHE_DIR) env.cacheDir = process.env.RAUTML_CACHE_DIR;
-        pipe = (await pipeline('feature-extraction', MODEL_ID, {
-          dtype: 'q8',
-        })) as FeatureExtractionPipeline;
+        let loadTimer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          pipe = (await Promise.race([
+            pipeline('feature-extraction', MODEL_ID, { dtype: 'q8' }),
+            new Promise<never>((_, reject) => {
+              loadTimer = setTimeout(
+                () => reject(new Error('model load timed out')),
+                PIPE_LOAD_TIMEOUT_MS,
+              );
+              loadTimer.unref?.();
+            }),
+          ])) as FeatureExtractionPipeline;
+        } finally {
+          if (loadTimer) clearTimeout(loadTimer);
+        }
         console.log(`[sources] embedding model ready: ${MODEL_ID}`);
         return pipe;
       } catch (err) {
