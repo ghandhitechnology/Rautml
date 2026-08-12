@@ -52,6 +52,10 @@ const ENGINE_IDLE_CHECK_MS = 30_000
 const ENGINE_IDLE_MAX_AGE_MS = 4 * 60 * 60 * 1000
 const ENGINE_BOOT_POLL_INTERVAL_MS = 125
 const ENGINE_BOOT_TIMEOUT_MS = 10_000
+// undici's default headersTimeout is 300s, so a health request to an engine
+// that accepts connections but never responds must be bounded explicitly —
+// otherwise boot hangs on the splash and the idle-stop loop stalls forever.
+const ENGINE_HEALTH_TIMEOUT_MS = 5_000
 const ENGINE_SIGKILL_ESCALATION_MS = 3_000
 const ENGINE_RESTART_BACKOFF_MS = 1_000
 const ENGINE_MAX_RESTART_TRIES = 2
@@ -278,7 +282,9 @@ async function waitForEngine(child, origin) {
   try {
     while (Date.now() < deadline) {
       try {
-        const response = await fetch(`${origin}/api/health`)
+        const response = await fetch(`${origin}/api/health`, {
+          signal: AbortSignal.timeout(ENGINE_HEALTH_TIMEOUT_MS),
+        })
         if (response.ok) return
         lastFailure = `HTTP ${response.status}`
       } catch (error) {
@@ -511,7 +517,9 @@ function scheduleIdleEngineStop() {
     // windowless for ENGINE_IDLE_MAX_AGE_MS; past that it is stopped anyway.
     const expired = Date.now() - engineIdleSince >= ENGINE_IDLE_MAX_AGE_MS
     try {
-      const response = await fetch(`${engineOrigin}/api/health`)
+      const response = await fetch(`${engineOrigin}/api/health`, {
+        signal: AbortSignal.timeout(ENGINE_HEALTH_TIMEOUT_MS),
+      })
       const health = response.ok ? await response.json() : { busy: true }
       if (health?.busy && !expired) {
         scheduleIdleEngineStop()

@@ -27,6 +27,7 @@ import type {
   ToolChoice,
   OpenRouterTool,
 } from './openrouter.js';
+import { fetchWithHeadersTimeout } from './http.js';
 
 /** Override to point at a proxy or a local mock (tests use this). */
 const ENDPOINT =
@@ -142,7 +143,7 @@ function jwtExpMs(token: string): number {
 }
 
 async function refreshTokens(auth: CodexAuthFile): Promise<CodexTokens> {
-  const res = await fetch(TOKEN_ENDPOINT, {
+  const res = await fetchWithHeadersTimeout(TOKEN_ENDPOINT, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -184,7 +185,7 @@ async function refreshTokens(auth: CodexAuthFile): Promise<CodexTokens> {
 }
 
 /** Valid access token + account id, refreshing (serialized) when near expiry. */
-async function getTokens(force = false): Promise<CodexTokens> {
+async function getTokens(force = false, signal?: AbortSignal): Promise<CodexTokens> {
   cachedAuth = cachedAuth === undefined ? readAuthFile() : cachedAuth;
   const auth = cachedAuth;
   if (!auth?.tokens) {
@@ -197,7 +198,22 @@ async function getTokens(force = false): Promise<CodexTokens> {
   refreshing ??= refreshTokens(auth).finally(() => {
     refreshing = null;
   });
-  return refreshing;
+  if (!signal) return refreshing;
+  // The refresh is shared by every concurrent run, so a stopped run must not
+  // abort the fetch itself — it only stops waiting for it.
+  let onAbort: (() => void) | undefined;
+  const aborted = new Promise<never>((_, reject) => {
+    if (signal.aborted) reject(new AbortedError());
+    else {
+      onAbort = () => reject(new AbortedError());
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+  });
+  try {
+    return await Promise.race([refreshing, aborted]);
+  } finally {
+    if (onAbort) signal.removeEventListener('abort', onAbort);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -306,7 +322,7 @@ function rejectsSummary(err: unknown): boolean {
 async function postResponses(body: unknown, tokens: CodexTokens, signal?: AbortSignal): Promise<Response> {
   let res: Response;
   try {
-    res = await fetch(ENDPOINT, {
+    res = await fetchWithHeadersTimeout(ENDPOINT, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${tokens.access_token}`,
@@ -438,7 +454,7 @@ export async function codexStreamChat(options: StreamChatOptions): Promise<Strea
     let failure: string | null = null;
 
     try {
-      const tokens = await getTokens(forceRefresh);
+      const tokens = await getTokens(forceRefresh, signal);
       forceRefresh = false;
       const res = await postResponses(body, tokens, signal);
       onStreamOpen?.();

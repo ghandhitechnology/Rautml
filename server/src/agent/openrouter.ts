@@ -11,6 +11,8 @@
 // errors. streamChat deliberately stops retrying once it has emitted its first
 // text delta: a retry at that point would duplicate visible output.
 
+import { fetchWithHeadersTimeout } from './http.js';
+
 /** Override to point at a proxy or a local mock (no trailing slash). */
 const BASE_URL = process.env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1';
 const ENDPOINT = `${BASE_URL}/chat/completions`;
@@ -209,7 +211,7 @@ async function postChat(
   const label = transport?.name ?? 'OpenRouter';
   let res: Response;
   try {
-    res = await fetch(target, {
+    res = await fetchWithHeadersTimeout(target, {
       method: 'POST',
       headers: transport?.headers ?? headers(),
       body: JSON.stringify(transport?.prepareBody?.(body) ?? body),
