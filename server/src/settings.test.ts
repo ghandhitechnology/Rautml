@@ -1,12 +1,39 @@
 import assert from 'node:assert/strict';
+import { promises as fs } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { describe, it } from 'node:test';
 import {
   PERSONALIZATION_MAX_CHARS,
   parseEnvText,
   readPersonalization,
   upsertEnvText,
+  writeKeys,
   writePersonalization,
 } from './settings.js';
+
+describe('writeKeys', () => {
+  it('serializes concurrent saves so neither drops the other’s keys', async () => {
+    const dir = await fs.mkdtemp(path.join(tmpdir(), 'rautml-settings-'));
+    const prevEnvPath = process.env.RAUTML_ENV_PATH;
+    process.env.RAUTML_ENV_PATH = path.join(dir, '.env');
+    try {
+      await Promise.all([
+        writeKeys({ OPENROUTER_API_KEY: 'sk-or-first' }),
+        writeKeys({ FIRECRAWL_API_KEY: 'fc-second' }),
+      ]);
+      const parsed = parseEnvText(await fs.readFile(process.env.RAUTML_ENV_PATH, 'utf8'));
+      assert.equal(parsed.OPENROUTER_API_KEY, 'sk-or-first');
+      assert.equal(parsed.FIRECRAWL_API_KEY, 'fc-second');
+    } finally {
+      if (prevEnvPath === undefined) delete process.env.RAUTML_ENV_PATH;
+      else process.env.RAUTML_ENV_PATH = prevEnvPath;
+      delete process.env.OPENROUTER_API_KEY;
+      delete process.env.FIRECRAWL_API_KEY;
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+});
 
 describe('env file upsert', () => {
   it('updates a managed key in place without touching its neighbours', () => {

@@ -165,8 +165,20 @@ export function upsertEnvText(text: string, patch: Record<string, string>): stri
 /**
  * Persist keys to the env file and apply them to this process immediately.
  * An empty (or whitespace-only) value clears the key.
+ *
+ * Serialized: read-modify-write is not atomic, and every save shares one tmp
+ * path — without the queue, two overlapping PUTs can drop each other's keys
+ * or tear the file mid-rename.
  */
-export async function writeKeys(patch: Record<string, string>): Promise<ApiKeyStatus[]> {
+let writeKeysQueue: Promise<unknown> = Promise.resolve();
+
+export function writeKeys(patch: Record<string, string>): Promise<ApiKeyStatus[]> {
+  const run = writeKeysQueue.then(() => writeKeysNow(patch));
+  writeKeysQueue = run.catch(() => {});
+  return run;
+}
+
+async function writeKeysNow(patch: Record<string, string>): Promise<ApiKeyStatus[]> {
   const accepted: Record<string, string> = {};
   for (const [name, value] of Object.entries(patch)) {
     if (MANAGED_NAMES.has(name) && typeof value === 'string') accepted[name] = value;

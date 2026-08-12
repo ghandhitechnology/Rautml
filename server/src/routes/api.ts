@@ -61,9 +61,15 @@ export const SOURCE_FILE_SIZE_LIMIT = 400 * 1024 * 1024;
 const upload = multer({
   storage: multer.diskStorage({
     destination: (req, _file, cb) => {
-      const dir = path.join(SOURCES_DIR, param(req as Request, 'id'), '.incoming');
-      mkdirSync(dir, { recursive: true });
-      cb(null, dir);
+      // A thrown fs error (ENOSPC/EPERM) escapes multer's error channel and
+      // hangs the upload — route it through the callback so it becomes a 500.
+      try {
+        const dir = path.join(SOURCES_DIR, param(req as Request, 'id'), '.incoming');
+        mkdirSync(dir, { recursive: true });
+        cb(null, dir);
+      } catch (err) {
+        cb(err as Error, '');
+      }
     },
     filename: (_req, _file, cb) => cb(null, randomUUID()),
   }),

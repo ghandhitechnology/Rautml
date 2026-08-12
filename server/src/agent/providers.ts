@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { accessSync, constants, readFileSync, writeFileSync } from 'node:fs';
+import { accessSync, constants, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir, hostname, platform, release } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -279,12 +279,25 @@ function kimiHeaders(): Record<string, string> {
   };
 }
 
+/** Serialized Kimi refresh — see refreshKimiToken's note on token rotation. */
+let kimiRefreshing: Promise<string> | null = null;
+
 async function freshKimiToken(): Promise<string | null> {
   const file = path.join(HOME, '.kimi-code/credentials/kimi-code.json');
   const token = jsonFile(file);
   if (!token?.access_token) return null;
   if (Number(token.expires_at || 0) * 1000 - Date.now() > 5 * 60_000) return token.access_token;
   if (!token.refresh_token) return token.access_token;
+  // Refresh tokens rotate on use: two concurrent refreshes would invalidate
+  // each other, and every concurrent run would queue behind the loser's 401.
+  // Share one in-flight refresh, like the Codex path.
+  kimiRefreshing ??= refreshKimiToken(file, token).finally(() => {
+    kimiRefreshing = null;
+  });
+  return kimiRefreshing;
+}
+
+async function refreshKimiToken(file: string, token: any): Promise<string> {
   const body = new URLSearchParams({
     client_id: '17e5f671-d194-4dfb-9706-5516cb48c098',
     grant_type: 'refresh_token',
@@ -303,7 +316,13 @@ async function freshKimiToken(): Promise<string | null> {
     scope: next.scope ?? token.scope ?? '',
     token_type: next.token_type ?? token.token_type ?? 'Bearer',
   };
-  try { writeFileSync(file, JSON.stringify(persisted, null, 2), { mode: 0o600 }); } catch { /* in-memory token still works */ }
+  try {
+    // The file is shared with the Kimi CLI — write-then-rename so a crash
+    // mid-write cannot truncate it and log both sides out.
+    const tmp = `${file}.tmp`;
+    writeFileSync(tmp, JSON.stringify(persisted, null, 2), { mode: 0o600 });
+    renameSync(tmp, file);
+  } catch { /* in-memory token still works */ }
   return persisted.access_token;
 }
 
