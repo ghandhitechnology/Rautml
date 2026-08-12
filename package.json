@@ -1,7 +1,7 @@
 {
   "name": "rautml",
   "productName": "Rautml",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Research-driven chat where the answer is a living page.",
   "author": "Hataewook",
   "private": true,
