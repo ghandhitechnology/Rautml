@@ -41,22 +41,30 @@ const DEFAULT_TIMEOUT_MS = 60_000
 /** Endpoints that await an LLM/provider round-trip inline get a longer leash. */
 const LLM_ROUTE_TIMEOUT_MS = 180_000
 
+/** Network/timeout failures become a consistent ApiError for the UI. */
+function asApiError(err: unknown): ApiError {
+  if (err instanceof ApiError) return err
+  if (err instanceof DOMException && err.name === 'TimeoutError') {
+    return new ApiError(0, 'The server took too long to respond. Try again.')
+  }
+  return new ApiError(0, err instanceof Error ? err.message : 'Network error')
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response
+  let text: string
   try {
     res = await fetch(`${API_BASE}${path}`, {
       headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
       signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
       ...init,
     })
+    // The timeout stays armed while the body streams in, so read it inside
+    // the same translation boundary.
+    text = await res.text()
   } catch (err) {
-    if (err instanceof DOMException && err.name === 'TimeoutError') {
-      throw new ApiError(0, 'The server took too long to respond. Try again.')
-    }
-    throw new ApiError(0, err instanceof Error ? err.message : 'Network error')
+    throw asApiError(err)
   }
-
-  const text = await res.text()
   let body: unknown = undefined
   if (text) {
     try {
@@ -275,9 +283,13 @@ export async function fetchAssetHtml(
   assetId: string,
   version: number | 'latest' = 'latest',
 ): Promise<string> {
-  const res = await fetch(assetUrl(assetId, version), {
-    signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
-  })
-  if (!res.ok) throw new ApiError(res.status, `Failed to load asset (${res.status})`)
-  return res.text()
+  try {
+    const res = await fetch(assetUrl(assetId, version), {
+      signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+    })
+    if (!res.ok) throw new ApiError(res.status, `Failed to load asset (${res.status})`)
+    return await res.text()
+  } catch (err) {
+    throw asApiError(err)
+  }
 }
