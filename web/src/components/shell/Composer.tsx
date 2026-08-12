@@ -141,8 +141,16 @@ export function Composer({
     setValue('')
     // Return focus for the next turn; the caret stays where the user expects.
     requestAnimationFrame(() => ref.current?.focus())
-    if (onSend) void onSend(content)
-    else void sendMessage(thread, content)
+    if (onSend) {
+      // The welcome flow creates its chat inside onSend; if that fails before
+      // a chat exists, give the text back so the message isn't lost. Once a
+      // chat is open, sendMessage's own rollback restores the draft instead.
+      Promise.resolve(onSend(content)).catch(() => {
+        if (!useStore.getState().activeChatId) setLocalValue(content)
+      })
+    } else {
+      void sendMessage(thread, content)
+    }
   }, [onSend, sendMessage, setValue, thread, value])
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {

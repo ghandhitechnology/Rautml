@@ -1661,13 +1661,20 @@ export const useStore = create<StoreState>()((set, get) => ({
 
   removeChat: async (chatId) => {
     const wasActive = get().activeChatId === chatId
+    const wasDraft = get().draftChatId === chatId
     if (wasActive) {
       get().clearFollowUpAttachments()
       get().clearStagedUploads()
     }
-    if (get().draftChatId === chatId) set({ draftChatId: null })
+    if (wasDraft) set({ draftChatId: null })
     // optimistic — the row disappears the instant you click.
-    const snapshot = get().chats
+    const snapshot = {
+      chats: get().chats,
+      entry: get().byChat[chatId],
+      titleDirty: get().titleDirty[chatId],
+      mainDraft: get().drafts[`${chatId}:main`],
+      forkDraft: get().drafts[`${chatId}:fork`],
+    }
     set((s) => {
       const byChat = { ...s.byChat }
       const titleDirty = { ...s.titleDirty }
@@ -1685,7 +1692,26 @@ export const useStore = create<StoreState>()((set, get) => ({
     try {
       await api.deleteChat(chatId)
     } catch (err) {
-      set({ chats: snapshot, error: errorMessage(err) })
+      // The chat still exists server-side — put back everything the
+      // optimistic removal threw away, drafts included.
+      set((s) => ({
+        chats: snapshot.chats,
+        byChat: snapshot.entry ? { ...s.byChat, [chatId]: snapshot.entry } : s.byChat,
+        titleDirty:
+          snapshot.titleDirty === undefined
+            ? s.titleDirty
+            : { ...s.titleDirty, [chatId]: snapshot.titleDirty },
+        drafts: {
+          ...s.drafts,
+          ...(snapshot.mainDraft !== undefined ? { [`${chatId}:main`]: snapshot.mainDraft } : {}),
+          ...(snapshot.forkDraft !== undefined ? { [`${chatId}:fork`]: snapshot.forkDraft } : {}),
+        },
+        draftChatId: wasDraft ? chatId : s.draftChatId,
+        error: errorMessage(err),
+      }))
+      // The active chat was ejected along with the row; reopening rehydrates
+      // its state and reconnects the event stream.
+      if (wasActive) void get().openChat(chatId)
     }
   },
 
@@ -1884,10 +1910,15 @@ export const useStore = create<StoreState>()((set, get) => ({
       }
     } catch (err) {
       set((s) => {
+        // A failed send must not eat what was typed: hand the text back to
+        // the composer, unless something newer is already there.
+        const draftKey = `${chatId}:${thread}`
+        const drafts = s.drafts[draftKey] ? s.drafts : { ...s.drafts, [draftKey]: trimmed }
         const current = s.byChat[chatId]
-        if (!current) return { error: errorMessage(err) }
+        if (!current) return { error: errorMessage(err), drafts }
         return {
           error: errorMessage(err),
+          drafts,
           byChat: {
             ...s.byChat,
             [chatId]: {
@@ -1948,6 +1979,7 @@ export const useStore = create<StoreState>()((set, get) => ({
     if (!chatId) return
     const currentChat = get().byChat[chatId]
     const hadInitialExchange = !!currentChat && isAfterInitialExchange(currentChat)
+    const priorPending = currentChat?.pendingInput
     // Lock the chips in immediately; the server echoes input.resolved right after.
     set((s) => {
       const cs = s.byChat[chatId]
@@ -1971,7 +2003,30 @@ export const useStore = create<StoreState>()((set, get) => ({
         set((s) => ({ titleDirty: { ...s.titleDirty, [chatId]: true } }))
       }
     } catch (err) {
-      set({ error: errorMessage(err) })
+      // The answer never reached the server: the run is still parked in
+      // awaiting_input, so unlock the chips again and let the user retry —
+      // otherwise the run stays stuck until a full reload rehydrates it.
+      set((s) => {
+        const cs = s.byChat[chatId]
+        if (!cs) return { error: errorMessage(err) }
+        const unmark = (list: InputRequest[]) =>
+          list.map((r) => (r.id === pendingInputId ? { ...r, resolved: false, value: undefined } : r))
+        return {
+          error: errorMessage(err),
+          byChat: {
+            ...s.byChat,
+            [chatId]: {
+              ...cs,
+              inputRequests: {
+                main: unmark(cs.inputRequests.main),
+                fork: unmark(cs.inputRequests.fork),
+              },
+              pendingInput:
+                cs.pendingInput ?? (priorPending?.id === pendingInputId ? priorPending : null),
+            },
+          },
+        }
+      })
     }
   },
 
