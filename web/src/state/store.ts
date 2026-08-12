@@ -402,13 +402,6 @@ export function assetsNewestFirst(assets: Asset[]): Asset[] {
   return assets.slice().sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
 }
 
-// Failed sends restore their text into the composer draft. Overlapping sends
-// can reject in any order, so each restored fragment is tagged with its
-// submission sequence and re-sorted on restore — the draft always reads in
-// the order the user hit send, not the order the requests happened to fail.
-let sendSeqCounter = 0
-const failedDraftFragments = new Map<string, Array<{ seq: number; text: string }>>()
-
 function isLive(status: Run['status']): boolean {
   return status === 'running' || status === 'awaiting_input'
 }
