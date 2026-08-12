@@ -66,6 +66,9 @@ const ENGINE_PORT_RACE_WINDOW_MS = 1_000
 const ENGINE_STDERR_TAIL_CHARS = 4_096
 const ENGINE_LOG_MAX_BYTES = 1024 * 1024
 const ENGINE_LOAD_RETRY_DELAY_MS = 1_000
+// A renderer that stays up this long earns back its automatic crash-reload
+// budget; a load-then-immediately-crash page never reaches it.
+const ENGINE_RENDERER_STABLE_MS = 30_000
 const PDF_RESOURCE_WAIT_MS = 5_000
 const PDF_IMAGE_FALLBACK_WAIT_MS = 4_000
 const MAX_PDF_HTML_BYTES = 50 * 1024 * 1024
@@ -771,9 +774,15 @@ async function createWindow() {
   })
   let retriedFailedLoad = false
   let crashReloads = 0
+  let crashResetTimer = null
   window.webContents.on('did-finish-load', () => {
     retriedFailedLoad = false
-    crashReloads = 0
+    // The crash budget resets only after the page proves stable — resetting
+    // here would let a load-then-crash page loop reloads forever.
+    clearTimeout(crashResetTimer)
+    crashResetTimer = setTimeout(() => {
+      crashReloads = 0
+    }, ENGINE_RENDERER_STABLE_MS)
   })
   window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, _validatedURL, isMainFrame) => {
     // -3 means the load was aborted on purpose (retry, crash-restart swap).
@@ -792,6 +801,7 @@ async function createWindow() {
     if (mainWindow !== window || window.isDestroyed()) return
     // A page that crashes on every load would otherwise reload in a loop
     // forever — after two automatic reloads, hand the decision to the user.
+    clearTimeout(crashResetTimer)
     crashReloads += 1
     if (crashReloads <= 2) {
       window.reload()
@@ -831,6 +841,7 @@ async function createWindow() {
   })
   window.on('close', () => saveWindowState(window))
   window.on('closed', () => {
+    clearTimeout(crashResetTimer)
     if (mainWindow === window) mainWindow = null
   })
 
