@@ -1151,6 +1151,21 @@ let connection: SseConnection | null = null
 let eventFlushTimer: number | null = null
 let queuedEvents: ChatEvent[] = []
 
+/* In-flight getChat fetches, deduped per chat: a double openChat for the same
+ * chat (fast re-click, StrictMode double-mount) must share one request, or a
+ * slower stale snapshot can overwrite the fresher one wholesale. */
+const chatSnapshotFetches = new Map<string, Promise<ChatSnapshot>>()
+
+function getChatShared(chatId: string): Promise<ChatSnapshot> {
+  const existing = chatSnapshotFetches.get(chatId)
+  if (existing) return existing
+  const fetch = api.getChat(chatId).finally(() => {
+    chatSnapshotFetches.delete(chatId)
+  })
+  chatSnapshotFetches.set(chatId, fetch)
+  return fetch
+}
+
 const MAX_CACHED_CHATS = 3
 const recentChatIds: string[] = []
 
@@ -1780,20 +1795,27 @@ export const useStore = create<StoreState>()((set, get) => ({
 
     let snapshot: ChatSnapshot
     try {
-      snapshot = await api.getChat(chatId)
+      snapshot = await getChatShared(chatId)
     } catch (err) {
       set((s) => {
         const cs = s.byChat[chatId]
         if (!cs) return {}
         return {
           byChat: { ...s.byChat, [chatId]: { ...cs, loading: false, error: errorMessage(err) } },
-          connection: 'closed' as SseStatus,
+          // Only the active chat owns the global connection badge — a late
+          // failure for a chat the user already left must not clobber it.
+          ...(s.activeChatId === chatId ? { connection: 'closed' as SseStatus } : {}),
         }
       })
       return
     }
 
     if (get().activeChatId !== chatId) return // user moved on while we were fetching
+    // A concurrent openChat for this same chat (sharing the deduped fetch) has
+    // already hydrated and connected by the time a second caller resumes —
+    // redoing either would re-apply queued events and then replay them from
+    // the snapshot's older seq, duplicating streamed deltas.
+    if (get().byChat[chatId]?.loaded) return
 
     const cs = hydrate(snapshot)
     set((s) => ({

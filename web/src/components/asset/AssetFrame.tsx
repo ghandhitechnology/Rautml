@@ -179,7 +179,6 @@ export const AssetFrame = memo(function AssetFrame({
   const [reloadNonce, setReloadNonce] = useState(0)
 
   const frames = useRef(new Map<string, HTMLIFrameElement>())
-  const loadedKey = useRef('')
   const seq = useRef(0)
 
   /* keep every live document on the app's theme (assets honour [data-theme]) */
@@ -190,10 +189,11 @@ export const AssetFrame = memo(function AssetFrame({
 
   /* ------------------------------------------------------------------ load */
 
+  // Deps are the whole request (asset + version + retry nonce), so no dedupe ref is
+  // needed — and a ref-based guard would swallow the refetch StrictMode's mount/unmount/
+  // mount cycle demands, leaving the skeleton up forever.
   useEffect(() => {
     const requestKey = `${assetId}:${version}`
-    if (loadedKey.current === requestKey) return
-    loadedKey.current = requestKey
 
     let cancelled = false
     setStatus('loading')
@@ -219,7 +219,6 @@ export const AssetFrame = memo(function AssetFrame({
       })
       .catch((err: unknown) => {
         if (cancelled) return
-        loadedKey.current = '' // let the retry button re-run this
         setError(err instanceof Error ? err.message : 'Failed to load asset')
         setStatus('error')
       })
@@ -360,7 +359,6 @@ export const AssetFrame = memo(function AssetFrame({
   }, [ready])
 
   const retry = () => {
-    loadedKey.current = ''
     setReloadNonce((n) => n + 1)
   }
 
