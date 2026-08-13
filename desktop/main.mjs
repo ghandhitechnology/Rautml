@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { createServer } from 'node:net'
 import {
   copyFileSync,
@@ -14,6 +14,7 @@ import {
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 import {
   app,
   BrowserWindow,
@@ -29,6 +30,7 @@ import {
 import electronUpdater from 'electron-updater'
 
 const { autoUpdater } = electronUpdater
+const execFileAsync = promisify(execFile)
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const devUrl = process.env.RAUTML_DEV_URL || ''
@@ -71,6 +73,9 @@ const ENGINE_LOAD_RETRY_DELAY_MS = 1_000
 const ENGINE_RENDERER_STABLE_MS = 30_000
 const PDF_RESOURCE_WAIT_MS = 5_000
 const PDF_IMAGE_FALLBACK_WAIT_MS = 4_000
+// loadFile/printToPDF carry no deadline of their own: a hung print would leak
+// the hidden window and never answer the renderer. Bound the whole render.
+const PDF_RENDER_TIMEOUT_MS = 60_000
 const MAX_PDF_HTML_BYTES = 50 * 1024 * 1024
 const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/
 const RELEASES_URL = 'https://github.com/ghandhitechnology/Rautml/releases/latest'
@@ -166,9 +171,10 @@ async function renderDocumentPdf(html) {
 
   try {
     await writeFile(htmlPath, html, 'utf8')
-    await printWindow.loadFile(htmlPath)
+    const render = (async () => {
+      await printWindow.loadFile(htmlPath)
 
-    const resourcesReady = printWindow.webContents.executeJavaScript(`
+      const resourcesReady = printWindow.webContents.executeJavaScript(`
       Promise.all([
         document.fonts?.ready ?? Promise.resolve(),
         Promise.all(Array.from(document.images, (image) => {
@@ -181,19 +187,38 @@ async function renderDocumentPdf(html) {
         })),
       ])
     `)
-    await Promise.race([resourcesReady.catch(() => undefined), delay(PDF_RESOURCE_WAIT_MS)])
+      await Promise.race([resourcesReady.catch(() => undefined), delay(PDF_RESOURCE_WAIT_MS)])
 
-    const pdf = await printWindow.webContents.printToPDF({
-      pageSize: 'A4',
-      preferCSSPageSize: true,
-      printBackground: true,
-    })
-    return Uint8Array.from(pdf).buffer
+      const pdf = await printWindow.webContents.printToPDF({
+        pageSize: 'A4',
+        preferCSSPageSize: true,
+        printBackground: true,
+      })
+      return Uint8Array.from(pdf).buffer
+    })()
+    let timer
+    try {
+      return await Promise.race([
+        render,
+        new Promise((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error('PDF export timed out')),
+            PDF_RENDER_TIMEOUT_MS,
+          )
+          timer.unref?.()
+        }),
+      ])
+    } finally {
+      clearTimeout(timer)
+    }
   } finally {
     if (!printWindow.isDestroyed()) printWindow.destroy()
     await rm(tempDirectory, { recursive: true, force: true })
   }
 }
+
+// Each export spawns a hidden window; overlapping invokes would stack them up.
+let pdfRenderActive = false
 
 ipcMain.handle('rautml:render-pdf', (event, html) => {
   if (!mainWindow || event.sender !== mainWindow.webContents) {
@@ -202,7 +227,13 @@ ipcMain.handle('rautml:render-pdf', (event, html) => {
   if (typeof html !== 'string' || Buffer.byteLength(html, 'utf8') > MAX_PDF_HTML_BYTES) {
     throw new Error('This document is too large to export as a PDF.')
   }
-  return renderDocumentPdf(html)
+  if (pdfRenderActive) {
+    throw new Error('A PDF export is already in progress.')
+  }
+  pdfRenderActive = true
+  return renderDocumentPdf(html).finally(() => {
+    pdfRenderActive = false
+  })
 })
 
 ipcMain.handle('rautml:retry-boot', async (event) => {
@@ -223,33 +254,38 @@ ipcMain.handle('rautml:retry-boot', async (event) => {
   }
 })
 
-let loginShellEnvironmentCache = null
+let loginShellEnvironmentPromise = null
 
+/**
+ * The login shell's environment, probed once per app run (concurrent boots
+ * share the in-flight promise). Async by design: a heavy login shell may take
+ * the full 5s timeout, and a synchronous probe would freeze the main process
+ * — and the already-visible splash window — for that whole time.
+ */
 function loginShellEnvironment() {
-  if (process.platform !== 'darwin') return {}
-  // The login shell runs once per app run; spawning it on every engine start
-  // (crash recovery, retry) would add seconds to each boot.
-  if (loginShellEnvironmentCache) return loginShellEnvironmentCache
-  try {
-    const loginShell = process.env.SHELL || '/bin/zsh'
-    const raw = execFileSync(loginShell, ['-ilc', 'env -0'], {
-      encoding: 'utf8',
-      timeout: 5_000,
-      stdio: ['ignore', 'pipe', 'ignore'],
-    })
-    loginShellEnvironmentCache = Object.fromEntries(
-      raw
-        .split('\0')
-        .filter((entry) => ENV_NAME_PATTERN.test(entry))
-        .map((entry) => {
-          const separator = entry.indexOf('=')
-          return [entry.slice(0, separator), entry.slice(separator + 1)]
-        }),
-    )
-  } catch {
-    loginShellEnvironmentCache = {}
-  }
-  return loginShellEnvironmentCache
+  if (process.platform !== 'darwin') return Promise.resolve({})
+  loginShellEnvironmentPromise ??= (async () => {
+    try {
+      const loginShell = process.env.SHELL || '/bin/zsh'
+      const { stdout } = await execFileAsync(loginShell, ['-ilc', 'env -0'], {
+        encoding: 'utf8',
+        timeout: 5_000,
+        maxBuffer: 4 * 1024 * 1024,
+      })
+      return Object.fromEntries(
+        stdout
+          .split('\0')
+          .filter((entry) => ENV_NAME_PATTERN.test(entry))
+          .map((entry) => {
+            const separator = entry.indexOf('=')
+            return [entry.slice(0, separator), entry.slice(separator + 1)]
+          }),
+      )
+    } catch {
+      return {}
+    }
+  })()
+  return loginShellEnvironmentPromise
 }
 
 function freeLoopbackPort() {
@@ -338,7 +374,7 @@ async function bootEngineOnce() {
   mkdirSync(dataDir, { recursive: true })
   mkdirSync(cacheDir, { recursive: true })
 
-  const inherited = { ...loginShellEnvironment(), ...process.env }
+  const inherited = { ...(await loginShellEnvironment()), ...process.env }
   const developmentEnv = path.join(appRoot, '.env')
   const developmentData = path.join(appRoot, 'server', 'data')
   if (!app.isPackaged && existsSync(developmentEnv) && !existsSync(envPath)) {
@@ -433,9 +469,14 @@ async function recoverFromCrash(code) {
       try {
         const origin = await startEngine()
         logEngineEvent(`engine restarted after crash (attempt ${attempt})`)
+        // The engine is healthy at this point; a window reload failure (e.g.
+        // ERR_ABORTED from a user reload racing the swap) is not an engine
+        // problem and must not count as a failed restart attempt.
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindowOrigin = origin
-          await mainWindow.loadURL(origin)
+          mainWindow.loadURL(origin).catch((error) => {
+            logEngineEvent(`window reload after engine restart failed: ${error?.message || error}`)
+          })
         }
         return
       } catch (error) {

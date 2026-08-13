@@ -99,8 +99,23 @@ function DownloadMenu({
         } else {
           const renderPdf = window.rautmlDesktop?.renderPdf
           if (!renderPdf) throw new Error('PDF export requires the desktop app.')
-          const pdf = await renderPdf(html)
-          downloadPdfFile(pdf, pdfDownloadFilename(title, version))
+          // The main process bounds its own render; this bounds a wedged main
+          // so the menu doesn't sit in "Preparing PDF" forever.
+          let pdfTimeout: number | undefined
+          try {
+            const pdf = await Promise.race([
+              renderPdf(html),
+              new Promise<never>((_, reject) => {
+                pdfTimeout = window.setTimeout(
+                  () => reject(new Error('PDF export timed out.')),
+                  90_000,
+                )
+              }),
+            ])
+            downloadPdfFile(pdf, pdfDownloadFilename(title, version))
+          } finally {
+            window.clearTimeout(pdfTimeout)
+          }
         }
         setStatus('done')
       } catch {
