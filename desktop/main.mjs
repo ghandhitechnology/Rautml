@@ -66,6 +66,9 @@ const ENGINE_PORT_RACE_WINDOW_MS = 1_000
 const ENGINE_STDERR_TAIL_CHARS = 4_096
 const ENGINE_LOG_MAX_BYTES = 1024 * 1024
 const ENGINE_LOAD_RETRY_DELAY_MS = 1_000
+// A renderer that stays up this long earns back its automatic crash-reload
+// budget; a load-then-immediately-crash page never reaches it.
+const ENGINE_RENDERER_STABLE_MS = 30_000
 const PDF_RESOURCE_WAIT_MS = 5_000
 const PDF_IMAGE_FALLBACK_WAIT_MS = 4_000
 const MAX_PDF_HTML_BYTES = 50 * 1024 * 1024
@@ -414,6 +417,10 @@ async function bootEngineOnce() {
   engineOrigin = origin
   hasBootedOnce = true
   logEngineEvent(`engine ready at ${origin}`)
+  // If every window was closed while the engine was still booting, the
+  // window-all-closed idle-stop armed nothing (engineOrigin was still '') —
+  // arm it now so the windowless engine isn't left running for the session.
+  scheduleIdleEngineStop()
   return origin
 }
 
@@ -516,6 +523,7 @@ function scheduleIdleEngineStop() {
     // Busy or failed checks reschedule only until the engine has been
     // windowless for ENGINE_IDLE_MAX_AGE_MS; past that it is stopped anyway.
     const expired = Date.now() - engineIdleSince >= ENGINE_IDLE_MAX_AGE_MS
+    let stop = false
     try {
       const response = await fetch(`${engineOrigin}/api/health`, {
         signal: AbortSignal.timeout(ENGINE_HEALTH_TIMEOUT_MS),
@@ -525,7 +533,7 @@ function scheduleIdleEngineStop() {
         scheduleIdleEngineStop()
         return
       }
-      stopEngine()
+      stop = true
     } catch {
       // A failed health check is not proof that a generation is safe to stop —
       // unless the cap above has expired, in which case the engine is wedged.
@@ -533,8 +541,16 @@ function scheduleIdleEngineStop() {
         scheduleIdleEngineStop()
         return
       }
-      stopEngine()
+      stop = true
     }
+    // The health check awaited: a window may be opening or open by now, and
+    // the app may be quitting — never kill the engine out from under either.
+    if (!stop || quitting) return
+    if (windowOpening || BrowserWindow.getAllWindows().length > 0) {
+      engineIdleSince = 0
+      return
+    }
+    stopEngine()
   }, ENGINE_IDLE_CHECK_MS)
   engineIdleTimer.unref?.()
 }
@@ -757,8 +773,16 @@ async function createWindow() {
     if (/^https?:/i.test(url)) void shell.openExternal(url)
   })
   let retriedFailedLoad = false
+  let crashReloads = 0
+  let crashResetTimer = null
   window.webContents.on('did-finish-load', () => {
     retriedFailedLoad = false
+    // The crash budget resets only after the page proves stable — resetting
+    // here would let a load-then-crash page loop reloads forever.
+    clearTimeout(crashResetTimer)
+    crashResetTimer = setTimeout(() => {
+      crashReloads = 0
+    }, ENGINE_RENDERER_STABLE_MS)
   })
   window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, _validatedURL, isMainFrame) => {
     // -3 means the load was aborted on purpose (retry, crash-restart swap).
@@ -775,7 +799,29 @@ async function createWindow() {
   window.webContents.on('render-process-gone', (_event, details) => {
     logEngineEvent(`renderer process gone (${details?.reason ?? 'unknown'})`)
     if (mainWindow !== window || window.isDestroyed()) return
-    window.reload()
+    // A page that crashes on every load would otherwise reload in a loop
+    // forever — after two automatic reloads, hand the decision to the user.
+    clearTimeout(crashResetTimer)
+    crashReloads += 1
+    if (crashReloads <= 2) {
+      window.reload()
+      return
+    }
+    void (async () => {
+      const { response } = await dialog.showMessageBox({
+        type: 'error',
+        title: 'Rautml keeps crashing',
+        message: 'The window crashed repeatedly.',
+        detail: `Renderer exit reason: ${details?.reason ?? 'unknown'}`,
+        buttons: ['Reload', 'Wait'],
+        defaultId: 0,
+        cancelId: 1,
+      })
+      if (response === 0 && mainWindow === window && !window.isDestroyed()) {
+        crashReloads = 0
+        window.reload()
+      }
+    })()
   })
   window.on('unresponsive', () => {
     void (async () => {
@@ -795,6 +841,7 @@ async function createWindow() {
   })
   window.on('close', () => saveWindowState(window))
   window.on('closed', () => {
+    clearTimeout(crashResetTimer)
     if (mainWindow === window) mainWindow = null
   })
 
