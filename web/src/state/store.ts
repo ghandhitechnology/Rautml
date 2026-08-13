@@ -1163,6 +1163,11 @@ let creatingChat = false
  * restored tail is rebuilt from this list, not appended per catch. */
 const sendOrder = new Map<string, { localId: string; text: string; failed: boolean }[]>()
 
+/* In-flight upload abort handles. Switching/closing/deleting a chat clears its
+ * staged uploads; without aborting, the XHR would still complete server-side
+ * and the file would land silently in the chat the user just left. */
+const uploadAborters = new Set<AbortController>()
+
 function rememberChat(chatId: string) {
   const previous = recentChatIds.indexOf(chatId)
   if (previous !== -1) recentChatIds.splice(previous, 1)
@@ -1331,6 +1336,8 @@ export const useStore = create<StoreState>()((set, get) => ({
       void get().refreshProviders()
     } catch (err) {
       set({ settingsError: err instanceof Error ? err.message : 'Could not save that key' })
+      // Callers show "Saved" affordances — they must see the failure.
+      throw err
     } finally {
       set((s) => {
         const settingsSaving = { ...s.settingsSaving }
@@ -1351,6 +1358,8 @@ export const useStore = create<StoreState>()((set, get) => ({
       set({ personalization })
     } catch (err) {
       set({ settingsError: err instanceof Error ? err.message : 'Could not save that preference' })
+      // Callers show "Saved" affordances — they must see the failure.
+      throw err
     } finally {
       set((s) => {
         const settingsSaving = { ...s.settingsSaving }
@@ -2187,6 +2196,8 @@ export const useStore = create<StoreState>()((set, get) => ({
     await Promise.all(
       files.map(async (file) => {
         const localId = uid('upload-')
+        const aborter = new AbortController()
+        uploadAborters.add(aborter)
         set((s) => ({
           stagedUploads: [
             ...s.stagedUploads,
@@ -2194,8 +2205,11 @@ export const useStore = create<StoreState>()((set, get) => ({
           ],
         }))
         try {
-          const result = await api.uploadSources(chatId, [file], (progress) =>
-            patchStaged(localId, { progress }),
+          const result = await api.uploadSources(
+            chatId,
+            [file],
+            (progress) => patchStaged(localId, { progress }),
+            aborter.signal,
           )
           const source = result.sources[0]
           if (source) {
@@ -2208,6 +2222,8 @@ export const useStore = create<StoreState>()((set, get) => ({
           }
         } catch (err) {
           patchStaged(localId, { status: 'error', error: errorMessage(err) })
+        } finally {
+          uploadAborters.delete(aborter)
         }
       }),
     )
@@ -2222,7 +2238,13 @@ export const useStore = create<StoreState>()((set, get) => ({
     set((s) => ({ stagedUploads: s.stagedUploads.filter((u) => u.localId !== localId) }))
   },
 
-  clearStagedUploads: () => set({ stagedUploads: [] }),
+  clearStagedUploads: () => {
+    // Cancel in-flight uploads as well — otherwise they still complete
+    // server-side and the file lands silently in the chat just left.
+    for (const aborter of uploadAborters) aborter.abort()
+    uploadAborters.clear()
+    set({ stagedUploads: [] })
+  },
 
   removeSource: async (sourceId) => {
     // The optimistic path: source.removed comes back over SSE, but pulling it

@@ -32,6 +32,19 @@ export interface SseConnection {
 
 const BASE_DELAY = 400
 const MAX_DELAY = 10_000
+/**
+ * Consecutive failures before fast retries give way to a probed slow cadence:
+ * a permanently-failing endpoint (the chat was deleted server-side and the
+ * route 404s) must not storm every ≤10s forever behind a "Reconnecting…"
+ * badge, but a transient outage longer than this budget must not leave the
+ * stream closed either. Past the budget we probe the endpoint (see
+ * probeAndSchedule): definitive 4xx → closed; anything else → keep retrying
+ * slowly so a recovered server resumes the chat without a focus/reopen nudge.
+ * A successful open or a manual reconnect() resets the count.
+ */
+const MAX_ATTEMPTS = 8
+/** Retry interval once the fast budget is exhausted (transient outage). */
+const SLOW_RETRY_DELAY = 30_000
 
 export function connectChatEvents(opts: SseOptions): SseConnection {
   const { chatId, onEvent, onStatus } = opts
@@ -92,6 +105,37 @@ export function connectChatEvents(opts: SseOptions): SseConnection {
     onEvent(event)
   }
 
+  /**
+   * EventSource errors carry no HTTP status, so past the fast-retry budget we
+   * probe the endpoint once to tell a dead route (chat deleted → 4xx, close
+   * for good) from a transient outage (network error / 5xx → keep retrying on
+   * a slow cadence; a healthy 200 means the last error was spurious, so
+   * reconnect right away).
+   */
+  const probeAndSchedule = async () => {
+    try {
+      const res = await fetch(eventsUrl(chatId, lastSeq), {
+        signal: AbortSignal.timeout(MAX_DELAY),
+      })
+      await res.body?.cancel().catch(() => {})
+      if (closed) return
+      if (res.status >= 400 && res.status < 500) {
+        // Terminal from the user's perspective: the stream is dead, not
+        // reconnecting — reconnect() still works from here.
+        status('closed')
+        return
+      }
+      if (res.ok) {
+        open()
+        return
+      }
+    } catch {
+      if (closed) return
+    }
+    status('reconnecting')
+    timer = setTimeout(open, SLOW_RETRY_DELAY)
+  }
+
   const open = () => {
     if (closed) return
     teardown()
@@ -115,6 +159,10 @@ export function connectChatEvents(opts: SseOptions): SseConnection {
       if (closed) return
       // Own the retry loop so we can resume with ?after=<lastSeq>.
       teardown()
+      if (attempt >= MAX_ATTEMPTS) {
+        void probeAndSchedule()
+        return
+      }
       const delay = Math.min(BASE_DELAY * 2 ** attempt, MAX_DELAY)
       const jittered = delay * (0.75 + Math.random() * 0.5)
       attempt += 1

@@ -91,8 +91,13 @@ function PersonalizationField({
   const commit = async () => {
     const next = draft.trim()
     if (next === committed.current) return
+    try {
+      await savePersonalization({ [field]: next })
+    } catch {
+      // The store surfaced settingsError; leave the field dirty for a retry.
+      return
+    }
     committed.current = next
-    await savePersonalization({ [field]: next })
     setJustSaved(true)
   }
 

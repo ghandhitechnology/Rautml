@@ -50,7 +50,13 @@ function KeyField({ field }: { field: ApiKeyStatus }) {
   }, [justSaved])
 
   const save = async (next: string) => {
-    await saveApiKey(field.name, next)
+    try {
+      await saveApiKey(field.name, next)
+    } catch {
+      // The store surfaced settingsError; keep the typed key for a retry
+      // instead of clearing it under a false "Saved".
+      return
+    }
     setValue('')
     setReveal(false)
     setJustSaved(true)
