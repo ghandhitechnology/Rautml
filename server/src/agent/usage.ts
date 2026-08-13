@@ -7,11 +7,10 @@
 // the page never waits on ChatGPT / Anthropic / the proxy.
 
 import { homedir } from 'node:os';
-import { readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { getSetting, setSetting } from '../repo.js';
 import type { ProviderBalance, ProviderUsage, UsageSnapshot, UsageWindow } from '../types.js';
-import { fetchWithHeadersTimeout } from './http.js';
 import { peekCodexTokens } from './codex.js';
 
 export const USAGE_POLL_MS = 10 * 60_000;
@@ -19,8 +18,6 @@ const SNAPSHOT_KEY = 'provider_usage';
 const TOKEN_SLACK_MS = 5 * 60_000;
 const WHAM_USAGE_URL = 'https://chatgpt.com/backend-api/wham/usage';
 const CLAUDE_USAGE_URL = 'https://api.anthropic.com/api/oauth/usage';
-const CODEX_TOKEN_URL = 'https://auth.openai.com/oauth/token';
-const CODEX_OAUTH_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1';
 const WINDOW_5H = 5 * 60 * 60;
 const WINDOW_WEEK = 7 * 24 * 60 * 60;
@@ -392,37 +389,14 @@ async function freshCodexToken(account: UsageAccount): Promise<string | null> {
   if (account.id === 'codex-local' && account.accessToken) return account.accessToken;
   if (!account.accessToken) return null;
   if (jwtExpMs(account.accessToken) - Date.now() > TOKEN_SLACK_MS) return account.accessToken;
-  if (!account.refreshToken || !account.filePath) return account.accessToken;
-
-  const res = await fetchWithHeadersTimeout(CODEX_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      client_id: CODEX_OAUTH_CLIENT_ID,
-      grant_type: 'refresh_token',
-      refresh_token: account.refreshToken,
-      scope: 'openid profile email',
-    }),
-  });
-  if (!res.ok) return account.accessToken;
-  const json: any = await res.json();
-  const access = typeof json.access_token === 'string' ? json.access_token : account.accessToken;
-  const refresh = typeof json.refresh_token === 'string' ? json.refresh_token : account.refreshToken;
-  try {
-    const current = jsonFile(account.filePath) ?? {};
-    const next = {
-      ...current,
-      access_token: access,
-      refresh_token: refresh,
-      last_refresh: new Date().toISOString(),
-    };
-    const tmp = `${account.filePath}.tmp`;
-    writeFileSync(tmp, JSON.stringify(next, null, 2), { mode: 0o600 });
-    renameSync(tmp, account.filePath);
-  } catch {
-    /* in-memory token still works */
-  }
-  return access;
+  // The proxy daemon owns and refreshes its auth files on its own cadence.
+  // Refreshing here too would race that rotation: OpenAI revokes a refresh
+  // token on use, so whichever side lands second is left holding an invalid
+  // one and the account gets signed out until re-login. A token inside the
+  // slack window is almost always still valid — use it, and if it has lapsed,
+  // the usage call fails into this account's error report until the proxy's
+  // next refresh lands in the file we re-read each poll.
+  return account.accessToken;
 }
 
 async function managementGet(pathname: string, key: string): Promise<any | null> {
@@ -463,8 +437,27 @@ async function managementApiCall(
 }
 
 async function requestJson(url: string, init: RequestInit, timeoutMs = 20_000): Promise<any> {
-  const res = await fetchWithHeadersTimeout(url, init, timeoutMs);
-  const text = await res.text();
+  // One signal for the whole exchange: the only way to cancel an in-flight
+  // body read is aborting the fetch (body.cancel() rejects while res.text()
+  // holds the stream lock), so headers AND body share this single deadline.
+  // These are one-shot JSON payloads, not streams — no reason to disarm.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  timer.unref?.();
+  let res: Response;
+  let text: string;
+  try {
+    res = await fetch(url, { ...init, signal: controller.signal });
+    text = await res.text();
+  } catch (err) {
+    // No caller signal is ever passed here, so an abort is always our timer.
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(`usage request timed out after ${Math.round(timeoutMs / 1000)}s`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) throw new Error(text.slice(0, 180) || `HTTP ${res.status}`);
   if (!text) return {};
   try {

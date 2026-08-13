@@ -186,6 +186,9 @@ async function refreshTokens(auth: CodexAuthFile): Promise<CodexTokens> {
 
 /** Valid access token + account id, or null when Codex is not signed in. */
 export async function peekCodexTokens(): Promise<{ accessToken: string; accountId: string } | null> {
+  // The RAUTML_CODEX=0 veto covers background peeking too — otherwise a user
+  // who disabled Codex still gets token refreshes and auth.json rewrites.
+  if (process.env.RAUTML_CODEX === '0') return null;
   try {
     const tokens = await getTokens();
     return { accessToken: tokens.access_token, accountId: tokens.account_id };
