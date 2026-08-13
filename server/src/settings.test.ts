@@ -3,6 +3,7 @@ import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, it } from 'node:test';
+import { applyManagedEnv } from './managed-env.js';
 import {
   PERSONALIZATION_MAX_CHARS,
   parseEnvText,
@@ -12,10 +13,31 @@ import {
   writePersonalization,
 } from './settings.js';
 
+describe('managed API environment', () => {
+  it('lets saved values replace exported shell keys', () => {
+    const environment: NodeJS.ProcessEnv = {
+      OPENROUTER_API_KEY: 'shell-key',
+      PORT: '5175',
+    };
+    applyManagedEnv({ OPENROUTER_API_KEY: 'saved-key', PORT: '9999' }, environment);
+    assert.deepEqual(environment, { OPENROUTER_API_KEY: 'saved-key', PORT: '5175' });
+  });
+
+  it('keeps an explicit saved removal from reverting to an exported key', () => {
+    const environment: NodeJS.ProcessEnv = { OPENROUTER_API_KEY: 'shell-key' };
+    applyManagedEnv({ OPENROUTER_API_KEY: '' }, environment);
+    assert.equal(environment.OPENROUTER_API_KEY, undefined);
+  });
+});
+
 describe('writeKeys', () => {
-  it('serializes concurrent saves so neither drops the other’s keys', async () => {
+  it('serializes concurrent saves so neither drops the other’s key', async () => {
     const dir = await fs.mkdtemp(path.join(tmpdir(), 'rautml-settings-'));
-    const prevEnvPath = process.env.RAUTML_ENV_PATH;
+    const previous = {
+      envPath: process.env.RAUTML_ENV_PATH,
+      openRouter: process.env.OPENROUTER_API_KEY,
+      firecrawl: process.env.FIRECRAWL_API_KEY,
+    };
     process.env.RAUTML_ENV_PATH = path.join(dir, '.env');
     try {
       await Promise.all([
@@ -26,14 +48,18 @@ describe('writeKeys', () => {
       assert.equal(parsed.OPENROUTER_API_KEY, 'sk-or-first');
       assert.equal(parsed.FIRECRAWL_API_KEY, 'fc-second');
     } finally {
-      if (prevEnvPath === undefined) delete process.env.RAUTML_ENV_PATH;
-      else process.env.RAUTML_ENV_PATH = prevEnvPath;
-      delete process.env.OPENROUTER_API_KEY;
-      delete process.env.FIRECRAWL_API_KEY;
+      restoreEnv('RAUTML_ENV_PATH', previous.envPath);
+      restoreEnv('OPENROUTER_API_KEY', previous.openRouter);
+      restoreEnv('FIRECRAWL_API_KEY', previous.firecrawl);
       await fs.rm(dir, { recursive: true, force: true });
     }
   });
 });
+
+function restoreEnv(name: string, value: string | undefined) {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+}
 
 describe('env file upsert', () => {
   it('updates a managed key in place without touching its neighbours', () => {
@@ -75,11 +101,15 @@ describe('env file upsert', () => {
     assert.equal(upsertEnvText('', { OPENROUTER_API_KEY: 'sk-or-1' }), 'OPENROUTER_API_KEY=sk-or-1\n');
   });
 
-  it('clears a key by removing its line', () => {
+  it('clears a key with a tombstone so an exported value cannot return', () => {
     const after = upsertEnvText('OPENROUTER_API_KEY=sk-or-1\nFIRECRAWL_API_KEY=fc-1\n', {
       OPENROUTER_API_KEY: '   ',
     });
-    assert.equal(after, 'FIRECRAWL_API_KEY=fc-1\n');
+    assert.equal(after, 'OPENROUTER_API_KEY=\nFIRECRAWL_API_KEY=fc-1\n');
+  });
+
+  it('adds a tombstone when clearing a key absent from the file', () => {
+    assert.equal(upsertEnvText('', { OPENROUTER_API_KEY: '' }), 'OPENROUTER_API_KEY=\n');
   });
 
   it('collapses pre-existing duplicates of a key it rewrites', () => {

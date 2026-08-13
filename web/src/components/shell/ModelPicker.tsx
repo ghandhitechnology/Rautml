@@ -25,8 +25,9 @@ import {
   useSelectedEffort,
   useSelectedModel,
   useStore,
+  useUsage,
 } from '../../state/store'
-import type { Thread } from '../../lib/types'
+import type { ProviderUsage, Thread } from '../../lib/types'
 import { cx } from '../../lib/utils'
 import { EASE } from '../../lib/motion'
 import { EffortSlider } from './EffortSlider'
@@ -72,6 +73,7 @@ export function ModelPicker({
   const effort = isFork ? forkEffort : mainEffort
   const setModel = useStore((s) => (isFork ? s.setForkModel : s.setModel))
   const setEffort = useStore((s) => (isFork ? s.setForkEffort : s.setEffort))
+  const usage = useUsage()
 
   const [open, setOpen] = useState(false)
   const providerGroups = useMemo(() => {
@@ -86,6 +88,7 @@ export function ModelPicker({
   const [activeProviderId, setActiveProviderId] = useState(model?.providerId ?? '')
   const activeProvider =
     providerGroups.find((group) => group.id === activeProviderId) ?? providerGroups[0]
+  const activeUsage = usage.providers.find((item) => item.id === activeProvider?.id)
   const inlineListHeight = Math.min(Math.max(activeProvider?.models.length ?? 1, 1) * 40, 200)
   const fullListHeight = Math.min(Math.max(activeProvider?.models.length ?? 1, 1) * 57, 240)
 
@@ -193,6 +196,7 @@ export function ModelPicker({
                   </button>
                 ))}
               </div>
+              <PickerUsage usage={activeUsage} />
               <motion.div
                 className="rml-model__menu-viewport"
                 animate={{ height: inlineListHeight }}
@@ -305,6 +309,7 @@ export function ModelPicker({
                 </button>
               ))}
             </div>
+            <PickerUsage usage={activeUsage} />
 
             <motion.div
               className="rml-model__list-viewport"
@@ -369,6 +374,27 @@ export function ModelPicker({
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  )
+}
+
+function PickerUsage({ usage }: { usage?: ProviderUsage }) {
+  if (!usage || (!usage.fiveHour && !usage.weekly)) return null
+  const rows = [
+    usage.fiveHour ? { label: '5h', used: usage.fiveHour.usedPercent } : null,
+    usage.weekly ? { label: 'Week', used: usage.weekly.usedPercent } : null,
+  ].filter((row): row is { label: string; used: number } => !!row)
+  return (
+    <div className="rml-model__usage" aria-label="Rolling usage limits">
+      {rows.map((row) => (
+        <div key={row.label} className="rml-model__usage-row">
+          <span>{row.label}</span>
+          <span className="rml-model__usage-track" aria-hidden="true">
+            <span className="rml-model__usage-fill" style={{ width: `${Math.min(100, Math.max(0, row.used))}%` }} />
+          </span>
+          <strong>{Math.round(row.used)}%</strong>
+        </div>
+      ))}
     </div>
   )
 }

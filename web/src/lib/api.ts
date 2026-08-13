@@ -13,6 +13,7 @@ import type {
   SettingsPayload,
   Source,
   Thread,
+  UsageSnapshot,
 } from './types'
 
 export const API_BASE = '/api'
@@ -145,6 +146,11 @@ export function listModels(refresh = false): Promise<{ models: ModelInfo[]; prov
 
 export function reconnectProvider(providerId: string): Promise<{ launched: boolean; command: string }> {
   return request(`/providers/${encodeURIComponent(providerId)}/reconnect`, { method: 'POST', body: JSON.stringify({}) })
+}
+
+/** GET /api/usage → last cached provider limits and balances. Never a live fetch. */
+export function getUsage(): Promise<UsageSnapshot> {
+  return request<UsageSnapshot>('/usage')
 }
 
 /** POST /api/chats/:id/messages → { runId } (throws ApiError 409 if a run is active) */

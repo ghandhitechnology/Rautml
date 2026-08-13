@@ -11,9 +11,16 @@ import path from 'node:path';
 import type { Socket } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import type { ErrorRequestHandler } from 'express';
+import { applyManagedEnv } from './managed-env.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-config({ path: process.env.RAUTML_ENV_PATH || path.join(__dirname, '..', '..', '.env') });
+const configuredEnv = config({
+  path: process.env.RAUTML_ENV_PATH || path.join(__dirname, '..', '..', '.env'),
+});
+// dotenv preserves inherited variables by default. API settings saved through
+// the app are different: the user's file choice must survive an engine restart
+// even when their login shell exports an older key.
+applyManagedEnv(configuredEnv.parsed ?? {});
 
 // The desktop shell needs this process to stay alive: log process-level
 // faults loudly instead of letting Node's defaults take the engine down.
@@ -31,6 +38,7 @@ const { default: apiRouter } = await import('./routes/api.js');
 const { resumePendingIndexing } = await import('./sources/indexer.js');
 const { reapStaleRuns } = await import('./repo.js');
 const { shutdown: shutdownEngine } = await import('./agent/engine.js');
+const { startUsagePoller, stopUsagePoller } = await import('./agent/usage.js');
 
 // Multer stages uploads in a .incoming dir under each chat's sources dir; a
 // crash mid-upload orphans them, and nothing inside was ever committed to a
@@ -59,6 +67,10 @@ if (reaped.runs || reaped.messages) {
     `[boot] reaped ${reaped.runs} orphaned run(s) and ${reaped.messages} streaming message(s) from a previous crash`,
   );
 }
+
+// Rolling 5h / weekly limits: keep a snapshot warm so Settings never waits
+// on CLIProxyAPI when the user opens it.
+startUsagePoller();
 
 const app = express();
 app.use(express.json({ limit: '20mb' }));
@@ -139,6 +151,7 @@ server.on('connection', (socket) => {
 });
 
 const shutdown = () => {
+  stopUsagePoller();
   shutdownEngine(); // abort every active run so it finalizes instead of orphaning
   server.close(() => process.exit(0));
   for (const socket of connections) socket.destroy();

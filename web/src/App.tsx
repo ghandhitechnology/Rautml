@@ -55,6 +55,7 @@ export default function App() {
   const documentMode = useDocumentMode()
   const loadChats = useStore((s) => s.loadChats)
   const loadModels = useStore((s) => s.loadModels)
+  const loadUsage = useStore((s) => s.loadUsage)
   const openChat = useStore((s) => s.openChat)
   const newChat = useStore((s) => s.newChat)
   const retitleOnExit = useStore((s) => s.retitleOnExit)
@@ -64,7 +65,19 @@ export default function App() {
   useEffect(() => {
     void loadChats()
     void loadModels()
-  }, [loadChats, loadModels])
+    void loadUsage()
+    // Re-read the server snapshot so bars stay current after the 10-minute poller.
+    // Poll faster until the first snapshot lands (first launch after a fresh install).
+    let timer = window.setInterval(() => void loadUsage(), 5_000)
+    const swap = window.setTimeout(() => {
+      window.clearInterval(timer)
+      timer = window.setInterval(() => void loadUsage(), 60_000)
+    }, 20_000)
+    return () => {
+      window.clearInterval(timer)
+      window.clearTimeout(swap)
+    }
+  }, [loadChats, loadModels, loadUsage])
 
   useEffect(() => {
     const onPageHide = () => void retitleOnExit(undefined, true)

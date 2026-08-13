@@ -146,10 +146,8 @@ function KeyField({ field }: { field: ApiKeyStatus }) {
 
       {field.source === 'environment' ? (
         <p className="rml-keyset__shadowed">
-          This value is coming from your shell environment, which takes priority when Rautml
-          starts. A key saved here works right away, but the shell's value returns on the next
-          launch — unexport <code>{field.name}</code> in your shell profile to make this field
-          stick.
+          Currently loaded from your shell environment. Saving a value here stores it in Rautml
+          and keeps it active on future launches.
         </p>
       ) : null}
     </article>

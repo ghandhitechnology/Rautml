@@ -1,7 +1,15 @@
 .rml-modelset__toolbar {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: var(--sp-3);
   margin-bottom: var(--sp-3);
+}
+
+.rml-modelset__updated {
+  margin: 0 auto 0 0;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
 }
 
 .rml-modelset__refresh {
@@ -261,4 +269,81 @@
 
 .rml-modelset__model.is-unavailable:hover {
   background: transparent;
+}
+
+/* ------------------------------------------------------------- usage bars */
+
+.rml-usage {
+  display: grid;
+  gap: var(--sp-3);
+  padding: 0 var(--sp-5) var(--sp-4);
+}
+
+.rml-usage__balance {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+
+.rml-usage__balance > div {
+  display: grid;
+  gap: 2px;
+}
+
+.rml-usage__balance span,
+.rml-usage__balance small {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+
+.rml-usage__balance strong {
+  color: var(--text);
+  font-size: var(--fs-lg);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.rml-usage__row {
+  display: grid;
+  gap: 5px;
+}
+
+.rml-usage__meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+
+.rml-usage__meta strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.rml-usage__track {
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+}
+
+.rml-usage__fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.rml-usage__reset {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
 }

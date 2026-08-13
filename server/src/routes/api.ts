@@ -2,6 +2,7 @@
 //
 //   GET    /api/health                    → { ok, busy }
 //   GET    /api/models?refresh=1          → { models, providers, defaultModelId }
+//   GET    /api/usage                     → cached 5h/weekly limits            (loopback only)
 //   POST   /api/providers/:id/reconnect   → launch provider login (loopback only)
 //   GET    /api/settings                  → { keys, personalization }          (loopback only)
 //   PUT    /api/settings/keys             → { keys }                           (loopback only)
@@ -42,6 +43,7 @@ import {
   invalidateProviderCache,
   launchReconnect,
 } from '../agent/providers.js';
+import { getUsageSnapshot, scheduleUsageRefresh } from '../agent/usage.js';
 import * as repo from '../repo.js';
 import * as settings from '../settings.js';
 import * as sse from '../sse.js';
@@ -204,6 +206,13 @@ router.post(
   }),
 );
 
+// Cached provider limits and balances. The poller refreshes this in the background;
+// this route never waits on CLIProxyAPI or a first-party usage endpoint.
+router.get('/usage', (req: Request, res: Response) => {
+  if (!isLoopback(req)) return fail(res, 403, 'Usage is only readable from this computer');
+  res.json(getUsageSnapshot());
+});
+
 // ---------------------------------------------------------------------------
 // settings — API keys (.env) + personalization (settings table)
 //
@@ -230,6 +239,10 @@ router.put(
       // A new OpenRouter key changes that provider's auth status; drop the 30s
       // discovery cache so the next /models reflects it immediately.
       invalidateProviderCache();
+      const usageKeys = Object.keys(body as Record<string, string>).some((name) =>
+        name.startsWith('CLIPROXYAPI_') || name.startsWith('OPENROUTER_'),
+      );
+      if (usageKeys) scheduleUsageRefresh();
       res.json({ keys });
     } catch (err) {
       fail(res, 500, (err as Error)?.message ?? 'Could not save API keys');

@@ -133,6 +133,42 @@
   background: var(--hover);
 }
 
+.rml-model__usage {
+  display: grid;
+  gap: 5px;
+  padding: 0 8px 8px;
+}
+
+.rml-model__usage-row {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 10.5px;
+}
+
+.rml-model__usage-row strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: right;
+}
+
+.rml-model__usage-track {
+  height: 3px;
+  overflow: hidden;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+}
+
+.rml-model__usage-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
 .rml-model__provider-tab.is-active {
   color: var(--accent-hover);
   background: var(--accent-soft);

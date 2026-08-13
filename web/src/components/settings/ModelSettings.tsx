@@ -1,6 +1,7 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { cx } from '../../lib/utils'
-import { useProviders, useStore } from '../../state/store'
+import { useProviders, useStore, useUsage } from '../../state/store'
+import type { ProviderBalance, ProviderUsage, UsageWindow } from '../../lib/types'
 import './ModelSettings.css'
 
 const STATUS_LABEL: Record<string, string> = {
@@ -18,19 +19,35 @@ const STATUS_LABEL: Record<string, string> = {
  */
 export function ModelSettings() {
   const providers = useProviders()
+  const usage = useUsage()
   const enabledModelIds = useStore((s) => s.enabledModelIds)
   const toggleModel = useStore((s) => s.toggleModelEnabled)
   const refresh = useStore((s) => s.refreshProviders)
+  const loadUsage = useStore((s) => s.loadUsage)
   const reconnect = useStore((s) => s.reconnectProvider)
+  const usageById = useMemo(() => {
+    const map = new Map<string, ProviderUsage>()
+    for (const item of usage.providers) map.set(item.id, item)
+    return map
+  }, [usage.providers])
+  const extraUsage = useMemo(() => {
+    const known = new Set(providers.map((provider) => provider.id))
+    return usage.providers.filter(
+      (item) => !known.has(item.id) && (item.fiveHour || item.weekly || item.balance),
+    )
+  }, [providers, usage.providers])
 
   // CLI logins leave the app for Terminal and a browser; re-read on return so a
   // completed sign-in shows up without a manual Refresh.
   useEffect(() => {
-    const syncAfterLogin = () => void refresh()
+    const syncAfterLogin = () => {
+      void refresh()
+      void loadUsage()
+    }
     syncAfterLogin()
     window.addEventListener('focus', syncAfterLogin)
     return () => window.removeEventListener('focus', syncAfterLogin)
-  }, [refresh])
+  }, [loadUsage, refresh])
 
   const enabled = new Set(enabledModelIds)
   const totalModels = providers.reduce((sum, provider) => sum + provider.models.length, 0)
@@ -50,7 +67,17 @@ export function ModelSettings() {
       </header>
 
       <div className="rml-modelset__toolbar">
-        <button type="button" className="rml-modelset__refresh" onClick={() => void refresh()}>
+        {usage.updatedAt ? (
+          <p className="rml-modelset__updated">{formatUpdatedAt(usage.updatedAt)}</p>
+        ) : null}
+        <button
+          type="button"
+          className="rml-modelset__refresh"
+          onClick={() => {
+            void refresh()
+            void loadUsage()
+          }}
+        >
           Refresh catalogs
         </button>
       </div>
@@ -81,6 +108,8 @@ export function ModelSettings() {
                 {checkedCount}/{provider.modelCount}
               </span>
             </header>
+
+            <UsageMeters usage={usageById.get(provider.id)} />
 
             {!connected ? (
               <div className="rml-modelset__connect">
@@ -147,8 +176,94 @@ export function ModelSettings() {
           </article>
         )
       })}
+
+      {extraUsage.map((item) => (
+        <article key={item.id} className="rml-settings-card rml-modelset__group">
+          <header className="rml-modelset__head">
+            <div className="rml-modelset__identity">
+              <h3>{item.name}</h3>
+            </div>
+          </header>
+          <UsageMeters usage={item} />
+        </article>
+      ))}
     </section>
   )
+}
+
+function UsageMeters({ usage }: { usage?: ProviderUsage }) {
+  if (!usage || (!usage.fiveHour && !usage.weekly && !usage.balance)) return null
+  return (
+    <div className="rml-usage" aria-label={`${usage.name} usage and balance`}>
+      {usage.balance ? <Balance balance={usage.balance} /> : null}
+      {usage.fiveHour ? <UsageBar label="5 hours" window={usage.fiveHour} /> : null}
+      {usage.weekly ? <UsageBar label="This week" window={usage.weekly} /> : null}
+    </div>
+  )
+}
+
+function Balance({ balance }: { balance: ProviderBalance }) {
+  const detail =
+    balance.used !== undefined && balance.total !== undefined
+      ? `${formatUsd(balance.used)} used of ${formatUsd(balance.total)} ${balance.scope === 'account' ? 'purchased' : 'key limit'}`
+      : balance.scope === 'account'
+        ? 'Account credits'
+        : 'API key spending limit'
+  return (
+    <div className="rml-usage__balance">
+      <div>
+        <span>{balance.scope === 'account' ? 'Credit balance' : 'Key balance'}</span>
+        <small>{detail}</small>
+      </div>
+      <strong>{formatUsd(balance.remaining)}</strong>
+    </div>
+  )
+}
+
+function UsageBar({ label, window }: { label: string; window: UsageWindow }) {
+  const used = Math.min(100, Math.max(0, window.usedPercent))
+  return (
+    <div className="rml-usage__row">
+      <div className="rml-usage__meta">
+        <span>{label}</span>
+        <strong>{Math.round(used)}%</strong>
+      </div>
+      <div className="rml-usage__track" aria-hidden="true">
+        <span className="rml-usage__fill" style={{ width: `${used}%` }} />
+      </div>
+      {window.resetAt ? <p className="rml-usage__reset">{formatResetAt(window.resetAt)}</p> : null}
+    </div>
+  )
+}
+
+function formatUpdatedAt(at: number): string {
+  const delta = Date.now() - at
+  if (delta < 45_000) return 'Provider data just updated'
+  if (delta < 90_000) return 'Provider data from a minute ago'
+  if (delta < 60 * 60_000) return `Provider data from ${Math.round(delta / 60_000)} minutes ago`
+  if (delta < 36 * 60 * 60_000) return `Provider data from ${Math.round(delta / (60 * 60_000))} hours ago`
+  return `Provider data from ${new Date(at).toLocaleString()}`
+}
+
+function formatResetAt(at: number): string {
+  const delta = at - Date.now()
+  if (delta <= 0) return 'Reset due'
+  if (delta < 90 * 60_000) return `Resets in ${Math.max(1, Math.round(delta / 60_000))} min`
+  const when = new Date(at)
+  const sameDay = when.toDateString() === new Date().toDateString()
+  const time = when.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  if (sameDay) return `Resets ${time}`
+  const day = when.toLocaleDateString(undefined, { weekday: 'short' })
+  return `Resets ${day} ${time}`
+}
+
+function formatUsd(amount: number): string {
+  return new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: Math.abs(amount) < 1 ? 4 : 2,
+  }).format(amount)
 }
 
 /** OpenRouter is unlocked by a key, so point at the section that holds it. */

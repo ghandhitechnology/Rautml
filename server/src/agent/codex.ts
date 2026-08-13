@@ -184,6 +184,16 @@ async function refreshTokens(auth: CodexAuthFile): Promise<CodexTokens> {
   return tokens;
 }
 
+/** Valid access token + account id, or null when Codex is not signed in. */
+export async function peekCodexTokens(): Promise<{ accessToken: string; accountId: string } | null> {
+  try {
+    const tokens = await getTokens();
+    return { accessToken: tokens.access_token, accountId: tokens.account_id };
+  } catch {
+    return null;
+  }
+}
+
 /** Valid access token + account id, refreshing (serialized) when near expiry. */
 async function getTokens(force = false, signal?: AbortSignal): Promise<CodexTokens> {
   cachedAuth = cachedAuth === undefined ? readAuthFile() : cachedAuth;

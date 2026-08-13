@@ -60,6 +60,7 @@ import type {
   TimelineItem,
   ToolEndEvent,
   ToolStartEvent,
+  UsageSnapshot,
   WidgetEvent,
 } from '../lib/types'
 
@@ -145,6 +146,8 @@ export interface StoreState {
   forkEffortByModel: Record<string, string>
   /** How much the next answer explains domain terms (the audience pebble). */
   elaboration: ElaborationLevel
+  /** Cached provider limits and balances. Served from the server snapshot, never fetched live on open. */
+  usage: UsageSnapshot
 
   /* ui */
   theme: ThemeName
@@ -183,6 +186,7 @@ export interface StoreState {
   saveApiKey: (name: string, value: string) => Promise<void>
   savePersonalization: (patch: Partial<Personalization>) => Promise<void>
   loadModels: () => Promise<void>
+  loadUsage: () => Promise<void>
   refreshProviders: () => Promise<void>
   reconnectProvider: (providerId: string) => Promise<void>
   toggleModelEnabled: (modelId: string) => void
@@ -1301,6 +1305,7 @@ export const useStore = create<StoreState>()((set, get) => ({
   forkModelId: readStoredModel(FORK_MODEL_KEY),
   forkEffortByModel: readStoredEfforts(FORK_EFFORT_KEY),
   elaboration: readStoredElaboration(),
+  usage: { providers: [], updatedAt: 0 },
 
   theme: typeof document !== 'undefined' && document.documentElement.dataset.theme === 'dark'
     ? 'dark'
@@ -1326,6 +1331,8 @@ export const useStore = create<StoreState>()((set, get) => ({
     set((s) => ({ settingsOpen: true, settingsSection: section ?? s.settingsSection }))
     // Fetch once per session; later opens render the state already in hand.
     if (!get().settingsLoaded) void get().loadSettings()
+    // Cache read only — the 10-minute poller has already refreshed the snapshot.
+    void get().loadUsage()
   },
 
   closeSettings: () => set({ settingsOpen: false, settingsError: null }),
@@ -1349,6 +1356,9 @@ export const useStore = create<StoreState>()((set, get) => ({
       // A key can change a provider's auth status (OpenRouter), and the server
       // has already dropped its discovery cache — pick the new status up now.
       void get().refreshProviders()
+      if (name.startsWith('CLIPROXYAPI_') || name.startsWith('OPENROUTER_')) {
+        window.setTimeout(() => void get().loadUsage(), 2000)
+      }
     } catch (err) {
       set({ settingsError: err instanceof Error ? err.message : 'Could not save that key' })
       // Callers show "Saved" affordances — they must see the failure.
@@ -1419,6 +1429,15 @@ export const useStore = create<StoreState>()((set, get) => ({
     } catch (err) {
       // The composer falls back to the server-side default model; not fatal.
       console.error('[store] loadModels failed', err)
+    }
+  },
+
+  loadUsage: async () => {
+    try {
+      const usage = await api.getUsage()
+      set({ usage })
+    } catch (err) {
+      console.error('[store] loadUsage failed', err)
     }
   },
 
@@ -2463,6 +2482,7 @@ export const useEnabledModels = () => {
   }, [models, providers, enabledModelIds])
 }
 export const useProviders = () => useStore((s) => s.providers)
+export const useUsage = () => useStore((s) => s.usage)
 
 export const useSelectedModel = () =>
   useStore((s) => s.models.find((m) => m.id === s.selectedModelId) ?? s.models[0] ?? null)

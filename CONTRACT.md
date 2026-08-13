@@ -20,6 +20,7 @@ Rautml/
     src/agent/openrouter.ts  # chat.completions call w/ streaming, retry/backoff on 429/5xx
     src/agent/engine.ts   # agentic run loop (see Engine)
     src/agent/prompts.ts  # system prompt + DESIGN_README (visualize_read_me content)
+    src/agent/usage.ts    # CLIProxyAPI 5h/weekly limits, 10-minute background poller
     src/tools/index.ts    # ToolDef registry: { name, description, parameters(JSONSchema), execute(args, ctx) }
     src/tools/research.ts # web_search, image_search, web_fetch (Firecrawl)
     src/tools/workspace.ts# bash_tool, create_file, str_replace, view, present_files
@@ -63,6 +64,10 @@ settings→components/settings.
 - Optional overrides: `PORT` (server, default 5175), `WEB_PORT` / `API_PORT` (vite dev + its /api proxy),
   `OPENROUTER_BASE_URL` and `CODEX_RESPONSES_URL` (point a provider at a proxy or a local mock). These let a
   second checkout — or a test harness driving the app against a fake provider — run without port conflicts.
+- CLIProxyAPI usage: `CLIPROXYAPI_URL` (default `http://127.0.0.1:8317`), `CLIPROXYAPI_MANAGEMENT_KEY`
+  (the proxy's `secret-key`; editable in Settings → API keys), `CLIPROXYAPI_AUTH_DIR` (default
+  `~/.cli-proxy-api`). The server polls 5-hour and weekly limits every 10 minutes from boot and
+  persists the last snapshot; `GET /api/usage` only ever returns that cache.
 - Default model: `openai/gpt-5.6-sol` via `https://openrouter.ai/api/v1/chat/completions`. Tool calling: OpenAI format, `tool_choice: "auto"`, streaming SSE.
 - **Provider dispatch** (src/agent/llm.ts): when Codex CLI OAuth credentials exist (`~/.codex/auth.json`, via
   `codex login`), `openai/*` models run on the user's ChatGPT subscription through the Codex backend
@@ -135,6 +140,9 @@ settings(key TEXT PK, value TEXT, updated_at INTEGER);
 - `POST /api/chats/:id/messages` `{ content: string, thread: 'main'|'fork', model?: string, effort?: string, elaboration?: 'undergraduate'|'bachelors'|'doctor', attachments?: FollowUpAttachment[] }` → `{ runId }` (attachments are supported on the fork thread; 409 if a run is active; 400 on invalid selections)
 - `GET  /api/models` → `{ models: ModelInfo[], providers: ProviderInfo[], defaultModelId: string }`
   (the selectable catalog plus per-provider discovery state; `?refresh=1` re-runs discovery)
+- `GET  /api/usage` → `{ providers: ProviderUsage[], updatedAt: number }` — last cached 5-hour and
+  weekly limits per provider. Loopback-gated. Never triggers a live fetch; a 10-minute boot poller
+  (plus a refresh when the CLIProxyAPI management key is saved) writes the snapshot first.
 - `GET  /api/health` → `{ ok: true, busy: boolean }` — liveness probe for smoke tests; `busy` is
   true while a run is active or source indexing is in flight
 - `POST /api/providers/:id/reconnect` → `{ launched: boolean, command: string }` — loopback-gated;
@@ -162,11 +170,11 @@ settings(key TEXT PK, value TEXT, updated_at INTEGER);
 - `PUT  /api/settings/personalization` `{ designPreferences?: string, aboutMe?: string }` → `{ personalization }`
   (omitted fields untouched; each capped at 4000 chars)
 
-The three settings routes are loopback-gated like `POST /api/providers/:id/reconnect` — they read and
-write this machine's own configuration. `GET /api/settings` never returns a secret: each key reports
-`set`, a `masked` tail (`••••4f2a`), and a `source` of `file` | `environment` | `unset`. `environment`
-means the user's login shell exported it, which dotenv will not override on the next boot — the UI says
-so, because otherwise an edit made in-app looks like it silently reverted.
+The settings routes and `GET /api/usage` are loopback-gated like `POST /api/providers/:id/reconnect` —
+they read and write this machine's own configuration. `GET /api/settings` never returns a secret: each key reports
+`set`, a `masked` tail (`••••4f2a`), and a `source` of `file` | `environment` | `unset`. Saved file
+values take precedence over keys inherited from the user's login shell, so in-app changes persist across
+engine and app restarts.
 
 `POST /api/chats/:id/messages` also accepts `sourceIds?: string[]` (must belong to the chat) — the
 files uploaded with that message. They are listed in the model turn as an `<attached_files>` block and
@@ -381,8 +389,12 @@ Motion: framer-motion; standard easing `[0.22, 1, 0.36, 1]`; durations 200–450
   - **Model selector** — the former ProviderBar, given a page: provider groups all expanded, per-model
     checkboxes writing `enabledModelIds`, "Connect with CLI", Refresh, and a re-read on window focus so a
     Terminal login shows up on return. Same two guards as before: the last enabled model cannot be unchecked,
-    and models behind a disconnected CLI are locked.
-  - **API keys** — masked-only display, save/remove per key, and a warning when a key's `source` is
+    and models behind a disconnected CLI are locked. Each provider card shows live 5-hour and weekly
+    bars from the cached `GET /api/usage` snapshot (already warm from the background poller). The OpenRouter
+    card also shows its dollar credit balance. `OPENROUTER_MANAGEMENT_API_KEY` powers the account-wide value
+    (and is never used for inference); without it, a clearly labelled API-key allowance is shown when the
+    regular OpenRouter key has a spending limit.
+  - **API keys** — masked-only display, save/remove per key, and a note when a key's `source` is
     `environment`. Saving refreshes providers, since a new OpenRouter key changes that provider's status.
   - **Personalization** — two textareas that save on blur. *Design choices* is appended to `DESIGN_README` by
     the `visualize_read_me` tool (`tools/ux.ts`), so it arrives exactly when the model is deciding how a page
@@ -419,6 +431,11 @@ interface ModelInfo { id:string; modelId:string; providerId:string; name:string;
 type ProviderAuthStatus = 'connected'|'disconnected'|'unavailable'|'unknown';
 interface ProviderInfo { id:string; name:string; description:string; cli:string; installed:boolean;
   authStatus:ProviderAuthStatus; authHint?:string; modelCount:number; models:ModelInfo[] }
+interface UsageWindow { usedPercent:number; resetAt:number|null }
+interface ProviderBalance { remaining:number; used?:number; total?:number; scope:'account'|'key' }
+interface ProviderUsage { id:string; name:string; plan?:string; accounts:number;
+  fiveHour?:UsageWindow; weekly?:UsageWindow; balance?:ProviderBalance; error?:string }
+interface UsageSnapshot { providers:ProviderUsage[]; updatedAt:number }
 interface Asset { id:string; chatId:string; messageId:string; title:string; latestVersion:number; createdAt:number }
 interface Source { id:string; chatId:string; name:string; ext:string; mime:string; size:number;
   status:'processing'|'ready'|'error'; error?:string; textChars:number; chunkCount:number; createdAt:number }

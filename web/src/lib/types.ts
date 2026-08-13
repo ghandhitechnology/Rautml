@@ -121,6 +121,39 @@ export interface ProviderInfo {
   models: ModelInfo[]
 }
 
+/** One rolling window from CLIProxyAPI / first-party usage. */
+export interface UsageWindow {
+  usedPercent: number
+  /** Epoch ms when this window resets; null when the provider did not say. */
+  resetAt: number | null
+}
+
+/** Dollar-denominated OpenRouter credit balance or API-key spending allowance. */
+export interface ProviderBalance {
+  remaining: number
+  used?: number
+  total?: number
+  scope: 'account' | 'key'
+}
+
+/** Cached limits and/or balance for one provider. */
+export interface ProviderUsage {
+  id: string
+  name: string
+  plan?: string
+  accounts: number
+  fiveHour?: UsageWindow
+  weekly?: UsageWindow
+  balance?: ProviderBalance
+  error?: string
+}
+
+/** Last snapshot written by the 10-minute usage poller. */
+export interface UsageSnapshot {
+  providers: ProviderUsage[]
+  updatedAt: number
+}
+
 export interface Asset {
   id: string
   chatId: string
@@ -413,10 +446,7 @@ export interface ApiKeyStatus {
   set: boolean
   /** Last four characters, e.g. `••••4f2a`. Empty when unset. */
   masked: string
-  /**
-   * Where the effective value comes from. `environment` means the user's shell
-   * exported it, which overrides the saved file on every restart.
-   */
+  /** Where the effective value comes from. Saved file values take precedence. */
   source: 'file' | 'environment' | 'unset'
 }
 

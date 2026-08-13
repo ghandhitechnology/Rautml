@@ -9,6 +9,7 @@
 import { promises as fs, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { MANAGED_API_KEY_NAMES } from './managed-env.js';
 import { getSetting, setSetting } from './repo.js';
 import type { ApiKeyStatus, Personalization } from './types.js';
 
@@ -32,6 +33,12 @@ export const MANAGED_KEYS: KeySpec[] = [
     hint: 'Unlocks the OpenRouter provider in the model selector.',
   },
   {
+    name: 'OPENROUTER_MANAGEMENT_API_KEY',
+    label: 'OpenRouter management key',
+    hint: 'Shows your account-wide OpenRouter credit balance. It is not used for model requests.',
+    optional: true,
+  },
+  {
     name: 'FIRECRAWL_API_KEY',
     label: 'Firecrawl',
     hint: 'Powers web search, page fetching, and image search.',
@@ -48,9 +55,15 @@ export const MANAGED_KEYS: KeySpec[] = [
     hint: 'Browserbase needs a project ID alongside the API key.',
     optional: true,
   },
+  {
+    name: 'CLIPROXYAPI_MANAGEMENT_KEY',
+    label: 'CLIProxyAPI management key',
+    hint: 'The secret-key from CLIProxyAPI\'s config.yaml. Powers live 5-hour and weekly limit bars.',
+    optional: true,
+  },
 ];
 
-const MANAGED_NAMES = new Set(MANAGED_KEYS.map((k) => k.name));
+const MANAGED_NAMES = new Set<string>(MANAGED_API_KEY_NAMES);
 
 /** Never return a secret to the renderer — only enough to recognise it. */
 function mask(value: string): string {
@@ -93,10 +106,8 @@ export function readKeys(): ApiKeyStatus[] {
   return MANAGED_KEYS.map((spec) => {
     const value = (process.env[spec.name] ?? '').trim();
     const inFile = (fromFile[spec.name] ?? '').trim();
-    // dotenv does not override variables the process already had, so a key
-    // exported by the user's login shell wins over the file on every restart —
-    // the UI has to say so, or an edit here looks like it silently reverted.
-    // (Electron inherits that shell env deliberately; see desktop/main.mjs.)
+    // index.ts makes file-defined API settings authoritative over inherited
+    // shell values. A shell value is only effective when this file has no entry.
     const source: ApiKeyStatus['source'] = !value
       ? 'unset'
       : inFile && inFile === value
@@ -146,15 +157,19 @@ export function upsertEnvText(text: string, patch: Record<string, string>): stri
     if (seen.has(name)) continue;
     seen.add(name);
     const value = patch[name]!.trim();
-    if (value) kept.push(`${name}=${encodeValue(value)}`);
-    // An empty value clears the key: the line disappears entirely.
+    kept.push(`${name}=${value ? encodeValue(value) : ''}`);
+    // Keep an empty assignment as an explicit tombstone. Otherwise an older
+    // key exported by the login shell would return after the next restart.
   }
 
-  const appended = names.filter((n) => !seen.has(n) && patch[n]!.trim());
+  const appended = names.filter((n) => !seen.has(n));
   if (appended.length) {
     while (kept.length && kept[kept.length - 1]!.trim() === '') kept.pop();
     if (kept.length) kept.push('');
-    for (const name of appended) kept.push(`${name}=${encodeValue(patch[name]!.trim())}`);
+    for (const name of appended) {
+      const value = patch[name]!.trim();
+      kept.push(`${name}=${value ? encodeValue(value) : ''}`);
+    }
   }
 
   let out = kept.join(eol);
