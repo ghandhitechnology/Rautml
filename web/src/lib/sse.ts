@@ -32,6 +32,13 @@ export interface SseConnection {
 
 const BASE_DELAY = 400
 const MAX_DELAY = 10_000
+/**
+ * Consecutive failures before we stop retrying: a permanently-failing
+ * endpoint (the chat was deleted server-side and the route 404s) must not
+ * storm every ≤10s forever behind a "Reconnecting…" badge. A successful open
+ * or a manual reconnect() (window focus, reopening the chat) resets the count.
+ */
+const MAX_ATTEMPTS = 8
 
 export function connectChatEvents(opts: SseOptions): SseConnection {
   const { chatId, onEvent, onStatus } = opts
@@ -115,6 +122,12 @@ export function connectChatEvents(opts: SseOptions): SseConnection {
       if (closed) return
       // Own the retry loop so we can resume with ?after=<lastSeq>.
       teardown()
+      if (attempt >= MAX_ATTEMPTS) {
+        // Terminal from the user's perspective: the stream is dead, not
+        // reconnecting — reconnect() still works from here.
+        status('closed')
+        return
+      }
       const delay = Math.min(BASE_DELAY * 2 ** attempt, MAX_DELAY)
       const jittered = delay * (0.75 + Math.random() * 0.5)
       attempt += 1

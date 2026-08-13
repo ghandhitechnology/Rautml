@@ -200,11 +200,14 @@ export interface UploadSourcesResult {
 /**
  * POST /api/chats/:id/sources — multipart upload into the chat's local
  * sources. XHR instead of fetch so a 300MB file can report progress.
+ * `signal` aborts the upload (e.g. the user switched chats mid-flight, so the
+ * file must not land silently in a chat they just left).
  */
 export function uploadSources(
   chatId: string,
   files: File[],
   onProgress?: (fraction: number) => void,
+  signal?: AbortSignal,
 ): Promise<UploadSourcesResult> {
   return new Promise((resolve, reject) => {
     const form = new FormData()
@@ -213,11 +216,23 @@ export function uploadSources(
     const xhr = new XMLHttpRequest()
     xhr.open('POST', `${API_BASE}/chats/${encodeURIComponent(chatId)}/sources`)
     xhr.responseType = 'json'
+    // Loopback uploads of even the 400MB cap take seconds; this bounds a
+    // wedged server instead of leaving the chip 'uploading' forever.
+    xhr.timeout = 120_000
+    if (signal) {
+      if (signal.aborted) {
+        reject(new ApiError(0, 'Upload cancelled.'))
+        return
+      }
+      signal.addEventListener('abort', () => xhr.abort(), { once: true })
+    }
     if (onProgress) {
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total)
       }
     }
+    xhr.ontimeout = () =>
+      reject(new ApiError(0, 'The server took too long to respond. Try again.'))
     xhr.onload = () => {
       const body = xhr.response as unknown
       if (xhr.status >= 200 && xhr.status < 300) {
