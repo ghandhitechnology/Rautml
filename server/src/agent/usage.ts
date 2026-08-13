@@ -11,7 +11,6 @@ import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { getSetting, setSetting } from '../repo.js';
 import type { ProviderBalance, ProviderUsage, UsageSnapshot, UsageWindow } from '../types.js';
-import { fetchWithHeadersTimeout } from './http.js';
 import { peekCodexTokens } from './codex.js';
 
 export const USAGE_POLL_MS = 10 * 60_000;
@@ -437,32 +436,28 @@ async function managementApiCall(
   return body;
 }
 
-/**
- * fetchWithHeadersTimeout disarms once headers arrive — bound the body read
- * too, or a provider that stalls mid-body parks the single deduped refresh
- * (and every caller behind it) until undici's 300s default.
- */
-async function readBodyWithTimeout(res: Response, timeoutMs: number): Promise<string> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
+async function requestJson(url: string, init: RequestInit, timeoutMs = 20_000): Promise<any> {
+  // One signal for the whole exchange: the only way to cancel an in-flight
+  // body read is aborting the fetch (body.cancel() rejects while res.text()
+  // holds the stream lock), so headers AND body share this single deadline.
+  // These are one-shot JSON payloads, not streams — no reason to disarm.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  timer.unref?.();
+  let res: Response;
+  let text: string;
   try {
-    return await Promise.race([
-      res.text(),
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => {
-          void res.body?.cancel().catch(() => {});
-          reject(new Error('response body timed out'));
-        }, timeoutMs);
-        timer.unref?.();
-      }),
-    ]);
+    res = await fetch(url, { ...init, signal: controller.signal });
+    text = await res.text();
+  } catch (err) {
+    // No caller signal is ever passed here, so an abort is always our timer.
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(`usage request timed out after ${Math.round(timeoutMs / 1000)}s`);
+    }
+    throw err;
   } finally {
     clearTimeout(timer);
   }
-}
-
-async function requestJson(url: string, init: RequestInit, timeoutMs = 20_000): Promise<any> {
-  const res = await fetchWithHeadersTimeout(url, init, timeoutMs);
-  const text = await readBodyWithTimeout(res, timeoutMs);
   if (!res.ok) throw new Error(text.slice(0, 180) || `HTTP ${res.status}`);
   if (!text) return {};
   try {
