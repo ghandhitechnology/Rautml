@@ -1802,6 +1802,11 @@ export const useStore = create<StoreState>()((set, get) => ({
     }
 
     if (get().activeChatId !== chatId) return // user moved on while we were fetching
+    // A concurrent openChat for this same chat (sharing the deduped fetch) has
+    // already hydrated and connected by the time a second caller resumes —
+    // redoing either would re-apply queued events and then replay them from
+    // the snapshot's older seq, duplicating streamed deltas.
+    if (get().byChat[chatId]?.loaded) return
 
     const cs = hydrate(snapshot)
     set((s) => ({
