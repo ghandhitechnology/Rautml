@@ -46,13 +46,13 @@ export const MANAGED_KEYS: KeySpec[] = [
   {
     name: 'BROWSERBASE_API_KEY',
     label: 'Browserbase',
-    hint: 'Stored for upcoming browser tooling. Nothing reads it yet.',
+    hint: 'Runs the agent’s interactive browser and backs up web research when Firecrawl is unavailable.',
     optional: true,
   },
   {
     name: 'BROWSERBASE_PROJECT_ID',
     label: 'Browserbase project ID',
-    hint: 'Browserbase needs a project ID alongside the API key.',
+    hint: 'Pairs with the Browserbase API key to create isolated browser sessions.',
     optional: true,
   },
   {

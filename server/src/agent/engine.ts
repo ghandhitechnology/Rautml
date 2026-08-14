@@ -14,6 +14,7 @@ import { randomUUID } from 'node:crypto';
 import { WORKSPACES_DIR } from '../db.js';
 import * as repo from '../repo.js';
 import * as sse from '../sse.js';
+import { cleanupAllBrowserSessions, cleanupBrowserSession } from '../tools/browser.js';
 import { buildToolRegistry } from '../tools/index.js';
 import { aboutMeBlock } from '../settings.js';
 import { formatBytes } from '../sources/indexer.js';
@@ -189,6 +190,10 @@ function toolLabel(name: string, args: any): string {
       return `Finding images: “${clip(str(args?.query), 70)}”`;
     case 'web_fetch':
       return `Reading: ${hostOf(args?.url)}`;
+    case 'browser':
+      return args?.action === 'navigate'
+        ? `Browsing: ${hostOf(args?.url)}`
+        : `Browser: ${clip(str(args?.action || 'observe').replace(/_/g, ' '), 60)}`;
     case 'bash_tool':
       return `Running: ${clip(str(args?.command), 70)}`;
     case 'create_file':
@@ -256,6 +261,8 @@ function pendingToolLabel(name: string): string {
       return 'Finding images…';
     case 'web_fetch':
       return 'Opening a page…';
+    case 'browser':
+      return 'Opening a browser…';
     case 'bash_tool':
       return 'Preparing a command…';
     case 'create_file':
@@ -300,6 +307,10 @@ function toolSummary(name: string, result: string, ok: boolean): string {
     }
   }
   if (name === 'web_fetch') return `${result.length.toLocaleString('en-US')} chars`;
+  if (name === 'browser') {
+    const url = /^URL: (.+)$/m.exec(result)?.[1];
+    return url ? `Opened ${hostOf(url)}` : 'Browser updated';
+  }
   if (name === 'visualize_read_me') return 'Design constraints loaded';
   const firstLine = result.split('\n').find((l) => l.trim().length > 0) ?? '';
   return clip(firstLine, 140) || 'Done';
@@ -775,6 +786,7 @@ function resolveParkedQuestions(chatId: string, thread: Thread, runId: string): 
 /** SIGTERM path: aborts every live run so in-flight streams stop promptly. */
 export function shutdown(): void {
   for (const live of activeRuns.values()) live.controller.abort();
+  void cleanupAllBrowserSessions();
 }
 
 // ---------------------------------------------------------------------------
@@ -800,7 +812,7 @@ interface LoopCtx {
 async function runLoop(ctx: LoopCtx): Promise<void> {
   const { chatId, thread, runId, controller } = ctx;
 
-  const registry: ToolDef[] = buildToolRegistry();
+  const registry: ToolDef[] = buildToolRegistry().filter((tool) => thread === 'main' || tool.name !== 'browser');
   const toolsByName = new Map(registry.map((t) => [t.name, t]));
   const wireTools = registry.map(toOpenRouterTool);
   const workspaceDir = path.join(WORKSPACES_DIR, chatId);
@@ -1186,6 +1198,9 @@ async function runLoop(ctx: LoopCtx): Promise<void> {
     }
     repo.touchChat(chatId);
   } finally {
+    // Browserbase bills live sessions: release this run's browser on every exit
+    // path, including stop, error, completion, and parking for user input.
+    await cleanupBrowserSession(runId);
     // A parked run keeps its DB status; it just has no live controller.
     if (!parked) activeRuns.delete(runId);
     // Belt and braces: nothing may be left in 'streaming'.

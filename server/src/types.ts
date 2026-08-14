@@ -213,6 +213,8 @@ export interface ToolCtx {
   toolCallId?: string;
   /** Aborted when the run is stopped — long-running tools must honour it. */
   signal?: AbortSignal;
+  /** False inside parallel research subagents, which must never create Browserbase sessions. */
+  allowBrowserFallback?: boolean;
   emit(type: string, data: any): void;
 }
 

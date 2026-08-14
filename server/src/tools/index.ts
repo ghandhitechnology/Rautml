@@ -10,14 +10,16 @@
 // 11. ask_user_input_v0                             (ux.ts)
 // 12. spawn_subagents                               (subagents.ts)
 // 13. list_sources  14. search_sources  15. read_source  (sources.ts)
+// 16. browser                                            (browser.ts)
 import type { ToolDef } from '../types.js';
 import { researchTools } from './research.js';
 import { workspaceTools } from './workspace.js';
 import { uxTools } from './ux.js';
 import { subagentTools } from './subagents.js';
 import { sourceTools } from './sources.js';
+import { browserTools } from './browser.js';
 
-const REGISTRY_ORDER = [
+export const REGISTRY_ORDER = [
   'web_search',
   'web_fetch',
   'image_search',
@@ -33,6 +35,7 @@ const REGISTRY_ORDER = [
   'list_sources',
   'search_sources',
   'read_source',
+  'browser',
 ] as const;
 
 /**
@@ -47,6 +50,7 @@ export function buildToolRegistry(): ToolDef[] {
     ...uxTools,
     ...subagentTools,
     ...sourceTools,
+    ...browserTools,
   ]) {
     byName.set(def.name, def);
   }

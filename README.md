@@ -51,8 +51,9 @@ npm install
 npm run dev        # server :5175 + web :5174
 ```
 
-Open http://localhost:5174. Requires `OPENROUTER_API_KEY` and `FIRECRAWL_API_KEY` in `.env`
-(root) or the environment. Node 26+ (uses the built-in `node:sqlite`).
+Open http://localhost:5174. Add provider keys in the root `.env` or Settings → API keys. `FIRECRAWL_API_KEY`
+powers normal web research; `BROWSERBASE_API_KEY` plus `BROWSERBASE_PROJECT_ID` add interactive browsing and
+a rendered-browser fallback when Firecrawl is unavailable. Node 26+ (uses the built-in `node:sqlite`).
 
 ## How it works
 
