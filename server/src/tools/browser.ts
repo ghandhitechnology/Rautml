@@ -286,7 +286,8 @@ function formatSnapshot(snapshot: BrowserSnapshot) {
 
 class PlaywrightBrowserDriver implements BrowserDriver {
   private page: Page;
-  private pageSetup = new WeakMap<Page, Promise<void>>();
+  private routingReady: Promise<void>;
+  private configuredPages = new WeakSet<Page>();
   private snapshotGeneration = 0;
 
   constructor(
@@ -294,21 +295,23 @@ class PlaywrightBrowserDriver implements BrowserDriver {
     private context: BrowserContext,
   ) {
     this.page = context.pages()[0]!;
-    void this.configurePage(this.page);
-    context.on('page', (page) => void this.configurePage(page));
-  }
-
-  private configurePage(page: Page) {
-    const existing = this.pageSetup.get(page);
-    if (existing) return existing;
-    page.setDefaultTimeout(ACTION_TIMEOUT_MS);
-    page.setDefaultNavigationTimeout(ACTION_TIMEOUT_MS);
-    const setup = page.route('**/*', async (route) => {
+    this.configurePage(this.page);
+    // Context-level routing covers every page in the context — including popups and
+    // tabs created later — from the moment it is installed, so a popup's initial
+    // navigation cannot race ahead of the interceptor the way per-page route
+    // registration could.
+    this.routingReady = this.context.route('**/*', async (route) => {
       if (await isBlockedRequestUrl(route.request().url())) await route.abort('blockedbyclient');
       else await route.continue();
     }).then(() => undefined);
-    this.pageSetup.set(page, setup);
-    return setup;
+    context.on('page', (page) => this.configurePage(page));
+  }
+
+  private configurePage(page: Page) {
+    if (this.configuredPages.has(page)) return;
+    this.configuredPages.add(page);
+    page.setDefaultTimeout(ACTION_TIMEOUT_MS);
+    page.setDefaultNavigationTimeout(ACTION_TIMEOUT_MS);
   }
 
   private currentPage() {
@@ -320,7 +323,8 @@ class PlaywrightBrowserDriver implements BrowserDriver {
   }
 
   private async settle(page = this.currentPage()) {
-    await this.configurePage(page);
+    this.configurePage(page);
+    await this.routingReady;
     await page.waitForLoadState('domcontentloaded', { timeout: 5_000 }).catch(() => {});
     await page.waitForTimeout(250);
     if (/^https?:/i.test(page.url())) await validatePublicFetchUrl(page.url());
@@ -437,7 +441,8 @@ class PlaywrightBrowserDriver implements BrowserDriver {
     const safeUrl = await validatePublicFetchUrl(url);
     let page = this.context.pages().find((candidate) => !candidate.isClosed());
     if (!page) page = await this.context.newPage();
-    await this.configurePage(page);
+    this.configurePage(page);
+    await this.routingReady;
     this.page = page;
     await page.goto(safeUrl, { waitUntil: 'domcontentloaded' });
     return this.snapshot(page);
@@ -569,7 +574,8 @@ class PlaywrightBrowserDriver implements BrowserDriver {
 
   async newTab(url?: string) {
     const page = await this.context.newPage();
-    await this.configurePage(page);
+    this.configurePage(page);
+    await this.routingReady;
     this.page = page;
     if (url) await page.goto(await validatePublicFetchUrl(url), { waitUntil: 'domcontentloaded' });
     return this.snapshot(page);
@@ -597,7 +603,8 @@ class PlaywrightBrowserDriver implements BrowserDriver {
 
   private async temporaryPage<T>(run: (page: Page) => Promise<T>) {
     const page = await this.context.newPage();
-    await this.configurePage(page);
+    this.configurePage(page);
+    await this.routingReady;
     try {
       return await run(page);
     } finally {
