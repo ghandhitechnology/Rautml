@@ -197,14 +197,34 @@ export async function validatePublicFetchUrl(raw: string) {
   return safeUrl;
 }
 
-function isBlockedRequestUrl(raw: string) {
+async function isBlockedRequestUrl(raw: string) {
   if (/^(about:|data:|blob:)/i.test(raw)) return false;
   try {
-    validatePublicBrowserUrl(raw);
+    await validatePublicFetchUrl(raw);
     return false;
   } catch {
     return true;
   }
+}
+
+/** Read a zip entry, aborting decompression as soon as the expanded bytes exceed maxBytes. */
+function readZipEntryLimited(entry: JSZip.JSZipObject, maxBytes: number): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    const stream = entry.nodeStream() as NodeJS.ReadableStream & { destroy(): void };
+    stream.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > maxBytes) {
+        stream.destroy();
+        reject(new Error('Browser downloads exceeded the 100 MB limit.'));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    stream.on('end', () => resolve(new Uint8Array(Buffer.concat(chunks))));
+    stream.on('error', reject);
+  });
 }
 
 function safeWorkspacePath(workspaceDir: string, relativePath: string) {
@@ -276,7 +296,7 @@ class PlaywrightBrowserDriver implements BrowserDriver {
     page.setDefaultTimeout(ACTION_TIMEOUT_MS);
     page.setDefaultNavigationTimeout(ACTION_TIMEOUT_MS);
     const setup = page.route('**/*', async (route) => {
-      if (isBlockedRequestUrl(route.request().url())) await route.abort('blockedbyclient');
+      if (await isBlockedRequestUrl(route.request().url())) await route.abort('blockedbyclient');
       else await route.continue();
     }).then(() => undefined);
     this.pageSetup.set(page, setup);
@@ -295,7 +315,7 @@ class PlaywrightBrowserDriver implements BrowserDriver {
     await this.configurePage(page);
     await page.waitForLoadState('domcontentloaded', { timeout: 5_000 }).catch(() => {});
     await page.waitForTimeout(250);
-    if (/^https?:/i.test(page.url())) validatePublicBrowserUrl(page.url());
+    if (/^https?:/i.test(page.url())) await validatePublicFetchUrl(page.url());
   }
 
   private locator(ref: string) {
@@ -406,7 +426,7 @@ class PlaywrightBrowserDriver implements BrowserDriver {
   }
 
   async navigate(url: string) {
-    const safeUrl = validatePublicBrowserUrl(url);
+    const safeUrl = await validatePublicFetchUrl(url);
     let page = this.context.pages().find((candidate) => !candidate.isClosed());
     if (!page) {
       page = await this.context.newPage();
@@ -545,7 +565,7 @@ class PlaywrightBrowserDriver implements BrowserDriver {
     const page = await this.context.newPage();
     await this.configurePage(page);
     this.page = page;
-    if (url) await page.goto(validatePublicBrowserUrl(url), { waitUntil: 'domcontentloaded' });
+    if (url) await page.goto(await validatePublicFetchUrl(url), { waitUntil: 'domcontentloaded' });
     return this.snapshot(page);
   }
 
@@ -641,7 +661,7 @@ class PlaywrightBrowserDriver implements BrowserDriver {
   }
 
   async fetchPage(url: string) {
-    const safeUrl = validatePublicBrowserUrl(url);
+    const safeUrl = await validatePublicFetchUrl(url);
     return this.temporaryPage(async (page) => {
       await page.goto(safeUrl, { waitUntil: 'domcontentloaded' });
       await this.settle(page);
@@ -756,9 +776,8 @@ async function connectBrowserbase(ctx: ToolCtx): Promise<BrowserConnection> {
             const files: string[] = [];
             let totalBytes = 0;
             for (const entry of entries) {
-              const content = await entry.async('uint8array');
+              const content = await readZipEntryLimited(entry, MAX_DOWNLOAD_BYTES - totalBytes);
               totalBytes += content.byteLength;
-              if (totalBytes > MAX_DOWNLOAD_BYTES) throw new Error('Browser downloads exceeded the 100 MB limit.');
               const preferred = files.length === 0 ? suggestedFilename : entry.name;
               const file = path.join(directory, `${Date.now()}-${safeFileName(preferred)}`);
               await writeFile(file, content, { mode: 0o600 });
