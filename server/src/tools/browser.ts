@@ -2,7 +2,7 @@ import Browserbase from '@browserbasehq/sdk';
 import { createReadStream } from 'node:fs';
 import { isIP } from 'node:net';
 import { promises as dns } from 'node:dns';
-import { mkdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import JSZip from 'jszip';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core';
@@ -436,10 +436,8 @@ class PlaywrightBrowserDriver implements BrowserDriver {
   async navigate(url: string) {
     const safeUrl = await validatePublicFetchUrl(url);
     let page = this.context.pages().find((candidate) => !candidate.isClosed());
-    if (!page) {
-      page = await this.context.newPage();
-      await this.configurePage(page);
-    }
+    if (!page) page = await this.context.newPage();
+    await this.configurePage(page);
     this.page = page;
     await page.goto(safeUrl, { waitUntil: 'domcontentloaded' });
     return this.snapshot(page);
@@ -782,14 +780,19 @@ async function connectBrowserbase(ctx: ToolCtx): Promise<BrowserConnection> {
           const entries = Object.values(archive.files).filter((entry) => !entry.dir);
           if (entries.length) {
             const files: string[] = [];
-            let totalBytes = 0;
-            for (const entry of entries) {
-              const content = await readZipEntryLimited(entry, MAX_DOWNLOAD_BYTES - totalBytes);
-              totalBytes += content.byteLength;
-              const preferred = files.length === 0 ? suggestedFilename : entry.name;
-              const file = path.join(directory, `${Date.now()}-${safeFileName(preferred)}`);
-              await writeFile(file, content, { mode: 0o600 });
-              files.push(file);
+            try {
+              let totalBytes = 0;
+              for (const entry of entries) {
+                const content = await readZipEntryLimited(entry, MAX_DOWNLOAD_BYTES - totalBytes);
+                totalBytes += content.byteLength;
+                const preferred = files.length === 0 ? suggestedFilename : entry.name;
+                const file = path.join(directory, `${Date.now()}-${safeFileName(preferred)}`);
+                await writeFile(file, content, { mode: 0o600 });
+                files.push(file);
+              }
+            } catch (error) {
+              await Promise.all(files.map((file) => unlink(file).catch(() => {})));
+              throw error;
             }
             return files;
           }
