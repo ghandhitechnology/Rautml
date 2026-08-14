@@ -96,6 +96,10 @@ describe('browser URL policy', () => {
       'http://10.1.2.3',
       'http://169.254.169.254/latest/meta-data',
       'http://[::1]',
+      'http://[::ffff:127.0.0.1]',
+      'http://[::ffff:7f00:1]',
+      'http://[::ffff:10.0.0.5]',
+      'http://[::ffff:0a00:5]',
       'https://user:secret@example.com',
     ]) {
       assert.throws(() => validatePublicBrowserUrl(url));

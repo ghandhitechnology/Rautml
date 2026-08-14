@@ -147,7 +147,15 @@ function isPrivateIPv6(host: string) {
   if (normalized === '::' || normalized === '::1') return true;
   if (/^(fc|fd)/.test(normalized) || /^fe[89ab]/.test(normalized)) return true;
   const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(normalized)?.[1];
-  return mapped ? isPrivateIPv4(mapped) : false;
+  if (mapped) return isPrivateIPv4(mapped);
+  // WHATWG URL parsing rewrites IPv4-mapped literals to hex form (e.g. ::ffff:127.0.0.1 -> ::ffff:7f00:1).
+  const hexMapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(normalized);
+  if (hexMapped) {
+    const hi = parseInt(hexMapped[1], 16);
+    const lo = parseInt(hexMapped[2], 16);
+    return isPrivateIPv4(`${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`);
+  }
+  return false;
 }
 
 /** Reject schemes and literal destinations that a remote research browser never needs. */
