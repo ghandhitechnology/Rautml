@@ -218,7 +218,7 @@ async function runSubagent(
             output = `Unknown tool: ${name}`;
           } else {
             try {
-              output = (await def.execute(args, ctx)) ?? '';
+              output = (await def.execute(args, { ...ctx, allowBrowserFallback: false })) ?? '';
             } catch (err) {
               if (isAbort(err)) throw err;
               ok = false;

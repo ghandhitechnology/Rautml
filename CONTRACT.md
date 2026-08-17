@@ -22,7 +22,8 @@ Rautml/
     src/agent/prompts.ts  # system prompt + DESIGN_README (visualize_read_me content)
     src/agent/usage.ts    # CLIProxyAPI 5h/weekly limits, 10-minute background poller
     src/tools/index.ts    # ToolDef registry: { name, description, parameters(JSONSchema), execute(args, ctx) }
-    src/tools/research.ts # web_search, image_search, web_fetch (Firecrawl)
+    src/tools/research.ts # web_search, image_search, web_fetch (Firecrawl + Browserbase fallback)
+    src/tools/browser.ts  # run-scoped Browserbase session + Playwright interaction
     src/tools/workspace.ts# bash_tool, create_file, str_replace, view, present_files
     src/tools/ux.ts       # visualize_read_me, visualize_show_widget, ask_user_input_v0
     src/tools/sources.ts  # list_sources, search_sources, read_source (local sources)
@@ -55,8 +56,9 @@ settings→components/settings.
 ## Environment
 
 - `OPENROUTER_API_KEY`, `FIRECRAWL_API_KEY` in the repo-root `.env` (gitignored, already present).
-  `BROWSERBASE_API_KEY` / `BROWSERBASE_PROJECT_ID` are stored for upcoming browser tooling; nothing reads
-  them yet. All four are editable in-app under Settings → API keys, which rewrites that same file
+  `BROWSERBASE_API_KEY` / `BROWSERBASE_PROJECT_ID` enable the interactive browser and automatically back
+  `web_search`, `web_fetch`, and `image_search` when Firecrawl is unavailable. All four are editable in-app
+  under Settings → API keys, which rewrites that same file
   (`RAUTML_ENV_PATH`, `<userData>/.env` under Electron) and updates `process.env` live. Every consumer
   reads `process.env` at call time — `research.ts firecrawlKey()`, `openrouter.ts apiKey()`,
   `providers.ts` — which is what makes a saved key take effect without a restart. Keep it that way:
@@ -263,9 +265,9 @@ Types (data shape):
 
 ## Tools (names/schemas exact; registry order = this order)
 
-1. `web_search {query: string}` → Firecrawl search, top 8: `title, url, snippet`
-2. `web_fetch {url: string}` → Firecrawl scrape → markdown (fallback: raw fetch, html→text)
-3. `image_search {query: string}` → Firecrawl search images source, top 8: `title, imageUrl, sourceUrl`
+1. `web_search {query: string}` → Firecrawl search; Browserbase rendered-search fallback; top 8 results
+2. `web_fetch {url: string}` → Firecrawl scrape; Browserbase rendered-page fallback; final guarded HTTP text fallback
+3. `image_search {query: string}` → Firecrawl images; Browserbase rendered image-search fallback; top 8 results
 4. `bash_tool {command: string}` → exec in workspace cwd, 60s timeout, stdout+stderr capped 50k chars
 5. `create_file {path: string, content: string}` → write within workspace (reject `..` escapes)
 6. `str_replace {path: string, old_str: string, new_str: string}` → old_str must match exactly once
@@ -278,6 +280,7 @@ Types (data shape):
     parallel subagents (src/tools/subagents.ts). Each task becomes an independent mini agentic loop with its own
     streamed provider call — resolved through the server's provider resolution (OpenRouter when connected, CLI
     providers as fallback) — and tool calling over the research tools only (`web_search`, `web_fetch`, `image_search`);
+    Browserbase fallback is disabled inside subagents so parallel work cannot consume browser-session quota;
     lifecycle/activity surface as the `subagent.*` SSE events. Allowed models: `x-ai/grok-4.5` (default, at its
     default effort `high`) and `openai/gpt-5.6-luna` (at effort `xhigh`). Budgets: 12 tool calls per subagent, tool results
     truncated at 12k inside the subagent, reports capped at `max(4k, 22k/n)` each. The tool result is the combined
@@ -290,6 +293,14 @@ Types (data shape):
     keyword fallback when the model is unavailable, so search always answers.
 15. `read_source {name: string, offset?: number, length?: number}` → a slice of a file's extracted text
     (default 6k chars, max 20k; name accepts the id or a unique filename prefix)
+16. `browser {action, ...}` → one Browserbase/Playwright browser session per run. Actions: navigate, observe,
+    click, fill, type, press, select, check/uncheck, hover, scroll, bounded wait, back/forward/reload, extract,
+    screenshot, workspace-file upload, bounded download, tabs/new/switch/close, and explicit close. Observations return
+    rendered text plus snapshot-scoped element refs (`s2r1`, `s2r2`, …), wrapped as untrusted web content. Sessions
+    last at most 5 minutes, are capped at `RAUTML_BROWSER_CONCURRENCY` sessions globally (default 2), and release on
+    completion, stop, error, park, or shutdown. Navigation accepts public HTTP(S) destinations only; browser
+    files stay under the chat workspace; uploads are max 5 × 50 MB and downloads max 100 MB. Main-thread runs
+    receive at most `RAUTML_MAX_BROWSER_CALLS` browser calls (default 20); fork threads do not receive the tool.
 
 Workspace = `server/data/workspaces/<chatId>/`, created on chat creation.
 
@@ -315,7 +326,9 @@ Workspace = `server/data/workspaces/<chatId>/`, created on chat creation.
 
 ## System prompt essence (prompts.ts owns the wording)
 
-The model: is "Rautml", researches thoroughly (web_search/web_fetch/image_search) before building; divides
+The model: is "Rautml", researches thoroughly (web_search/web_fetch/image_search) before building; these
+research tools use Browserbase automatically when Firecrawl is unavailable, while `browser` is used directly
+for rendered JavaScript, interaction, forms, tabs, authentication, uploads/downloads, and blocked pages; divides
 research bigger than a medium-large task across parallel subagents via spawn_subagents (1–5 self-contained
 briefs, early, then verifies and synthesizes; Grok 4.5 default, Luna for lighter briefs); confirms
 scope in one short message for large requests then proceeds (no endless clarification); calls visualize_read_me

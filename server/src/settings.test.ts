@@ -61,6 +61,23 @@ function restoreEnv(name: string, value: string | undefined) {
   else process.env[name] = value;
 }
 
+describe('paired Browserbase settings', () => {
+  it('writes both credentials together and preserves project ID when the key is cleared', () => {
+    const written = upsertEnvText('', {
+      BROWSERBASE_API_KEY: 'bb-key',
+      BROWSERBASE_PROJECT_ID: 'project-1',
+    });
+    assert.equal(
+      written,
+      'BROWSERBASE_API_KEY=bb-key\nBROWSERBASE_PROJECT_ID=project-1\n',
+    );
+    assert.equal(
+      upsertEnvText(written, { BROWSERBASE_API_KEY: '' }),
+      'BROWSERBASE_API_KEY=\nBROWSERBASE_PROJECT_ID=project-1\n',
+    );
+  });
+});
+
 describe('env file upsert', () => {
   it('updates a managed key in place without touching its neighbours', () => {
     const before = [

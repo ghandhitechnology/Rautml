@@ -197,6 +197,7 @@ export function toolIcon(name: string): IconName {
     case 'web_search':
       return 'search'
     case 'web_fetch':
+    case 'browser':
       return 'globe'
     case 'image_search':
       return 'image'
