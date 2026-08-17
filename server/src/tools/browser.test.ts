@@ -121,6 +121,7 @@ describe('BrowserService', () => {
       return {
         driver,
         sessionId: `session-${connected}`,
+        isAlive: () => true,
         async prepareUploads(files) { return files; },
         async saveDownloads() { return []; },
         async release() { calls.push(`release:${connected}`); },
@@ -145,6 +146,7 @@ describe('BrowserService', () => {
     const service = new BrowserService(async () => ({
       driver: fakeDriver([]),
       sessionId: 'session',
+      isAlive: () => true,
       async prepareUploads(files) { return files; },
       async saveDownloads() { return []; },
       async release() {},
@@ -166,6 +168,7 @@ describe('BrowserService', () => {
     const service = new BrowserService(async () => ({
       driver: fakeDriver([]),
       sessionId: 'session',
+      isAlive: () => true,
       async prepareUploads(files) { return files; },
       async saveDownloads() { return []; },
       async release() { releases += 1; },
@@ -181,6 +184,33 @@ describe('BrowserService', () => {
       await rm(directory, { recursive: true, force: true });
     }
   });
+
+  it('replaces a session that died mid-run instead of returning a corpse', async () => {
+    const calls: string[] = [];
+    let connected = 0;
+    const service = new BrowserService(async () => {
+      connected += 1;
+      const generation = connected;
+      return {
+        driver: fakeDriver([]),
+        sessionId: `session-${generation}`,
+        // The first cached session is already dead (lifetime cap / CDP drop).
+        isAlive: () => generation === 2,
+        async prepareUploads(files) { return files; },
+        async saveDownloads() { return []; },
+        async release() { calls.push(`release:${generation}`); },
+      } satisfies BrowserConnection;
+    });
+    const directory = await mkdtemp(path.join(tmpdir(), 'rautml-browser-'));
+    try {
+      const connection = await service.get(ctx('run', directory));
+      assert.equal(connection.sessionId, 'session-2');
+      assert.ok(calls.includes('release:1'));
+      await service.closeAll();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('browser tool', () => {
@@ -189,6 +219,7 @@ describe('browser tool', () => {
     const service = new BrowserService(async () => ({
       driver: fakeDriver(calls),
       sessionId: 'session',
+      isAlive: () => true,
       async prepareUploads(files) { calls.push(`prepare:${files.length}`); return files; },
       async saveDownloads(directory, suggestedFilename) {
         const file = path.join(directory, suggestedFilename);
