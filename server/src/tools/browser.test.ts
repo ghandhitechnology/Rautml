@@ -223,7 +223,7 @@ describe('BrowserService', () => {
       return {
         driver: fakeDriver([]),
         sessionId: `session-${generation}`,
-        isAlive: () => alive,
+        isAlive: () => generation === 1 ? alive : true,
         async prepareUploads(files) { return files; },
         async saveDownloads() { return []; },
         async release() { calls.push(`release:${generation}`); },
@@ -241,6 +241,9 @@ describe('BrowserService', () => {
       ]);
       assert.equal(first.sessionId, 'session-2');
       assert.equal(first, second);
+      assert.equal(connected, 2);
+      // A later caller reuses the healthy replacement instead of connecting again.
+      assert.equal((await service.get(ctx('run', directory))).sessionId, 'session-2');
       assert.equal(connected, 2);
       await service.closeAll();
       assert.ok(calls.includes('release:1'));
