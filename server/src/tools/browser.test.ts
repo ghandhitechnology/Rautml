@@ -207,6 +207,44 @@ describe('BrowserService', () => {
       assert.equal(connection.sessionId, 'session-2');
       assert.ok(calls.includes('release:1'));
       await service.closeAll();
+      assert.ok(calls.includes('release:2'));
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('shares one replacement when concurrent callers find the session dead', async () => {
+    const calls: string[] = [];
+    let connected = 0;
+    let alive = true;
+    const service = new BrowserService(async () => {
+      connected += 1;
+      const generation = connected;
+      return {
+        driver: fakeDriver([]),
+        sessionId: `session-${generation}`,
+        isAlive: () => alive,
+        async prepareUploads(files) { return files; },
+        async saveDownloads() { return []; },
+        async release() { calls.push(`release:${generation}`); },
+      } satisfies BrowserConnection;
+    });
+    const directory = await mkdtemp(path.join(tmpdir(), 'rautml-browser-'));
+    try {
+      await service.get(ctx('run', directory));
+      // The cached session dies; two callers race to replace it and must end
+      // up on one shared replacement, with every created session released.
+      alive = false;
+      const [first, second] = await Promise.all([
+        service.get(ctx('run', directory)),
+        service.get(ctx('run', directory)),
+      ]);
+      assert.equal(first.sessionId, 'session-2');
+      assert.equal(first, second);
+      assert.equal(connected, 2);
+      await service.closeAll();
+      assert.ok(calls.includes('release:1'));
+      assert.ok(calls.includes('release:2'));
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
