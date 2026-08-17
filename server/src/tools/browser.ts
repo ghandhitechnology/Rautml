@@ -95,6 +95,8 @@ export interface BrowserConnection {
   sessionId: string;
   prepareUploads(files: string[]): Promise<string[]>;
   saveDownloads(directory: string, suggestedFilename: string): Promise<string[]>;
+  /** False once the CDP link drops or the cloud session hits its lifetime cap. */
+  isAlive(): boolean;
   release(): Promise<void>;
 }
 
@@ -187,21 +189,49 @@ export function validatePublicBrowserUrl(raw: string) {
   return url.toString();
 }
 
+/**
+ * In-flight DNS guard lookups, deduped per host. The route interceptor calls
+ * this for every subresource of a page, and each lookup is a getaddrinfo on
+ * the libuv thread pool — storing the pending promise means a burst of
+ * concurrent first-hits shares one lookup instead of serializing 4-at-a-time
+ * and pushing navigations past the 30s timeout. Settled decisions are never
+ * reused: a host can rebind from a public to a private address at any moment,
+ * so every request needs a fresh lookup, and dropping failures keeps a
+ * transient resolver error from poisoning anything either.
+ */
+const dnsGuardInflight = new Map<string, Promise<void>>();
+const DNS_GUARD_MAX_ENTRIES = 500;
+
+function assertPublicHost(host: string): Promise<void> {
+  const inflight = dnsGuardInflight.get(host);
+  if (inflight) return inflight;
+  if (dnsGuardInflight.size >= DNS_GUARD_MAX_ENTRIES) dnsGuardInflight.clear();
+  const decision = (async () => {
+    let addresses: Array<{ address: string; family: number }>;
+    try {
+      addresses = await dns.lookup(host, { all: true, verbatim: true });
+    } catch {
+      throw new Error(`Could not resolve ${host}.`);
+    }
+    if (!addresses.length) throw new Error(`Could not resolve ${host}.`);
+    if (addresses.some(({ address, family }) =>
+      (family === 4 && isPrivateIPv4(address)) || (family === 6 && isPrivateIPv6(address)))) {
+      throw new Error('Local and private network destinations are not allowed.');
+    }
+  })();
+  dnsGuardInflight.set(host, decision);
+  const evict = () => {
+    if (dnsGuardInflight.get(host) === decision) dnsGuardInflight.delete(host);
+  };
+  decision.then(evict, evict);
+  return decision;
+}
+
 export async function validatePublicFetchUrl(raw: string) {
   const safeUrl = validatePublicBrowserUrl(raw);
   const host = new URL(safeUrl).hostname.replace(/^\[|\]$/g, '');
   if (isIP(host)) return safeUrl;
-  let addresses: Array<{ address: string; family: number }>;
-  try {
-    addresses = await dns.lookup(host, { all: true, verbatim: true });
-  } catch {
-    throw new Error(`Could not resolve ${host}.`);
-  }
-  if (!addresses.length) throw new Error(`Could not resolve ${host}.`);
-  if (addresses.some(({ address, family }) =>
-    (family === 4 && isPrivateIPv4(address)) || (family === 6 && isPrivateIPv6(address)))) {
-    throw new Error('Local and private network destinations are not allowed.');
-  }
+  await assertPublicHost(host);
   return safeUrl;
 }
 
@@ -213,6 +243,103 @@ async function isBlockedRequestUrl(raw: string) {
   } catch {
     return true;
   }
+}
+
+/** Marks failures the download poll loop must not retry (they can't heal in 20s). */
+class TerminalDownloadError extends Error {}
+
+/** The SDK body type: a Web ReadableStream under global fetch, a Node stream under the node-fetch shim. */
+type DownloadBody = (NodeJS.ReadableStream & { destroy(): void }) | ReadableStream<Uint8Array> | null;
+
+/**
+ * Read a response body with a byte cap and an overall deadline. The SDK's
+ * fetch timeout ends at response headers, so without this a stalled or huge
+ * archive parks the poll loop (or buffers far past the cap first).
+ */
+function readBodyLimited(
+  body: DownloadBody,
+  maxBytes: number,
+  timeoutMs: number,
+): Promise<Uint8Array> {
+  if (!body) return Promise.reject(new Error('download archive had no response body'));
+  if (typeof (body as ReadableStream<Uint8Array>).getReader === 'function') {
+    return readWebStreamLimited(body as ReadableStream<Uint8Array>, maxBytes, timeoutMs);
+  }
+  return readNodeStreamLimited(body as NodeJS.ReadableStream & { destroy(): void }, maxBytes, timeoutMs);
+}
+
+/** Web ReadableStream path (global fetch): pull via a reader, cancel on timeout or overflow. */
+async function readWebStreamLimited(
+  stream: ReadableStream<Uint8Array>,
+  maxBytes: number,
+  timeoutMs: number,
+): Promise<Uint8Array> {
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    void reader.cancel().catch(() => {});
+  }, timeoutMs);
+  timer.unref?.();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (timedOut) throw new Error('download archive timed out');
+      if (done) break;
+      if (!value) continue;
+      size += value.byteLength;
+      if (size > maxBytes) {
+        await reader.cancel().catch(() => {});
+        throw new TerminalDownloadError('Browser downloads exceeded the 100 MB limit.');
+      }
+      chunks.push(value);
+    }
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return bytes;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Node stream path (node-fetch shim): event-driven read, destroy on timeout or overflow. */
+function readNodeStreamLimited(
+  stream: NodeJS.ReadableStream & { destroy(): void },
+  maxBytes: number,
+  timeoutMs: number,
+): Promise<Uint8Array> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    const timer = setTimeout(() => {
+      stream.destroy();
+      reject(new Error('download archive timed out'));
+    }, timeoutMs);
+    timer.unref?.();
+    stream.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > maxBytes) {
+        stream.destroy();
+        reject(new TerminalDownloadError('Browser downloads exceeded the 100 MB limit.'));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    stream.on('end', () => {
+      clearTimeout(timer);
+      resolve(new Uint8Array(Buffer.concat(chunks)));
+    });
+    stream.on('error', (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+  });
 }
 
 /** Read a zip entry, aborting decompression as soon as the expanded bytes exceed maxBytes. */
@@ -781,8 +908,11 @@ async function connectBrowserbase(ctx: ToolCtx): Promise<BrowserConnection> {
             maxRetries: 1,
             signal: ctx.signal,
           });
-          const bytes = new Uint8Array(await response.arrayBuffer());
-          if (bytes.byteLength > MAX_DOWNLOAD_BYTES) throw new Error('Browser downloads exceeded the 100 MB limit.');
+          const bytes = await readBodyLimited(
+            response.body as DownloadBody,
+            MAX_DOWNLOAD_BYTES,
+            ACTION_TIMEOUT_MS,
+          );
           const archive = await JSZip.loadAsync(bytes);
           const entries = Object.values(archive.files).filter((entry) => !entry.dir);
           if (entries.length) {
@@ -805,6 +935,8 @@ async function connectBrowserbase(ctx: ToolCtx): Promise<BrowserConnection> {
           }
         } catch (error) {
           if (ctx.signal?.aborted || (error instanceof Error && error.name === 'AbortError')) throw error;
+          // A permanent failure (archive over the cap) can't heal by polling.
+          if (error instanceof TerminalDownloadError) throw error;
           lastError = error;
         }
         await new Promise((resolve) => setTimeout(resolve, 750));
@@ -821,7 +953,7 @@ async function connectBrowserbase(ctx: ToolCtx): Promise<BrowserConnection> {
         maxRetries: 0,
       }).catch(() => {});
     };
-    return { driver, sessionId: session.id, prepareUploads, saveDownloads, release };
+    return { driver, sessionId: session.id, prepareUploads, saveDownloads, isAlive: () => browser?.isConnected() === true, release };
   } catch (error) {
     if (abortConnect) ctx.signal?.removeEventListener('abort', abortConnect);
     await browser?.close().catch(() => {});
@@ -876,7 +1008,34 @@ export class BrowserService {
       await this.close(ctx.runId);
       throw Object.assign(new Error('Run stopped'), { name: 'AbortError' });
     }
-    return managed.connection;
+    if (managed.connection.isAlive()) return managed.connection;
+    // The cached session died (cloud lifetime cap or a dropped CDP link) —
+    // replace it transparently instead of handing the caller a corpse that
+    // fails every later call with "Target closed". The identity check and the
+    // synchronous publish serialize concurrent callers that awaited the same
+    // corpse: later callers reuse the first caller's replacement instead of
+    // each creating (and leaking) their own session.
+    let current = this.sessions.get(ctx.runId);
+    if (current === pending) {
+      current = (async () => {
+        await this.close(ctx.runId);
+        return this.start(ctx);
+      })();
+      this.sessions.set(ctx.runId, current);
+      void current.catch(() => {
+        if (this.sessions.get(ctx.runId) === current) this.sessions.delete(ctx.runId);
+      });
+    }
+    if (!current) {
+      // The entry vanished between await and here (run aborted or budget
+      // close) — start a fresh session rather than resurrecting nothing.
+      current = this.start(ctx);
+      this.sessions.set(ctx.runId, current);
+      void current.catch(() => {
+        if (this.sessions.get(ctx.runId) === current) this.sessions.delete(ctx.runId);
+      });
+    }
+    return (await current).connection;
   }
 
   async close(runId: string) {
